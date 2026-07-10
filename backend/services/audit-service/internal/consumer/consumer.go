@@ -31,6 +31,17 @@ var Topics = []string{
 	"hr.attendance.updated",
 	"hr.payroll.processed",
 	"hr.payroll.posted",
+	"sales.customer.created",
+	"sales.customer.updated",
+	"sales.quotation.created",
+	"sales.quotation.sent",
+	"sales.quotation.accepted",
+	"sales.quotation.rejected",
+	"sales.quotation.converted",
+	"sales.order.created",
+	"sales.order.confirmed",
+	"sales.order.fulfilled",
+	"sales.order.invoiced",
 }
 
 // Start menjalankan satu Reader goroutine per topic. Setiap reader retry

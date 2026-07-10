@@ -10,6 +10,7 @@ type Config struct {
 	AuditServiceURL   string
 	FinanceServiceURL string
 	HRServiceURL      string
+	SalesServiceURL   string
 	JWTSecret         string
 	CORSAllowedOrigin string
 }
@@ -23,6 +24,7 @@ func Load() *Config {
 		AuditServiceURL:   getEnv("AUDIT_SERVICE_URL", "http://localhost:8084"),
 		FinanceServiceURL: getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),
 		HRServiceURL:      getEnv("HR_SERVICE_URL", "http://localhost:8086"),
+		SalesServiceURL:   getEnv("SALES_SERVICE_URL", "http://localhost:8087"),
 		JWTSecret:         getEnv("JWT_SECRET", "change-me"),
 		CORSAllowedOrigin: getEnv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 	}

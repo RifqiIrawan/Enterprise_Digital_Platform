@@ -3,6 +3,7 @@ go 1.25.0
 use (
 	./modules/finance-service
 	./modules/hr-service
+	./modules/sales-service
 	./services/api-gateway
 	./services/audit-service
 	./services/auth-service

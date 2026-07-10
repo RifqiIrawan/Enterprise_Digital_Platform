@@ -14,6 +14,9 @@ import ArApPage from './pages/finance/ArApPage.jsx'
 import EmployeesPage from './pages/hr/EmployeesPage.jsx'
 import AttendancePage from './pages/hr/AttendancePage.jsx'
 import PayrollPage from './pages/hr/PayrollPage.jsx'
+import CustomersPage from './pages/sales/CustomersPage.jsx'
+import QuotationsPage from './pages/sales/QuotationsPage.jsx'
+import SalesOrdersPage from './pages/sales/SalesOrdersPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -47,6 +50,9 @@ function App() {
         <Route path="/hr/employees" element={<EmployeesPage />} />
         <Route path="/hr/attendance" element={<AttendancePage />} />
         <Route path="/hr/payroll" element={<PayrollPage />} />
+        <Route path="/sales/customers" element={<CustomersPage />} />
+        <Route path="/sales/quotations" element={<QuotationsPage />} />
+        <Route path="/sales/orders" element={<SalesOrdersPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>
