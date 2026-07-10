@@ -42,6 +42,17 @@ var Topics = []string{
 	"sales.order.confirmed",
 	"sales.order.fulfilled",
 	"sales.order.invoiced",
+	"purchasing.supplier.created",
+	"purchasing.supplier.updated",
+	"purchasing.requisition.created",
+	"purchasing.requisition.submitted",
+	"purchasing.requisition.approved",
+	"purchasing.requisition.rejected",
+	"purchasing.requisition.converted",
+	"purchasing.order.created",
+	"purchasing.order.confirmed",
+	"purchasing.order.received",
+	"purchasing.order.invoiced",
 }
 
 // Start menjalankan satu Reader goroutine per topic. Setiap reader retry

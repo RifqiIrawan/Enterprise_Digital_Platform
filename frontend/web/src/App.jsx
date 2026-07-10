@@ -17,6 +17,9 @@ import PayrollPage from './pages/hr/PayrollPage.jsx'
 import CustomersPage from './pages/sales/CustomersPage.jsx'
 import QuotationsPage from './pages/sales/QuotationsPage.jsx'
 import SalesOrdersPage from './pages/sales/SalesOrdersPage.jsx'
+import SuppliersPage from './pages/purchasing/SuppliersPage.jsx'
+import RequisitionsPage from './pages/purchasing/RequisitionsPage.jsx'
+import PurchaseOrdersPage from './pages/purchasing/PurchaseOrdersPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -53,6 +56,9 @@ function App() {
         <Route path="/sales/customers" element={<CustomersPage />} />
         <Route path="/sales/quotations" element={<QuotationsPage />} />
         <Route path="/sales/orders" element={<SalesOrdersPage />} />
+        <Route path="/purchasing/suppliers" element={<SuppliersPage />} />
+        <Route path="/purchasing/requisitions" element={<RequisitionsPage />} />
+        <Route path="/purchasing/orders" element={<PurchaseOrdersPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>
