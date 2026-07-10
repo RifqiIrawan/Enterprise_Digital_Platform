@@ -1,0 +1,75 @@
+networks:
+  edp-network:
+    driver: bridge
+
+volumes:
+  clickhouse_data:
+  minio_data:
+  kafka_data:
+
+# Postgres runs natively on this machine (Windows service "postgresql-x64-18",
+# port 5432) instead of via Docker -- see infra/README.md. A `platform` role
+# (password `platform`) owns the per-service databases (auth_service,
+# rbac_service, company_service, audit_service), matching the DATABASE_URL
+# defaults in each service's internal/config/config.go.
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3
+    ports:
+      - "8123:8123"   # HTTP interface
+      - "9101:9000"   # native protocol (remapped to avoid clashing with MinIO 9000 on host)
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    networks:
+      - edp-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - edp-network
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9002:9000"   # API
+      - "9003:9001"   # Console
+    volumes:
+      - minio_data:/data
+    networks:
+      - edp-network
+
+  kafka:
+    image: bitnami/kafka:3.7
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+    volumes:
+      - kafka_data:/bitnami/kafka
+    networks:
+      - edp-network
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8090:8080"
+    networks:
+      - edp-network

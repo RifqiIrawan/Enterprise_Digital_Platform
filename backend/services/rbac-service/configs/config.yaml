@@ -1,0 +1,12 @@
+service:
+  name: rbac-service
+  port: 8083
+
+database:
+  url: postgres://platform:platform@localhost:5432/rbac_service?sslmode=disable
+
+redis:
+  url: localhost:6379
+
+kafka:
+  brokers: localhost:9092

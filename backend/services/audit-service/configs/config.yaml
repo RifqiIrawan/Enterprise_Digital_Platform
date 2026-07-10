@@ -1,0 +1,17 @@
+service:
+  name: audit-service
+  port: 8084
+
+database:
+  url: postgres://platform:platform@localhost:5432/audit_service?sslmode=disable
+
+clickhouse:
+  url: http://localhost:8123
+
+kafka:
+  brokers: localhost:9092
+  group_id: audit-service
+  topics:
+    - auth.*
+    - company.*
+    - rbac.*

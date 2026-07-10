@@ -1,0 +1,12 @@
+service:
+  name: api-gateway
+  port: 8079
+
+downstream:
+  auth_service_url: http://localhost:8081
+  company_service_url: http://localhost:8082
+  rbac_service_url: http://localhost:8083
+  audit_service_url: http://localhost:8084
+
+jwt:
+  secret: change-me

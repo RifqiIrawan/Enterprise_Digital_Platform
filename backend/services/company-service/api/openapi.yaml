@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info:
+  title: Company Service API
+  version: 0.1.0
+  description: Manajemen Company, Branch, dan Department (struktur multi-company/multi-branch)
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /companies:
+    get:
+      summary: 'TODO: list company (Super Admin only)'
+      responses:
+        '200':
+          description: OK
+  /companies/{companyId}/branches:
+    get:
+      summary: 'TODO: list branch dalam sebuah company'
+      responses:
+        '200':
+          description: OK

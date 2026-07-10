@@ -1,0 +1,17 @@
+service:
+  name: auth-service
+  port: 8081
+
+database:
+  url: postgres://platform:platform@localhost:5432/auth_service?sslmode=disable
+
+redis:
+  url: localhost:6379
+
+kafka:
+  brokers: localhost:9092
+
+jwt:
+  secret: change-me
+  access_token_ttl: 15m
+  refresh_token_ttl: 168h

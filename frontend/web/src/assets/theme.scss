@@ -1,0 +1,634 @@
+// Design tokens -- override Bootstrap's Sass variables *before* importing it,
+// so every built-in component (buttons, forms, alerts, badges, tables, modal,
+// dropdown) inherits the theme instead of us re-skinning each one by hand.
+
+$font-family-sans-serif: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+$primary: #4f46e5; // indigo -- more distinctive than Bootstrap's default blue
+$secondary: #6b7280;
+$success: #0ca30c;
+$warning: #d97706;
+$danger: #dc2626;
+$info: #4f46e5;
+
+$body-bg: #f2effa; // soft lavender tint -- not stark white
+$body-color: #16181d;
+
+$border-radius: 0.625rem;
+$border-radius-sm: 0.5rem;
+$border-radius-lg: 0.875rem;
+$border-color: rgba(17, 19, 24, 0.09);
+
+$card-border-width: 1px;
+$card-border-color: $border-color;
+$card-border-radius: $border-radius-lg;
+$card-box-shadow: 0 1px 2px rgba(17, 19, 24, 0.04), 0 8px 24px -12px rgba(17, 19, 24, 0.08);
+$card-cap-bg: #f8f6fd; // soft tint instead of stark white card headers
+
+$headings-font-weight: 700;
+
+$box-shadow-sm: 0 1px 2px rgba(17, 19, 24, 0.06);
+$box-shadow: 0 4px 16px -4px rgba(17, 19, 24, 0.1);
+
+$btn-border-radius: 0.5rem;
+$btn-border-radius-sm: 0.4375rem;
+$btn-font-weight: 550;
+$btn-focus-width: 0.15rem;
+
+$input-border-radius: 0.5rem;
+$input-border-radius-sm: 0.4375rem;
+$input-border-color: rgba(17, 19, 24, 0.14);
+$input-focus-border-color: lighten($primary, 15%);
+
+$badge-border-radius: 0.4rem;
+$table-border-color: $border-color;
+
+$modal-content-border-radius: $border-radius-lg;
+$dropdown-border-radius: $border-radius;
+$dropdown-border-color: $border-color;
+$dropdown-box-shadow: $box-shadow;
+
+@import 'bootstrap/scss/bootstrap';
+
+// ---------------------------------------------------------------------------
+// App-specific chrome. Written against the same tokens (Sass vars above, plus
+// a few CSS custom properties for values JS/inline styles also need).
+// ---------------------------------------------------------------------------
+
+:root {
+  --edp-accent: #{$primary};
+  --edp-accent-soft: #eef0fd;
+  --edp-good: #{$success};
+  --edp-ink-secondary: #52525f;
+  --edp-ink-muted: #8b8b98;
+  --edp-border: #{$border-color};
+  --edp-sidebar-bg: #fff;
+  --edp-sidebar-width: 264px;
+  // Signature brand gradient -- indigo -> violet -> pink. Used sparingly on
+  // a handful of high-visibility surfaces (active nav, primary CTA, brand
+  // mark) rather than everywhere, so it reads as an accent, not wallpaper.
+  --edp-gradient-brand: linear-gradient(135deg, #4338ca 0%, #7c3aed 55%, #db2777 100%);
+  --edp-gradient-brand-soft: linear-gradient(135deg, rgba(67, 56, 202, 0.1), rgba(219, 39, 119, 0.1));
+  // Ambient page canvas -- soft diagonal cool-to-warm wash (blue -> lavender
+  // -> peach) behind white cards, instead of a flat tint. This is the
+  // "background" gradient; the brand gradient above stays reserved for
+  // foreground/interactive elements so the two don't compete.
+  --edp-gradient-ambient: linear-gradient(135deg, #dfebfd 0%, #eee9fa 45%, #fce7da 100%);
+}
+
+body {
+  font-feature-settings: 'cv11', 'ss01';
+  background: var(--edp-gradient-ambient);
+  background-attachment: fixed;
+  background-size: cover;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  letter-spacing: -0.015em;
+}
+
+.edp-page-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+  margin-bottom: 0;
+}
+
+.edp-page-subtitle {
+  font-size: 0.85rem;
+  color: var(--edp-ink-secondary);
+}
+
+.edp-shell {
+  min-height: 100vh;
+}
+
+.edp-sidebar {
+  width: var(--edp-sidebar-width);
+  min-width: var(--edp-sidebar-width);
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  color: $body-color;
+  border-right: 1px solid var(--edp-border);
+  transition: margin-left 0.2s ease;
+}
+
+.edp-sidebar.is-collapsed {
+  margin-left: calc(var(--edp-sidebar-width) * -1);
+}
+
+.edp-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.edp-logo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 0.45em;
+  background: var(--edp-gradient-brand);
+  color: #fff;
+  box-shadow: 0 4px 10px -3px rgba(124, 58, 237, 0.5);
+}
+
+.edp-logo-text {
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
+  background: var(--edp-gradient-brand);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.edp-nav-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--edp-ink-muted);
+}
+
+.edp-nav-link {
+  color: var(--edp-ink-secondary);
+  border-radius: 0.625rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-decoration: none;
+  transition: background-color 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+
+.edp-nav-link:hover {
+  background: rgba(79, 70, 229, 0.07);
+  color: $primary;
+}
+
+.edp-nav-link.active {
+  background: var(--edp-gradient-brand);
+  color: #fff;
+  box-shadow: 0 6px 14px -6px rgba(124, 58, 237, 0.5);
+  transform: translateX(2px);
+}
+
+.edp-nav-link.is-disabled {
+  color: var(--edp-ink-muted);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.edp-nav-link.is-disabled:hover {
+  background: transparent;
+  color: var(--edp-ink-muted);
+}
+
+.edp-nav-badge {
+  font-size: 0.625rem;
+  letter-spacing: 0.03em;
+}
+
+.edp-sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 11, 14, 0.45);
+  backdrop-filter: blur(1px);
+  z-index: 1040;
+}
+
+@media (max-width: 767.98px) {
+  .edp-sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    height: 100vh;
+    z-index: 1045;
+    margin-left: 0;
+    transform: translateX(-100%);
+    transition: transform 0.2s ease;
+  }
+
+  .edp-sidebar:not(.is-collapsed) {
+    transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
+  }
+}
+
+.edp-topbar {
+  background: rgba(255, 255, 255, 0.55);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  border-bottom: 1px solid var(--edp-border);
+  min-height: 64px;
+  position: sticky;
+  top: 0;
+  z-index: 1020;
+}
+
+.edp-content {
+  background: transparent;
+  min-height: calc(100vh - 64px);
+}
+
+.edp-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--edp-accent-soft);
+  color: var(--edp-accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.stat-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.875rem;
+  background: #fff;
+  border: $card-border-width solid $card-border-color;
+  border-radius: $card-border-radius;
+  box-shadow: $card-box-shadow;
+  padding: 1.125rem 1.25rem;
+  height: 100%;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.stat-tile:hover {
+  box-shadow: $box-shadow;
+  transform: translateY(-1px);
+}
+
+.stat-tile-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  color: #fff;
+  flex-shrink: 0;
+  box-shadow: 0 6px 14px -6px rgba(0, 0, 0, 0.35);
+}
+
+$stat-tile-colors: (
+  'green': #22c55e,
+  'amber': #f59e0b,
+  'blue': #0ea5e9,
+  'rose': #f43f5e,
+  'violet': #8b5cf6,
+);
+
+.stat-tile-icon-primary {
+  background: var(--edp-gradient-brand);
+}
+
+@each $name, $color in $stat-tile-colors {
+  .stat-tile-icon-#{$name} {
+    background: linear-gradient(135deg, $color, lighten($color, 10%));
+  }
+}
+
+.stat-tile-label {
+  font-size: 0.8rem;
+  color: var(--edp-ink-secondary);
+}
+
+.stat-tile-value {
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.stat-tile-hint {
+  font-size: 0.75rem;
+  color: var(--edp-ink-muted);
+}
+
+.edp-module-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--edp-border);
+  font-size: 0.8rem;
+  color: var(--edp-ink-secondary);
+  background: #fff;
+}
+
+.edp-module-pill .edp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--edp-ink-muted);
+}
+
+.edp-module-pill.is-active .edp-dot {
+  background: var(--edp-good);
+}
+
+.edp-module-pill.is-active {
+  color: #0b0b0b;
+}
+
+.card {
+  box-shadow: $card-box-shadow;
+}
+
+.table > :not(caption) > * > * {
+  padding: 0.75rem 1rem;
+}
+
+.table thead th {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--edp-ink-muted);
+  border-bottom-width: 1px;
+}
+
+.btn {
+  letter-spacing: -0.005em;
+}
+
+.btn-primary {
+  background: var(--edp-gradient-brand);
+  background-size: 160% 160%;
+  background-position: 0% 50%;
+  border: none;
+  transition: background-position 0.25s ease, box-shadow 0.2s ease, transform 0.1s ease;
+  box-shadow: 0 4px 12px -4px rgba(124, 58, 237, 0.45);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background: var(--edp-gradient-brand);
+  background-size: 160% 160%;
+  background-position: 100% 50%;
+  box-shadow: 0 6px 16px -4px rgba(124, 58, 237, 0.55);
+}
+
+.btn-primary:active {
+  transform: translateY(1px);
+}
+
+.btn-primary:disabled,
+.btn-primary.disabled {
+  background: var(--edp-ink-muted);
+  box-shadow: none;
+}
+
+.edp-login-page {
+  min-height: 100vh;
+  position: relative;
+  overflow: hidden;
+  background: var(--edp-gradient-ambient);
+}
+
+.edp-login-card {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+}
+
+.edp-login-glow {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  border-radius: 50%;
+  filter: blur(90px);
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.edp-login-glow-1 {
+  background: #4338ca;
+  top: -180px;
+  left: -160px;
+}
+
+.edp-login-glow-2 {
+  background: #db2777;
+  bottom: -200px;
+  right: -160px;
+  opacity: 0.18;
+}
+
+// -- User Management: avatars, chips, search, role picker dropdown ----------
+
+.edp-avatar-dyn {
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 650;
+  flex-shrink: 0;
+}
+
+.edp-search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--edp-ink-muted);
+}
+
+.edp-search-box input:focus {
+  box-shadow: none;
+}
+
+.edp-search-box-bordered {
+  border: 1px solid var(--edp-border);
+  border-radius: $input-border-radius-sm;
+  min-width: 240px;
+}
+
+// -- Role-filter tabs (User Management table) --------------------------------
+
+.edp-filter-tabs {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  border-bottom: none;
+}
+
+.edp-filter-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 550;
+  color: var(--edp-ink-secondary);
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.edp-filter-tab:hover {
+  color: $primary;
+}
+
+.edp-filter-tab.active {
+  color: $primary;
+  border-bottom-color: $primary;
+}
+
+.edp-role-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 550;
+  animation: edp-chip-in 0.18s ease;
+}
+
+.edp-role-chip-sm {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+@keyframes edp-chip-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.edp-role-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.55);
+  line-height: 1;
+  transition: background-color 0.12s ease, transform 0.12s ease;
+}
+
+.edp-role-chip-remove:hover {
+  background: rgba(255, 255, 255, 0.9);
+  transform: scale(1.1);
+}
+
+.edp-role-picker {
+  position: relative;
+  display: inline-block;
+}
+
+.edp-role-picker-panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  width: 300px;
+  z-index: 1030;
+  box-shadow: $box-shadow;
+  animation: edp-pop-in 0.14s ease;
+  transform-origin: top left;
+}
+
+@keyframes edp-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.edp-role-picker-list {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.edp-role-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.1s ease;
+  margin: 0;
+}
+
+.edp-role-picker-item:hover {
+  background: rgba(79, 70, 229, 0.06);
+}
+
+// -- Permission matrix: collapsible module rows ------------------------------
+
+.edp-permission-module-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--bs-card-cap-bg, #{$card-cap-bg});
+  border-bottom: 1px solid var(--edp-border);
+}
+
+.edp-permission-module-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+}
+
+.edp-permission-module-toggle i.bi-chevron-right,
+.edp-permission-module-toggle i.bi-chevron-down {
+  color: var(--edp-ink-muted);
+  transition: transform 0.12s ease;
+}
+
+.edp-permission-module-count {
+  font-size: 0.78rem;
+  color: var(--edp-ink-secondary);
+  background: rgba(79, 70, 229, 0.08);
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+}
+
+.form-switch .form-check-input {
+  width: 2.25em;
+  cursor: pointer;
+}
+
+.edp-login-mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.75rem;
+  background: var(--edp-gradient-brand);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  box-shadow: 0 6px 16px -4px rgba(124, 58, 237, 0.45);
+}

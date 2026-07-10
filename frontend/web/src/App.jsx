@@ -1,0 +1,56 @@
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import MainLayout from './layouts/MainLayout.jsx'
+import LoginPage from './pages/auth/LoginPage.jsx'
+import DashboardPage from './pages/dashboard/DashboardPage.jsx'
+import PlaceholderPage from './pages/PlaceholderPage.jsx'
+import RoleListPage from './pages/admin/roles/RoleListPage.jsx'
+import RoleCreatePage from './pages/admin/roles/RoleCreatePage.jsx'
+import RolePermissionMatrixPage from './pages/admin/roles/RolePermissionMatrixPage.jsx'
+import UserRoleAssignmentPage from './pages/admin/users/UserRoleAssignmentPage.jsx'
+import ChartOfAccountsPage from './pages/finance/ChartOfAccountsPage.jsx'
+import JournalPage from './pages/finance/JournalPage.jsx'
+import InvoicesPage from './pages/finance/InvoicesPage.jsx'
+import ArApPage from './pages/finance/ArApPage.jsx'
+import EmployeesPage from './pages/hr/EmployeesPage.jsx'
+import AttendancePage from './pages/hr/AttendancePage.jsx'
+import PayrollPage from './pages/hr/PayrollPage.jsx'
+import { isAuthenticated } from './utils/auth.js'
+
+function RequireAuth({ children }) {
+  const location = useLocation()
+  if (!isAuthenticated()) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />
+  }
+  return children
+}
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route
+        element={
+          <RequireAuth>
+            <MainLayout />
+          </RequireAuth>
+        }
+      >
+        <Route path="/" element={<DashboardPage />} />
+        <Route path="/admin/roles" element={<RoleListPage />} />
+        <Route path="/admin/roles/new" element={<RoleCreatePage />} />
+        <Route path="/admin/roles/:roleId/permissions" element={<RolePermissionMatrixPage />} />
+        <Route path="/admin/users" element={<UserRoleAssignmentPage />} />
+        <Route path="/finance/accounts" element={<ChartOfAccountsPage />} />
+        <Route path="/finance/journal" element={<JournalPage />} />
+        <Route path="/finance/invoices" element={<InvoicesPage />} />
+        <Route path="/finance/ar-ap" element={<ArApPage />} />
+        <Route path="/hr/employees" element={<EmployeesPage />} />
+        <Route path="/hr/attendance" element={<AttendancePage />} />
+        <Route path="/hr/payroll" element={<PayrollPage />} />
+        <Route path="*" element={<PlaceholderPage />} />
+      </Route>
+    </Routes>
+  )
+}
+
+export default App

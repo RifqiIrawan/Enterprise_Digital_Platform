@@ -1,0 +1,26 @@
+package config
+
+import "os"
+
+type Config struct {
+	Port              string
+	DatabaseURL       string
+	KafkaBrokers      string
+	FinanceServiceURL string
+}
+
+func Load() *Config {
+	return &Config{
+		Port:              getEnv("PORT", "8086"),
+		DatabaseURL:       getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/hr_service?sslmode=disable"),
+		KafkaBrokers:      getEnv("KAFKA_BROKERS", "localhost:9092"),
+		FinanceServiceURL: getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}

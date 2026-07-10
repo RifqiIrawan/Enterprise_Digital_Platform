@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info:
+  title: RBAC Service API
+  version: 0.1.0
+  description: Role Based Access Control - Role, Permission, dan penugasan role per Company/Branch
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /roles:
+    get:
+      summary: 'TODO: list role (Super Admin, Company Admin, Branch Manager, Finance, HR, Sales, Purchasing, Warehouse, Production, QC, Asset, Auditor, AI Analyst)'
+      responses:
+        '200':
+          description: OK
+  /users/{userId}/roles:
+    get:
+      summary: 'TODO: list role yang dimiliki seorang user beserta scope company/branch'
+      responses:
+        '200':
+          description: OK

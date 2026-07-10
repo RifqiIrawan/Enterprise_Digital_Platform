@@ -1,0 +1,24 @@
+openapi: 3.0.3
+info:
+  title: Auth Service API
+  version: 0.1.0
+  description: Authentication & Authorization (JWT/OAuth2) untuk Enterprise Digital Platform
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /login:
+    post:
+      summary: 'TODO: login dengan email/password, mengembalikan access & refresh token'
+      responses:
+        '200':
+          description: OK
+  /refresh:
+    post:
+      summary: 'TODO: tukar refresh token menjadi access token baru'
+      responses:
+        '200':
+          description: OK

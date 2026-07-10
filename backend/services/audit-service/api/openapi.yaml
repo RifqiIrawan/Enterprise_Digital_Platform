@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: Audit Service API
+  version: 0.1.0
+  description: Audit log read-only API (data ditulis via Kafka consumer, bukan langsung dari client)
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /audit-logs:
+    get:
+      summary: 'TODO: query audit log (filter by company, branch, actor, action, date range) - role Auditor'
+      responses:
+        '200':
+          description: OK

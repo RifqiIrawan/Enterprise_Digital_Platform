@@ -1,0 +1,12 @@
+openapi: 3.0.3
+info:
+  title: API Gateway
+  version: 0.1.0
+  description: Entry point routing ke seluruh microservice Enterprise Digital Platform
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK

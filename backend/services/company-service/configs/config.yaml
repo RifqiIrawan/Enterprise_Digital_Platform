@@ -1,0 +1,12 @@
+service:
+  name: company-service
+  port: 8082
+
+database:
+  url: postgres://platform:platform@localhost:5432/company_service?sslmode=disable
+
+redis:
+  url: localhost:6379
+
+kafka:
+  brokers: localhost:9092
