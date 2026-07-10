@@ -11,11 +11,12 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 1** — auth, company, rbac, audit, api-gateway | ✅ Selesai & diverifikasi end-to-end |
 | **Fase 2 — Finance module** | ✅ Selesai & diverifikasi end-to-end |
 | **Fase 2 — HR module** (employees, attendance, payroll + posting ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
-| **Fase 2 — Sales module** (customers, quotations, sales orders + invoice ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
-| **Fase 2 — Purchasing, Warehouse, Production, QC, Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
+| **Fase 2 — Sales module** (customers, quotations, sales orders + invoice AR ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
+| **Fase 2 — Purchasing module** (suppliers, requisitions, purchase orders + invoice AP ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
+| **Fase 2 — Warehouse, Production, QC, Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ❌ Belum bisa dites — Docker Desktop error di mesin ini (lihat "Known Issues") |
-| Git | ✅ Commit pertama (`a796b1b`, checkpoint Fase 1+Finance+HR) dan kedua (`1fa8c1f`, Sales) sudah dibuat di branch `master`. Belum ada remote. |
+| Git | ✅ 4 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing). Belum ada remote. |
 
 ---
 
@@ -28,7 +29,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    docker compose up -d
    ```
    Kalau Docker Desktop error (`pipe error 500` / `request returned 500 Internal Server Error`), restart Docker Desktop dulu. Semua service Go **tetap bisa jalan tanpa ini** — publish/consume Kafka didesain best-effort (gagal → log warning, tidak crash).
-3. **Backend — 8 service Go**, masing-masing `go run ./cmd/server` di foldernya:
+3. **Backend — 9 service Go**, masing-masing `go run ./cmd/server` di foldernya:
    | Service | Path | Port |
    |---|---|---|
    | api-gateway | `backend/services/api-gateway` | 8079 |
@@ -39,8 +40,9 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    | finance-service | `backend/modules/finance-service` | 8085 |
    | hr-service | `backend/modules/hr-service` | 8086 |
    | sales-service | `backend/modules/sales-service` | 8087 |
+   | purchasing-service | `backend/modules/purchasing-service` | 8088 |
 
-   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` / `CREATE DATABASE sales_service;` lewat psql, role `platform`).
+   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`).
 4. **Frontend**:
    ```
    cd frontend/web
@@ -51,7 +53,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 
 Cek cepat semua service hidup:
 ```bash
-for port in 8079 8081 8082 8083 8084 8085 8086 8087; do curl -s http://localhost:$port/health; echo; done
+for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088; do curl -s http://localhost:$port/health; echo; done
 ```
 
 ---
@@ -113,15 +115,15 @@ Frontend, per halaman list baru:
 
 ## Next Steps (rekomendasi)
 
-HR dan Sales sudah selesai (lihat tabel status di atas). Modul Fase 2 berikutnya, urutan disarankan:
-1. **Purchasing** — vendor, PR/PO; polanya sama seperti Sales (lihat `backend/modules/sales-service` sebagai contoh lengkap termasuk `internal/financeclient`). Invoice AP di finance-service idealnya dihubungkan ke sini (`partner_name` teks bebas → jadi `vendor_id` referensi), sama seperti catatan `invoice_id` di `sales_orders`.
-2. Sisanya (Warehouse, Production, QC, Asset, AI, BI) menyusul.
+HR, Sales, dan Purchasing sudah selesai (lihat tabel status di atas). Modul Fase 2 berikutnya, urutan disarankan:
+1. **Warehouse** — stok gudang, mutasi antar branch, stock opname. Beda dari 3 modul sebelumnya: ini modul pertama yang butuh konsep "stock movement" (in/out/transfer) dan kemungkinan terhubung ke Purchasing (PO RECEIVED → stock masuk) & Sales (SO FULFILLED → stock keluar), bukan cuma ke finance-service. Belum ada product master tersendiri (masih `product_name` teks bebas di sales/purchasing), jadi Warehouse kemungkinan jadi tempat pertama yang butuh mikirkan itu.
+2. Sisanya (Production, QC, Asset, AI, BI) menyusul.
 
 Sebelum mulai modul baru, cek dulu apakah proses lain (lihat Known Issues #2) sudah/sedang mengerjakan modul yang sama — hindari tabrakan file/port seperti awal sesi lalu.
 
-### Pola cross-service posting (HR & Sales sudah pakai ini)
+### Pola cross-service posting (HR, Sales, & Purchasing sudah pakai ini)
 
-Kalau modul baru butuh membuat journal entry / invoice di finance-service (mis. Purchasing untuk AP invoice), ikuti pola `internal/financeclient` di `hr-service` (posting payroll ke journal entry) atau `sales-service` (posting sales order ke invoice AR):
+Kalau modul baru butuh membuat journal entry / invoice di finance-service, ikuti pola `internal/financeclient` di `hr-service` (posting payroll ke journal entry), `sales-service` (posting sales order ke invoice AR), atau `purchasing-service` (posting purchase order ke invoice AP):
 - Panggilan HTTP langsung ke `FINANCE_SERVICE_URL` (bukan lewat api-gateway), karena finance-service tidak validasi JWT.
 - Header `X-User-Id` diteruskan manual dari actor pemanggil supaya tercatat sebagai `posted_by`/`actor_user_id` yang benar (harus UUID valid, bukan sembarang string).
 - Urutan: panggil finance-service dulu, baru update status lokal setelah sukses (tidak ada distributed transaction, jadi finance-service adalah sumber kebenaran duluan).
