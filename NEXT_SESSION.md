@@ -1,6 +1,6 @@
 # Handoff — Lanjutan Sesi Berikutnya
 
-Terakhir dikerjakan: **2026-07-10**. Dokumen ini ringkasan supaya sesi besok bisa langsung lanjut tanpa re-explore dari nol.
+Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bisa langsung lanjut tanpa re-explore dari nol.
 
 ---
 
@@ -10,9 +10,12 @@ Terakhir dikerjakan: **2026-07-10**. Dokumen ini ringkasan supaya sesi besok bis
 |---|---|
 | **Fase 1** — auth, company, rbac, audit, api-gateway | ✅ Selesai & diverifikasi end-to-end |
 | **Fase 2 — Finance module** | ✅ Selesai & diverifikasi end-to-end |
-| **Fase 2 — HR, Sales, Purchasing, Warehouse, Production, QC, Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
+| **Fase 2 — HR module** (employees, attendance, payroll + posting ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
+| **Fase 2 — Sales module** (customers, quotations, sales orders + invoice ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
+| **Fase 2 — Purchasing, Warehouse, Production, QC, Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ❌ Belum bisa dites — Docker Desktop error di mesin ini (lihat "Known Issues") |
+| Git | ✅ Commit pertama (`a796b1b`, checkpoint Fase 1+Finance+HR) dan kedua (`1fa8c1f`, Sales) sudah dibuat di branch `master`. Belum ada remote. |
 
 ---
 
@@ -25,7 +28,7 @@ Terakhir dikerjakan: **2026-07-10**. Dokumen ini ringkasan supaya sesi besok bis
    docker compose up -d
    ```
    Kalau Docker Desktop error (`pipe error 500` / `request returned 500 Internal Server Error`), restart Docker Desktop dulu. Semua service Go **tetap bisa jalan tanpa ini** — publish/consume Kafka didesain best-effort (gagal → log warning, tidak crash).
-3. **Backend — 6 service Go**, masing-masing `go run ./cmd/server` di foldernya:
+3. **Backend — 8 service Go**, masing-masing `go run ./cmd/server` di foldernya:
    | Service | Path | Port |
    |---|---|---|
    | api-gateway | `backend/services/api-gateway` | 8079 |
@@ -34,8 +37,10 @@ Terakhir dikerjakan: **2026-07-10**. Dokumen ini ringkasan supaya sesi besok bis
    | rbac-service | `backend/services/rbac-service` | 8083 |
    | audit-service | `backend/services/audit-service` | 8084 |
    | finance-service | `backend/modules/finance-service` | 8085 |
+   | hr-service | `backend/modules/hr-service` | 8086 |
+   | sales-service | `backend/modules/sales-service` | 8087 |
 
-   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali).
+   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` / `CREATE DATABASE sales_service;` lewat psql, role `platform`).
 4. **Frontend**:
    ```
    cd frontend/web
@@ -46,7 +51,7 @@ Terakhir dikerjakan: **2026-07-10**. Dokumen ini ringkasan supaya sesi besok bis
 
 Cek cepat semua service hidup:
 ```bash
-for port in 8079 8081 8082 8083 8084 8085; do curl -s http://localhost:$port/health; echo; done
+for port in 8079 8081 8082 8083 8084 8085 8086 8087; do curl -s http://localhost:$port/health; echo; done
 ```
 
 ---
@@ -108,10 +113,15 @@ Frontend, per halaman list baru:
 
 ## Next Steps (rekomendasi)
 
-Modul Fase 2 berikutnya, urutan disarankan (ikuti README root & `20_Implementation_Guide.md`):
-1. **HR** — paling detail didokumentasikan (payroll engine, PPh21, BPJS di `20_Implementation_Guide.md`), dan bisa langsung pakai `POST /api/finance/journal-entries` yang sudah dibangun untuk posting payroll ke GL (pola `financeClient.postJournalEntry()`).
-2. **Sales** — customer, quotation, sales order; nanti invoice AR di finance-service idealnya dihubungkan ke sini (`partner_name` teks bebas → jadi `customer_id` referensi).
-3. **Purchasing** — vendor, PR/PO; sama, invoice AP idealnya terhubung ke sini.
-4. Sisanya (Warehouse, Production, QC, Asset, AI, BI) menyusul.
+HR dan Sales sudah selesai (lihat tabel status di atas). Modul Fase 2 berikutnya, urutan disarankan:
+1. **Purchasing** — vendor, PR/PO; polanya sama seperti Sales (lihat `backend/modules/sales-service` sebagai contoh lengkap termasuk `internal/financeclient`). Invoice AP di finance-service idealnya dihubungkan ke sini (`partner_name` teks bebas → jadi `vendor_id` referensi), sama seperti catatan `invoice_id` di `sales_orders`.
+2. Sisanya (Warehouse, Production, QC, Asset, AI, BI) menyusul.
 
-Sebelum mulai modul baru, cek dulu apakah proses lain (lihat Known Issues #2) sudah/sedang mengerjakan modul yang sama — hindari tabrakan file/port seperti awal sesi ini.
+Sebelum mulai modul baru, cek dulu apakah proses lain (lihat Known Issues #2) sudah/sedang mengerjakan modul yang sama — hindari tabrakan file/port seperti awal sesi lalu.
+
+### Pola cross-service posting (HR & Sales sudah pakai ini)
+
+Kalau modul baru butuh membuat journal entry / invoice di finance-service (mis. Purchasing untuk AP invoice), ikuti pola `internal/financeclient` di `hr-service` (posting payroll ke journal entry) atau `sales-service` (posting sales order ke invoice AR):
+- Panggilan HTTP langsung ke `FINANCE_SERVICE_URL` (bukan lewat api-gateway), karena finance-service tidak validasi JWT.
+- Header `X-User-Id` diteruskan manual dari actor pemanggil supaya tercatat sebagai `posted_by`/`actor_user_id` yang benar (harus UUID valid, bukan sembarang string).
+- Urutan: panggil finance-service dulu, baru update status lokal setelah sukses (tidak ada distributed transaction, jadi finance-service adalah sumber kebenaran duluan).
