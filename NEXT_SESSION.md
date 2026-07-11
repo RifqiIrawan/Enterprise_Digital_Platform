@@ -95,6 +95,7 @@ Supaya pagination DataTable kelihatan, ditambahkan data dummy lewat API (bukan m
 - Production module (dari verifikasi end-to-end Playwright sesi ini): 2 produk tambahan (`SKU-RAW-01` Bahan Baku X, `SKU-FG-01` Barang Jadi Y), 1 BOM (`BOM-01` Resep Barang Jadi Y, 2x Bahan Baku X per unit), 1 work order (`WO-202607-0001`, rencana 10 pcs, COMPLETED) — hasil akhir di WH-A: Bahan Baku X 100→80 pcs (terpakai 20), Barang Jadi Y 0→10 pcs (hasil produksi).
 - QC module (dari verifikasi end-to-end Playwright sesi ini): 1 standar mutu (`QS-01` Standar Barang Jadi Y), 3 inspeksi — `INS-202607-0001` terhubung ke `WO-202607-0001` (10 diperiksa, 8 lolos, 2 gagal → PARTIAL), `INS-202607-0002` terhubung ke `PO-202607-0001` (5/5/0 → PASS), `INS-202607-0003` manual (3/0/3 → FAIL). Tidak ada mutasi stok otomatis dari inspeksi ini (sesuai keputusan produk).
 - Asset module (dari verifikasi end-to-end Playwright sesi ini): 1 aset (`AST-01` Forklift Toyota 3 Ton, lokasi WH-A, status ACTIVE), 2 jadwal maintenance — satu tanggal mundur (diselesaikan → COMPLETED, `completed_date` terisi otomatis), satu tanggal maju (dibatalkan → CANCELLED, untuk uji alur cancel).
+- Sanity check audit trail Docker (lewat curl langsung, bukan browser): 1 gudang (`WH-TEST-AUDIT`), 1 produk (`SKU-AUDIT-TEST`), 1 aset (`AST-AUDIT-TEST`) — cuma dipakai untuk verifikasi event Kafka masuk ke `audit_logs`, aman dihapus atau dibiarkan.
 
 Semua ini valid & aman untuk terus dipakai / didemokan, bukan data korup.
 
