@@ -19,20 +19,21 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — Asset module** (Pendataan Aset, Maintenance Schedule dengan overdue indicator, complete/cancel) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — AI & BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`). **Ini modul terakhir Fase 2** — lihat catatan khusus di "Next Steps" sebelum mulai, kemungkinan besar butuh pendekatan beda dari modul CRUD transaksional lainnya. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
-| Kafka/Redis/MinIO/ClickHouse (docker-compose) | ❌ Belum bisa dites — Docker Desktop error di mesin ini (lihat "Known Issues") |
-| Git | ✅ 7 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok), `7590cd5` (Warehouse), `c0e600b` (Production), `b08a005` (QC). Asset module belum di-commit (lihat bawah). Belum ada remote. |
+| Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
+| Git | ✅ 7 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok), `7590cd5` (Warehouse), `c0e600b` (Production), `b08a005` (QC), `359d6dc` (Asset). Docker fix + audit topics belum di-commit (lihat bawah). Belum ada remote. |
 
 ---
 
 ## Cara Menjalankan (urutan)
 
 1. **Postgres** — jalan native sebagai Windows service (`postgresql-x64-18`), tidak perlu langkah apa pun kalau service Windows-nya sudah `Running`. Role `platform`/`platform` dan database `auth_service`, `company_service`, `rbac_service`, `audit_service`, `finance_service` sudah dibuat.
-2. **(Opsional) Infra Kafka/Redis/MinIO/ClickHouse** — coba dulu:
+2. **Infra Kafka/Redis/MinIO/ClickHouse** — coba dulu, JANGAN asumsikan Docker pasti rusak (lihat "Known Issues" #1, sesi 2026-07-12 ternyata sehat):
    ```
    cd infra
    docker compose up -d
    ```
-   Kalau Docker Desktop error (`pipe error 500` / `request returned 500 Internal Server Error`), restart Docker Desktop dulu. Semua service Go **tetap bisa jalan tanpa ini** — publish/consume Kafka didesain best-effort (gagal → log warning, tidak crash).
+   Kalau Docker Desktop error (`pipe error 500` / `request returned 500 Internal Server Error`), restart Docker Desktop dulu. Semua service Go **tetap bisa jalan tanpa ini** — publish/consume Kafka didesain best-effort (gagal → log warning, tidak crash). Kalau image `bitnami/kafka:*` gagal pull ("not found"), itu karena Bitnami memindahkan image gratisnya ke `bitnamilegacy/*` (lihat komentar di `infra/docker-compose.yml`, sudah di-fix ke `bitnamilegacy/kafka:3.7.1`).
+   **Penting**: kalau restart `audit-service` setelah Kafka baru naik, restart SEKALI LAGI kalau consumer group-nya baru saja subscribe topic yang baru saja auto-created (lihat Known Issues #4) — assignment pertama bisa miss topic yang belum ada saat join.
 3. **Backend — 13 service Go**, masing-masing `go run ./cmd/server` di foldernya:
    | Service | Path | Port |
    |---|---|---|
@@ -68,13 +69,17 @@ for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092; do
 
 ## ⚠️ Known Issues / Perlu Perhatian
 
-1. **Docker Desktop error di mesin ini** (`pipe error 500`) — sudah didokumentasikan lama di `infra/README.md`, bukan hal baru. Kafka/Redis/MinIO/ClickHouse belum pernah benar-benar dites sepanjang sesi ini. Kalau mau tes alur Kafka (audit trail masuk ke `audit_logs`), perbaiki Docker dulu, lalu restart `audit-service` supaya consumer reconnect.
-2. **Sempat terdeteksi proses lain yang aktif menulis file & menjalankan service** di awal sesi ini (pola `internal/handler`+`repository`+`router`+`service`, beda dari pola yang dipakai sesi ini yaitu `internal/httpapi`+`store`+`eventbus`). User mengonfirmasi untuk lanjut pakai implementasi sesi ini; implementasi paralel tsb di-backup (bukan dihapus permanen dari disk manapun kecuali working tree) ke:
+1. ~~Docker Desktop error di mesin ini~~ — **update 2026-07-12: Docker ternyata sehat sesi ini**, `docker compose up -d` di `infra/` jalan bersih (Kafka, Redis, MinIO, ClickHouse, Kafka UI semua Up & reachable). Histori error `pipe error 500` di sesi-sesi sebelumnya kemungkinan besar karena beban memori dari project Docker lain di mesin ini (lihat memory `docker_instability_native_postgres`), bukan kerusakan permanen — coba dulu sebelum asumsi rusak. Dua bug nyata yang ditemukan & sudah di-fix di sesi ini:
+   - `bitnami/kafka:3.7` sudah tidak bisa di-pull gratis (Bitnami memindahkannya ke langganan berbayar per 2025) → diganti `bitnamilegacy/kafka:3.7.1` di `infra/docker-compose.yml`.
+   - `kafka-ui` sebelumnya mapped ke host port **8090**, sekarang bentrok dengan `production-service` milik project ini sendiri (ditambahkan sesi setelah docker-compose ini terakhir diedit) → dipindah ke port **8099**.
+2. **Audit-service consumer group vs topic yang baru auto-created** — kalau `audit-service` di-restart lalu langsung dites dengan event dari topic yang BELUM PERNAH ADA sebelumnya di Kafka (baru auto-create saat consumer join), assignment generasi pertama bisa skip topic itu (event tersimpan di Kafka tapi tidak ke-assign ke consumer manapun, `kafka-consumer-groups.sh --describe` tidak menunjukkan baris untuk topic itu). Fix-nya cukup restart `audit-service` SEKALI LAGI setelah topic-nya sudah pasti ada — assignment generasi kedua akan meng-cover semua topic dengan benar. Ini murni race condition startup, bukan bug di kode `internal/consumer/consumer.go`.
+   Terkait ini, sesi ini juga menambahkan topic modul Warehouse/Production/QC/Asset (`warehouse.*`, `production.*`, `qc.*`, `asset.*`) ke `Topics` list di `backend/services/audit-service/internal/consumer/consumer.go` — sebelumnya cuma topic dari Fase 1 + HR/Sales/Purchasing yang terdaftar, karena belum pernah bisa dites sampai Docker beneran jalan sesi ini.
+3. **Sempat terdeteksi proses lain yang aktif menulis file & menjalankan service** di awal sesi ini (pola `internal/handler`+`repository`+`router`+`service`, beda dari pola yang dipakai sesi ini yaitu `internal/httpapi`+`store`+`eventbus`). User mengonfirmasi untuk lanjut pakai implementasi sesi ini; implementasi paralel tsb di-backup (bukan dihapus permanen dari disk manapun kecuali working tree) ke:
    ```
    C:\Users\rifqi\AppData\Local\Temp\claude\C--xampp7-4-htdocs-Enterprise-Digital-Platform\3c0fee6f-b631-4b9e-aee7-e6df0ff3786f\scratchpad\parallel-impl-backup\
    ```
    **Ini folder scratchpad sesi (temporary), bisa hilang.** Kalau ternyata itu kerjaan penting dari sesi lain yang belum di-commit, cek folder itu SEGERA di awal sesi besok sebelum scratchpad dibersihkan sistem, atau tanyakan ke user apakah masih relevan.
-3. **Belum ada commit git** — semua pekerjaan (Fase 1 + Finance module) masih di working tree, belum di-`git add`/`commit`. `git status` di root masih akan menunjukkan semuanya untracked. Pertimbangkan commit checkpoint di awal sesi besok (tanya user dulu, jangan commit otomatis).
+4. ~~Belum ada commit git~~ — sudah tidak relevan, semua pekerjaan sudah di-commit bertahap per modul (lihat tabel Git di atas).
 
 ---
 

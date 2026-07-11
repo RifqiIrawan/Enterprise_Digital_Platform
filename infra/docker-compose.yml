@@ -46,7 +46,11 @@ services:
       - edp-network
 
   kafka:
-    image: bitnami/kafka:3.7
+    # bitnami/kafka:3.7 was pulled behind Broadcom's paid Bitnami Secure
+    # Images subscription in 2025; bitnamilegacy/kafka is the frozen
+    # (unmaintained but still free) snapshot of the old free tags -- fine
+    # for local dev, same image/env var shape as before.
+    image: bitnamilegacy/kafka:3.7.1
     ports:
       - "9092:9092"
     environment:
@@ -70,6 +74,6 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
     ports:
-      - "8090:8080"
+      - "8099:8080"   # host 8090 clashes with production-service (backend/modules/production-service)
     networks:
       - edp-network
