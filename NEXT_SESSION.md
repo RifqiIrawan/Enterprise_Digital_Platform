@@ -16,10 +16,11 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — Warehouse module** (products, warehouses, stock balance/movement, stock transfer, stock opname; PO RECEIVED → stock in, SO FULFILLED → stock out) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — Production module** (Bill of Material, Work Order draft→in_progress→completed, jadwal produksi; WO COMPLETED → konsumsi komponen & tambah produk jadi di stock) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — QC module** (Standar Mutu per produk, Inspeksi Kualitas dengan hasil PASS/FAIL/PARTIAL otomatis, opsional terhubung ke PO/Work Order) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
-| **Fase 2 — Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
+| **Fase 2 — Asset module** (Pendataan Aset, Maintenance Schedule dengan overdue indicator, complete/cancel) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
+| **Fase 2 — AI & BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`). **Ini modul terakhir Fase 2** — lihat catatan khusus di "Next Steps" sebelum mulai, kemungkinan besar butuh pendekatan beda dari modul CRUD transaksional lainnya. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ❌ Belum bisa dites — Docker Desktop error di mesin ini (lihat "Known Issues") |
-| Git | ✅ 6 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok), `7590cd5` (Warehouse), `c0e600b` (Production). QC module belum di-commit (lihat bawah). Belum ada remote. |
+| Git | ✅ 7 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok), `7590cd5` (Warehouse), `c0e600b` (Production), `b08a005` (QC). Asset module belum di-commit (lihat bawah). Belum ada remote. |
 
 ---
 
@@ -32,7 +33,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    docker compose up -d
    ```
    Kalau Docker Desktop error (`pipe error 500` / `request returned 500 Internal Server Error`), restart Docker Desktop dulu. Semua service Go **tetap bisa jalan tanpa ini** — publish/consume Kafka didesain best-effort (gagal → log warning, tidak crash).
-3. **Backend — 12 service Go**, masing-masing `go run ./cmd/server` di foldernya:
+3. **Backend — 13 service Go**, masing-masing `go run ./cmd/server` di foldernya:
    | Service | Path | Port |
    |---|---|---|
    | api-gateway | `backend/services/api-gateway` | 8079 |
@@ -47,8 +48,9 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    | warehouse-service | `backend/modules/warehouse-service` | 8089 |
    | production-service | `backend/modules/production-service` | 8090 |
    | qc-service | `backend/modules/qc-service` | 8091 |
+   | asset-service | `backend/modules/asset-service` | 8092 |
 
-   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`, `warehouse_service`, `production_service`, `qc_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`).
+   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`, `warehouse_service`, `production_service`, `qc_service`, `asset_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`).
 4. **Frontend**:
    ```
    cd frontend/web
@@ -59,7 +61,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 
 Cek cepat semua service hidup:
 ```bash
-for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091; do curl -s http://localhost:$port/health; echo; done
+for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092; do curl -s http://localhost:$port/health; echo; done
 ```
 
 ---
@@ -87,6 +89,7 @@ Supaya pagination DataTable kelihatan, ditambahkan data dummy lewat API (bukan m
 - Warehouse module (dari verifikasi end-to-end Playwright sesi ini): 2 gudang (`WH-A` Gudang Utama A, `WH-B` Gudang Cabang B), 1 produk (`SKU-TEST-01` Produk Uji Coba), 1 PO diterima (10 pcs masuk ke WH-A), 1 SO di-fulfill (3 pcs keluar dari WH-A), 1 stock transfer WH-A→WH-B (2 pcs, CONFIRMED), 1 stock opname di WH-A (disesuaikan ke 100 pcs, POSTED). Saldo akhir WH-A = 100 pcs setelah opname (bukan hasil hitung fisik asli, cuma angka tes) — jangan bingung kalau demo ke user, cukup jelaskan ini data uji coba.
 - Production module (dari verifikasi end-to-end Playwright sesi ini): 2 produk tambahan (`SKU-RAW-01` Bahan Baku X, `SKU-FG-01` Barang Jadi Y), 1 BOM (`BOM-01` Resep Barang Jadi Y, 2x Bahan Baku X per unit), 1 work order (`WO-202607-0001`, rencana 10 pcs, COMPLETED) — hasil akhir di WH-A: Bahan Baku X 100→80 pcs (terpakai 20), Barang Jadi Y 0→10 pcs (hasil produksi).
 - QC module (dari verifikasi end-to-end Playwright sesi ini): 1 standar mutu (`QS-01` Standar Barang Jadi Y), 3 inspeksi — `INS-202607-0001` terhubung ke `WO-202607-0001` (10 diperiksa, 8 lolos, 2 gagal → PARTIAL), `INS-202607-0002` terhubung ke `PO-202607-0001` (5/5/0 → PASS), `INS-202607-0003` manual (3/0/3 → FAIL). Tidak ada mutasi stok otomatis dari inspeksi ini (sesuai keputusan produk).
+- Asset module (dari verifikasi end-to-end Playwright sesi ini): 1 aset (`AST-01` Forklift Toyota 3 Ton, lokasi WH-A, status ACTIVE), 2 jadwal maintenance — satu tanggal mundur (diselesaikan → COMPLETED, `completed_date` terisi otomatis), satu tanggal maju (dibatalkan → CANCELLED, untuk uji alur cancel).
 
 Semua ini valid & aman untuk terus dipakai / didemokan, bukan data korup.
 
@@ -124,13 +127,16 @@ Frontend, per halaman list baru:
 
 ## Next Steps (rekomendasi)
 
-HR, Sales, Purchasing, Warehouse, Production, dan QC sudah selesai (lihat tabel status di atas). Modul Fase 2 berikutnya, urutan disarankan:
-1. **Asset** — pendataan aset, maintenance schedule. Modul terakhir sebelum AI/BI. Kemungkinan lebih berdiri sendiri dibanding modul lain (aset fisik perusahaan, bukan barang dagangan/bahan baku) — kemungkinan besar TIDAK perlu terhubung ke product master di warehouse-service, cukup master aset sendiri + jadwal maintenance dengan tanggal jatuh tempo berikutnya.
-2. Setelah Asset selesai, seluruh modul Fase 2 (Finance/HR/Sales/Purchasing/Warehouse/Production/QC/Asset) lengkap — sisanya AI & BI kemungkinan besar butuh pendekatan berbeda (baca data dari semua service lain untuk dashboard/forecasting, bukan CRUD transaksional biasa), pertimbangkan diskusikan dulu scope-nya dengan user sebelum mulai.
+HR, Sales, Purchasing, Warehouse, Production, QC, dan Asset sudah selesai (lihat tabel status di atas). **Seluruh modul Fase 2 yang bersifat CRUD transaksional sudah lengkap.** Sisa satu modul: **AI & BI**.
+
+⚠️ **PENTING — jangan langsung scaffold AI/BI dengan pola yang sama seperti 8 modul sebelumnya.** Menu yang sudah di-seed (`dashboards` /ai-bi/dashboards, `forecasting` /ai-bi/forecasting, `anomaly_detection` /ai-bi/anomaly-detection — lihat 003_seed_business_menus.sql) itu indikatif dari awal proyek, belum tentu representasi scope yang benar. AI/BI secara sifat beda dari modul lain:
+- Modul lain masing-masing "memiliki" datanya sendiri (tabel transaksi + master di database sendiri). AI/BI sebaliknya *tidak* punya data transaksi sendiri — tugasnya membaca/agregasi data dari 8 service lain (finance, hr, sales, purchasing, warehouse, production, qc, asset) untuk ditampilkan sebagai dashboard/forecast/anomaly.
+- Pertanyaan yang perlu dijawab dulu bersama user sebelum coding: apakah ai-bi-service query langsung ke database service lain (melanggar "no cross-database FK/query" tapi read-only mungkin bisa diterima?), atau lewat HTTP call ke tiap service (lambat kalau agregasi berat), atau butuh semacam data warehouse/materialized view terpisah? Forecasting & anomaly detection juga menyiratkan komputasi (statistik/ML) yang jauh beda dari CRUD+state-transition yang selama ini dipakai.
+- Rekomendasi: mulai sesi berikutnya dengan **bertanya ke user** scope realistis untuk sesi ini (mis. "BI Dashboards" saja dulu sebagai read-only aggregation view, tunda forecasting/anomaly yang butuh ML), sebelum menulis kode apa pun.
 
 Sebelum mulai modul baru, cek dulu apakah proses lain (lihat Known Issues #2) sudah/sedang mengerjakan modul yang sama — hindari tabrakan file/port seperti awal sesi lalu.
 
-### Pola cross-service posting (HR, Sales, Purchasing, Warehouse, & Production pakai ini; QC sengaja TIDAK)
+### Pola cross-service posting (HR, Sales, Purchasing, Warehouse, & Production pakai ini; QC & Asset sengaja TIDAK)
 
 Kalau modul baru butuh membuat journal entry / invoice di finance-service, ikuti pola `internal/financeclient` di `hr-service` (posting payroll ke journal entry), `sales-service` (posting sales order ke invoice AR), atau `purchasing-service` (posting purchase order ke invoice AP):
 - Panggilan HTTP langsung ke `FINANCE_SERVICE_URL` (bukan lewat api-gateway), karena finance-service tidak validasi JWT.
@@ -167,3 +173,13 @@ Pola yang sama persis dipakai untuk stock movement lewat `internal/warehouseclie
 - `reference_type` (`PURCHASE_ORDER`/`WORK_ORDER`/`MANUAL`) + `reference_id` + `reference_number` bersifat opsional & informational saja (tanpa FK fisik) — `reference_number` (mis. nomor PO/WO) disimpan sebagai teks bebas di baris inspeksi supaya list bisa tampil tanpa perlu manggil purchasing-service/production-service lagi. Frontend (`QualityInspectionsPage.jsx`) yang bertugas mengambil daftar PO/WO dari service masing-masing untuk dropdown referensi.
 - Menu RBAC (`inspections`, `quality_standards`) sudah ada dari seed lama (003/004/005/006 rbac-service) — tidak perlu migration baru untuk QC, sama seperti Production.
 - Sudah diverifikasi end-to-end pakai Playwright (login → buat standar mutu untuk Barang Jadi Y → catat 3 inspeksi: satu terhubung ke Work Order dengan sebagian gagal → PARTIAL, satu terhubung ke Purchase Order semua lolos → PASS, satu manual semua gagal → FAIL) — hasil PASS/FAIL/PARTIAL dan link referensi tampil benar, tanpa error.
+
+### Asset module — detail implementasi (untuk konteks kalau ada bug/lanjutan)
+
+- `assets` dan `maintenance_schedules` hidup di `asset-service` (baru, port 8092, db `asset_service`). Beda dari semua modul lain, Asset **tidak melibatkan product master maupun stock sama sekali** — aset fisik perusahaan (mesin, kendaraan, dst), bukan barang dagangan/bahan baku.
+- `assets.warehouse_id` sengaja opsional & informational-only (lokasi fisik aset ditaruh di gudang mana) — TIDAK memicu apa pun di warehouse-service, tidak ada stock_movements terkait. Frontend cukup fetch `/api/warehouse/warehouses` untuk dropdown lokasi, sama seperti pola pemilihan warehouse di halaman lain.
+- `maintenance_schedules` pakai FK fisik biasa ke `assets` (bukan pola "tanpa FK lintas database") karena satu database yang sama — beda dengan referensi lintas-service (mis. QC ke PO/WO) yang memang harus tanpa FK.
+- Alur status maintenance: `SCHEDULED` → `POST .../complete` (isi `completed_date` otomatis ke tanggal hari itu) atau `POST .../cancel` → `COMPLETED`/`CANCELLED` (final, tidak ada balik lagi). Saat `complete`, ada bonus side-effect kecil: kalau `assets.status` sedang `MAINTENANCE`, otomatis dikembalikan ke `ACTIVE` dalam transaksi yang sama (no-op kalau status aset bukan `MAINTENANCE`) — tidak ada langkah otomatis yang MENGUBAH status aset ke `MAINTENANCE` saat schedule dibuat (itu manual lewat edit aset), supaya tidak ada "sihir" yang membingungkan.
+- "Overdue" (jadwal yang tanggalnya sudah lewat tapi masih `SCHEDULED`) dihitung di frontend saat render (`MaintenanceSchedulePage.jsx`), bukan status tersendiri di database — menghindari kebutuhan job terjadwal untuk memperbarui status.
+- Menu RBAC (`asset_register`, `asset_maintenance`) sudah ada dari seed lama (003/004/005/006 rbac-service) — tidak perlu migration baru, sama seperti Production & QC.
+- Sudah diverifikasi end-to-end pakai Playwright (login → buat aset dengan lokasi gudang → jadwalkan maintenance tanggal mundur & tanggal maju → selesaikan yang tanggal mundur (cek completed_date & indikator overdue) → batalkan yang tanggal maju → cek status aset) — semua transisi jalan tanpa error.

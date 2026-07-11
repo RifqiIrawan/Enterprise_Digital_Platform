@@ -13,4 +13,5 @@ use (
 	./modules/warehouse-service
 	./modules/production-service
 	./modules/qc-service
+	./modules/asset-service
 )

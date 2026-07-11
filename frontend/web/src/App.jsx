@@ -30,6 +30,8 @@ import WorkOrdersPage from './pages/production/WorkOrdersPage.jsx'
 import ProductionSchedulePage from './pages/production/ProductionSchedulePage.jsx'
 import QualityStandardsPage from './pages/qc/QualityStandardsPage.jsx'
 import QualityInspectionsPage from './pages/qc/QualityInspectionsPage.jsx'
+import AssetRegisterPage from './pages/asset/AssetRegisterPage.jsx'
+import MaintenanceSchedulePage from './pages/asset/MaintenanceSchedulePage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -79,6 +81,8 @@ function App() {
         <Route path="/production/schedule" element={<ProductionSchedulePage />} />
         <Route path="/qc/standards" element={<QualityStandardsPage />} />
         <Route path="/qc/inspections" element={<QualityInspectionsPage />} />
+        <Route path="/asset/register" element={<AssetRegisterPage />} />
+        <Route path="/asset/maintenance" element={<MaintenanceSchedulePage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>
