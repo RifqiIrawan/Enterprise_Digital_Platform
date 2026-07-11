@@ -12,4 +12,5 @@ use (
 	./services/rbac-service
 	./modules/warehouse-service
 	./modules/production-service
+	./modules/qc-service
 )

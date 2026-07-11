@@ -28,6 +28,8 @@ import StockOpnamePage from './pages/warehouse/StockOpnamePage.jsx'
 import BomPage from './pages/production/BomPage.jsx'
 import WorkOrdersPage from './pages/production/WorkOrdersPage.jsx'
 import ProductionSchedulePage from './pages/production/ProductionSchedulePage.jsx'
+import QualityStandardsPage from './pages/qc/QualityStandardsPage.jsx'
+import QualityInspectionsPage from './pages/qc/QualityInspectionsPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -75,6 +77,8 @@ function App() {
         <Route path="/production/bom" element={<BomPage />} />
         <Route path="/production/work-orders" element={<WorkOrdersPage />} />
         <Route path="/production/schedule" element={<ProductionSchedulePage />} />
+        <Route path="/qc/standards" element={<QualityStandardsPage />} />
+        <Route path="/qc/inspections" element={<QualityInspectionsPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>
