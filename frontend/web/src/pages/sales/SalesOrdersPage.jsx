@@ -22,6 +22,7 @@ function SalesOrdersPage() {
   const [companyId, setCompanyId] = useState('')
   const [customers, setCustomers] = useState([])
   const [accounts, setAccounts] = useState([])
+  const [warehouses, setWarehouses] = useState([])
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -36,6 +37,11 @@ function SalesOrdersPage() {
   const [invoiceForm, setInvoiceForm] = useState({ revenue_account_id: '', control_account_id: '', tax_account_id: '' })
   const [invoiceError, setInvoiceError] = useState('')
   const [invoiceSaving, setInvoiceSaving] = useState(false)
+
+  const [fulfillingOrder, setFulfillingOrder] = useState(null)
+  const [fulfillForm, setFulfillForm] = useState({ warehouse_id: '' })
+  const [fulfillError, setFulfillError] = useState('')
+  const [fulfillSaving, setFulfillSaving] = useState(false)
 
   function loadOrders(cid) {
     setLoading(true)
@@ -56,6 +62,7 @@ function SalesOrdersPage() {
           loadOrders(cid)
           apiClient.get('/api/sales/customers', { params: { company_id: cid } }).then(({ data }) => setCustomers(data))
           apiClient.get('/api/finance/accounts', { params: { company_id: cid } }).then(({ data }) => setAccounts(data))
+          apiClient.get('/api/warehouse/warehouses', { params: { company_id: cid } }).then(({ data }) => setWarehouses(data))
         } else {
           setLoading(false)
         }
@@ -122,6 +129,27 @@ function SalesOrdersPage() {
     }
   }
 
+  function openFulfill(order) {
+    setFulfillingOrder(order)
+    setFulfillForm({ warehouse_id: '' })
+    setFulfillError('')
+  }
+
+  async function handleFulfill(e) {
+    e.preventDefault()
+    setFulfillSaving(true)
+    setFulfillError('')
+    try {
+      await apiClient.post(`/api/sales/sales-orders/${fulfillingOrder.id}/fulfill`, fulfillForm)
+      setFulfillingOrder(null)
+      loadOrders(companyId)
+    } catch (err) {
+      setFulfillError(err.response?.data?.error ?? 'Gagal memproses pengiriman barang')
+    } finally {
+      setFulfillSaving(false)
+    }
+  }
+
   function openInvoice(order) {
     setInvoicingOrder(order)
     setInvoiceForm({ revenue_account_id: '', control_account_id: '', tax_account_id: '' })
@@ -178,7 +206,7 @@ function SalesOrdersPage() {
             </button>
           )}
           {o.status === 'CONFIRMED' && (
-            <button type="button" className="btn btn-sm btn-outline-warning" disabled={actingId === o.id} onClick={() => handleAction(o.id, 'fulfill')}>
+            <button type="button" className="btn btn-sm btn-outline-warning" disabled={actingId === o.id} onClick={() => openFulfill(o)}>
               Fulfill
             </button>
           )}
@@ -336,6 +364,44 @@ function SalesOrdersPage() {
                   </tfoot>
                 </table>
               </div>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {fulfillingOrder && (
+        <Modal
+          title={`Fulfill ${fulfillingOrder.so_number}`}
+          onClose={() => setFulfillingOrder(null)}
+          footer={
+            <>
+              <button type="button" className="btn btn-outline-secondary" onClick={() => setFulfillingOrder(null)}>
+                Batal
+              </button>
+              <button type="submit" form="fulfill-so-form" className="btn btn-primary" disabled={fulfillSaving}>
+                {fulfillSaving ? 'Memproses...' : 'Fulfill'}
+              </button>
+            </>
+          }
+        >
+          <form id="fulfill-so-form" onSubmit={handleFulfill} className="d-flex flex-column gap-3">
+            {fulfillError && <div className="alert alert-danger py-2 small mb-0">{fulfillError}</div>}
+            <div className="text-secondary small">
+              Stok keluar akan dicatat otomatis di warehouse-service untuk seluruh baris SO ini.
+            </div>
+            <div>
+              <label className="form-label">Gudang Pengirim</label>
+              <select
+                className="form-select"
+                value={fulfillForm.warehouse_id}
+                onChange={(e) => setFulfillForm({ ...fulfillForm, warehouse_id: e.target.value })}
+                required
+              >
+                <option value="">Pilih gudang...</option>
+                {warehouses.map((wh) => (
+                  <option key={wh.id} value={wh.id}>{wh.code} - {wh.name}</option>
+                ))}
+              </select>
             </div>
           </form>
         </Modal>

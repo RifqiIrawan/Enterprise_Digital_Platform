@@ -8,47 +8,47 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/enterprise-digital-platform/sales-service/internal/eventbus"
-	"github.com/enterprise-digital-platform/sales-service/internal/financeclient"
-	"github.com/enterprise-digital-platform/sales-service/internal/warehouseclient"
+	"github.com/enterprise-digital-platform/warehouse-service/internal/eventbus"
 )
 
 type Handler struct {
-	pool      *pgxpool.Pool
-	events    *eventbus.Publisher
-	finance   *financeclient.Client
-	warehouse *warehouseclient.Client
+	pool   *pgxpool.Pool
+	events *eventbus.Publisher
 }
 
-func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher, finance *financeclient.Client, warehouse *warehouseclient.Client) *Handler {
-	return &Handler{pool: pool, events: events, finance: finance, warehouse: warehouse}
+func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher) *Handler {
+	return &Handler{pool: pool, events: events}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
 
-	mux.HandleFunc("GET /customers", h.listCustomers)
-	mux.HandleFunc("POST /customers", h.createCustomer)
-	mux.HandleFunc("PUT /customers/{id}", h.updateCustomer)
+	mux.HandleFunc("GET /products", h.listProducts)
+	mux.HandleFunc("POST /products", h.createProduct)
+	mux.HandleFunc("PUT /products/{id}", h.updateProduct)
 
-	mux.HandleFunc("GET /quotations", h.listQuotations)
-	mux.HandleFunc("POST /quotations", h.createQuotation)
-	mux.HandleFunc("GET /quotations/{id}", h.getQuotation)
-	mux.HandleFunc("POST /quotations/{id}/send", h.sendQuotation)
-	mux.HandleFunc("POST /quotations/{id}/accept", h.acceptQuotation)
-	mux.HandleFunc("POST /quotations/{id}/reject", h.rejectQuotation)
-	mux.HandleFunc("POST /quotations/{id}/convert", h.convertQuotation)
+	mux.HandleFunc("GET /warehouses", h.listWarehouses)
+	mux.HandleFunc("POST /warehouses", h.createWarehouse)
+	mux.HandleFunc("PUT /warehouses/{id}", h.updateWarehouse)
 
-	mux.HandleFunc("GET /sales-orders", h.listSalesOrders)
-	mux.HandleFunc("POST /sales-orders", h.createSalesOrder)
-	mux.HandleFunc("GET /sales-orders/{id}", h.getSalesOrder)
-	mux.HandleFunc("POST /sales-orders/{id}/confirm", h.confirmSalesOrder)
-	mux.HandleFunc("POST /sales-orders/{id}/fulfill", h.fulfillSalesOrder)
-	mux.HandleFunc("POST /sales-orders/{id}/invoice", h.invoiceSalesOrder)
+	mux.HandleFunc("GET /stock", h.listStockBalances)
+	mux.HandleFunc("GET /stock-movements", h.listStockMovements)
+	mux.HandleFunc("POST /stock-movements", h.createManualStockMovement)
+	mux.HandleFunc("POST /stock-movements/batch", h.postStockMovementBatch)
+
+	mux.HandleFunc("GET /stock-transfers", h.listStockTransfers)
+	mux.HandleFunc("POST /stock-transfers", h.createStockTransfer)
+	mux.HandleFunc("GET /stock-transfers/{id}", h.getStockTransfer)
+	mux.HandleFunc("POST /stock-transfers/{id}/confirm", h.confirmStockTransfer)
+
+	mux.HandleFunc("GET /stock-opnames", h.listStockOpnames)
+	mux.HandleFunc("POST /stock-opnames", h.createStockOpname)
+	mux.HandleFunc("GET /stock-opnames/{id}", h.getStockOpname)
+	mux.HandleFunc("POST /stock-opnames/{id}/post", h.postStockOpname)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "sales-service"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "service": "warehouse-service"})
 }
 
 // auditEvent adalah amplop event yang dipublikasikan ke Kafka dan dikonsumsi
@@ -70,7 +70,7 @@ func newAuditEvent(eventType string, actorUserID, companyID *string, action, ent
 	return auditEvent{
 		EventID:       uuid.NewString(),
 		EventType:     eventType,
-		SourceService: "sales-service",
+		SourceService: "warehouse-service",
 		OccurredAt:    time.Now(),
 		ActorUserID:   actorUserID,
 		CompanyID:     companyID,
@@ -86,13 +86,6 @@ func actorFromHeader(r *http.Request) *string {
 		return &v
 	}
 	return nil
-}
-
-func headerValue(v *string) string {
-	if v == nil {
-		return ""
-	}
-	return *v
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

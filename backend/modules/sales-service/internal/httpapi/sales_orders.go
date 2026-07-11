@@ -12,6 +12,7 @@ import (
 
 	"github.com/enterprise-digital-platform/sales-service/internal/financeclient"
 	"github.com/enterprise-digital-platform/sales-service/internal/model"
+	"github.com/enterprise-digital-platform/sales-service/internal/warehouseclient"
 )
 
 const salesOrderColumns = `id, company_id, branch_id, so_number, customer_id, quotation_id, order_date, status, subtotal_amount, tax_amount, total_amount, invoice_id, created_at, updated_at`
@@ -204,8 +205,83 @@ func (h *Handler) confirmSalesOrder(w http.ResponseWriter, r *http.Request) {
 	h.transitionSalesOrder(w, r, "DRAFT", "CONFIRMED", "sales.order.confirmed")
 }
 
+type fulfillSalesOrderRequest struct {
+	WarehouseID string `json:"warehouse_id"`
+}
+
+// fulfillSalesOrder mencatat stok keluar di warehouse-service (lihat
+// internal/warehouseclient) sebelum mengubah status SO ke FULFILLED --
+// panggilan warehouse-service dulu, baru update status lokal setelah sukses,
+// konsisten dengan pola invoiceSalesOrder saat memanggil finance-service.
 func (h *Handler) fulfillSalesOrder(w http.ResponseWriter, r *http.Request) {
-	h.transitionSalesOrder(w, r, "CONFIRMED", "FULFILLED", "sales.order.fulfilled")
+	id := r.PathValue("id")
+	actor := actorFromHeader(r)
+	ctx := r.Context()
+
+	var req fulfillSalesOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Payload tidak valid")
+		return
+	}
+	if req.WarehouseID == "" {
+		writeError(w, http.StatusBadRequest, "warehouse_id wajib diisi")
+		return
+	}
+
+	var so model.SalesOrder
+	err := scanSalesOrder(h.pool.QueryRow(ctx, `SELECT `+salesOrderColumns+` FROM sales_orders WHERE id = $1`, id), &so)
+	if err == pgx.ErrNoRows {
+		writeError(w, http.StatusNotFound, "Sales order tidak ditemukan")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memuat sales order")
+		return
+	}
+	if so.Status != "CONFIRMED" {
+		writeError(w, http.StatusConflict, "Sales order tidak ditemukan atau tidak berstatus CONFIRMED")
+		return
+	}
+
+	lines, err := h.fetchSalesOrderLines(ctx, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memuat baris sales order")
+		return
+	}
+
+	warehouseLines := make([]warehouseclient.MovementLineInput, 0, len(lines))
+	for _, l := range lines {
+		warehouseLines = append(warehouseLines, warehouseclient.MovementLineInput{
+			ProductName: l.ProductName,
+			Quantity:    l.Quantity,
+		})
+	}
+
+	err = h.warehouse.PostMovementBatch(headerValue(actor), warehouseclient.PostMovementBatchRequest{
+		CompanyID:     so.CompanyID,
+		BranchID:      so.BranchID,
+		WarehouseID:   req.WarehouseID,
+		MovementType:  "OUT",
+		ReferenceType: "SALES_ORDER",
+		ReferenceID:   so.ID,
+		Notes:         "Pengiriman " + so.SONumber,
+		MovementDate:  so.OrderDate.Format("2006-01-02"),
+		Lines:         warehouseLines,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Gagal mencatat stok keluar di warehouse-service: %v", err))
+		return
+	}
+
+	err = scanSalesOrder(h.pool.QueryRow(ctx, `
+		UPDATE sales_orders SET status = 'FULFILLED', updated_at = now() WHERE id = $1 AND status = 'CONFIRMED'
+		RETURNING `+salesOrderColumns, id), &so)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Stok berhasil dicatat di warehouse-service, tetapi gagal memperbarui status sales order lokal")
+		return
+	}
+
+	h.events.Publish("sales.order.fulfilled", newAuditEvent("sales.order.fulfilled", actor, &so.CompanyID, "update", "sales_order", so.ID, so))
+	writeJSON(w, http.StatusOK, so)
 }
 
 type invoiceSalesOrderRequest struct {

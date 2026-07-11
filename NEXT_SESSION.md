@@ -13,10 +13,11 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — HR module** (employees, attendance, payroll + posting ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
 | **Fase 2 — Sales module** (customers, quotations, sales orders + invoice AR ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
 | **Fase 2 — Purchasing module** (suppliers, requisitions, purchase orders + invoice AP ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
-| **Fase 2 — Warehouse, Production, QC, Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
+| **Fase 2 — Warehouse module** (products, warehouses, stock balance/movement, stock transfer, stock opname; PO RECEIVED → stock in, SO FULFILLED → stock out) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
+| **Fase 2 — Production, QC, Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ❌ Belum bisa dites — Docker Desktop error di mesin ini (lihat "Known Issues") |
-| Git | ✅ 4 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing). Belum ada remote. |
+| Git | ✅ 4 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok). Warehouse module belum di-commit (lihat bawah). Belum ada remote. |
 
 ---
 
@@ -29,7 +30,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    docker compose up -d
    ```
    Kalau Docker Desktop error (`pipe error 500` / `request returned 500 Internal Server Error`), restart Docker Desktop dulu. Semua service Go **tetap bisa jalan tanpa ini** — publish/consume Kafka didesain best-effort (gagal → log warning, tidak crash).
-3. **Backend — 9 service Go**, masing-masing `go run ./cmd/server` di foldernya:
+3. **Backend — 10 service Go**, masing-masing `go run ./cmd/server` di foldernya:
    | Service | Path | Port |
    |---|---|---|
    | api-gateway | `backend/services/api-gateway` | 8079 |
@@ -41,8 +42,9 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    | hr-service | `backend/modules/hr-service` | 8086 |
    | sales-service | `backend/modules/sales-service` | 8087 |
    | purchasing-service | `backend/modules/purchasing-service` | 8088 |
+   | warehouse-service | `backend/modules/warehouse-service` | 8089 |
 
-   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`).
+   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`, `warehouse_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`).
 4. **Frontend**:
    ```
    cd frontend/web
@@ -53,7 +55,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 
 Cek cepat semua service hidup:
 ```bash
-for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088; do curl -s http://localhost:$port/health; echo; done
+for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089; do curl -s http://localhost:$port/health; echo; done
 ```
 
 ---
@@ -78,6 +80,7 @@ Supaya pagination DataTable kelihatan, ditambahkan data dummy lewat API (bukan m
 - 11 Invoices (5 AR + 5 AP dummy partner, 1 invoice AR asli yang sudah di-post lengkap ke GL)
 - 14 Users (termasuk `budi@edp.local` dan 10 user dummy nama Indonesia)
 - 14 Roles (13 role sistem bawaan + 1 custom "Finance Viewer" hasil testing)
+- Warehouse module (dari verifikasi end-to-end Playwright sesi ini): 2 gudang (`WH-A` Gudang Utama A, `WH-B` Gudang Cabang B), 1 produk (`SKU-TEST-01` Produk Uji Coba), 1 PO diterima (10 pcs masuk ke WH-A), 1 SO di-fulfill (3 pcs keluar dari WH-A), 1 stock transfer WH-A→WH-B (2 pcs, CONFIRMED), 1 stock opname di WH-A (disesuaikan ke 100 pcs, POSTED). Saldo akhir WH-A = 100 pcs setelah opname (bukan hasil hitung fisik asli, cuma angka tes) — jangan bingung kalau demo ke user, cukup jelaskan ini data uji coba.
 
 Semua ini valid & aman untuk terus dipakai / didemokan, bukan data korup.
 
@@ -115,15 +118,26 @@ Frontend, per halaman list baru:
 
 ## Next Steps (rekomendasi)
 
-HR, Sales, dan Purchasing sudah selesai (lihat tabel status di atas). Modul Fase 2 berikutnya, urutan disarankan:
-1. **Warehouse** — stok gudang, mutasi antar branch, stock opname. Beda dari 3 modul sebelumnya: ini modul pertama yang butuh konsep "stock movement" (in/out/transfer) dan kemungkinan terhubung ke Purchasing (PO RECEIVED → stock masuk) & Sales (SO FULFILLED → stock keluar), bukan cuma ke finance-service. Belum ada product master tersendiri (masih `product_name` teks bebas di sales/purchasing), jadi Warehouse kemungkinan jadi tempat pertama yang butuh mikirkan itu.
-2. Sisanya (Production, QC, Asset, AI, BI) menyusul.
+HR, Sales, Purchasing, dan Warehouse sudah selesai (lihat tabel status di atas). Modul Fase 2 berikutnya, urutan disarankan:
+1. **Production** — work order, bill of material, jadwal produksi. Kemungkinan konsumen terbesar dari product master & stock movement yang baru dibangun di Warehouse: BOM butuh referensi ke `products` (warehouse-service), dan penyelesaian work order kemungkinan perlu stock OUT (bahan baku) + stock IN (barang jadi) lewat pola `internal/warehouseclient` yang sudah ada di purchasing-service/sales-service (lihat bawah).
+2. Sisanya (QC, Asset, AI, BI) menyusul.
 
 Sebelum mulai modul baru, cek dulu apakah proses lain (lihat Known Issues #2) sudah/sedang mengerjakan modul yang sama — hindari tabrakan file/port seperti awal sesi lalu.
 
-### Pola cross-service posting (HR, Sales, & Purchasing sudah pakai ini)
+### Pola cross-service posting (HR, Sales, Purchasing, & Warehouse sudah pakai ini)
 
 Kalau modul baru butuh membuat journal entry / invoice di finance-service, ikuti pola `internal/financeclient` di `hr-service` (posting payroll ke journal entry), `sales-service` (posting sales order ke invoice AR), atau `purchasing-service` (posting purchase order ke invoice AP):
 - Panggilan HTTP langsung ke `FINANCE_SERVICE_URL` (bukan lewat api-gateway), karena finance-service tidak validasi JWT.
 - Header `X-User-Id` diteruskan manual dari actor pemanggil supaya tercatat sebagai `posted_by`/`actor_user_id` yang benar (harus UUID valid, bukan sembarang string).
 - Urutan: panggil finance-service dulu, baru update status lokal setelah sukses (tidak ada distributed transaction, jadi finance-service adalah sumber kebenaran duluan).
+
+Pola yang sama persis dipakai untuk stock movement lewat `internal/warehouseclient` di purchasing-service (PO RECEIVED, movement_type IN) dan sales-service (SO FULFILLED, movement_type OUT), panggil `WAREHOUSE_SERVICE_URL` (default `http://localhost:8089`), endpoint `POST /stock-movements/batch` di warehouse-service. Modul baru yang butuh menggerakkan stok (mis. Production) tinggal copy package `internal/warehouseclient` ini.
+
+### Warehouse module — detail implementasi (untuk konteks kalau ada bug/lanjutan)
+
+- Product master baru pertama kali ada di sesi ini, hidup di `warehouse-service` (tabel `products`), BUKAN shared package. Sales/Purchasing tetap menyimpan `product_name` teks bebas di baris order mereka (tidak diubah) — saat PO RECEIVED/SO FULFILLED, warehouse-service mencocokkan produk lewat `(company_id, name)` dan auto-create produk baru (SKU `AUTO-XXXXXXXX`) kalau belum ada.
+- `stock_balances` adalah saldo ter-materialisasi (bukan SUM dari ledger), di-update transaksional bersamaan tiap insert `stock_movements` lewat helper `applyStockMovement` (`internal/httpapi/stock_movements.go`).
+- Stock transfer & stock opname masing-masing punya baris DRAFT dulu, baru menggerakkan stok beneran saat aksi confirm/post (pola sama seperti PO/SO: draft → transisi status yang baru benar-benar berefek pada data lain).
+- Endpoint `POST /stock-movements/batch` dipanggil service-to-service langsung (bukan lewat api-gateway) oleh purchasing-service/sales-service — sama seperti pola financeclient.
+- Menu RBAC: `stock`, `stock_transfer`, `stock_opname` sudah ada dari seed lama (003-006); menu `products` & `warehouses` baru ditambah migration `008_seed_warehouse_master_menus.sql` sesi ini.
+- Sudah diverifikasi end-to-end pakai Playwright (login → buat gudang/produk → PO Confirm→Terima Barang→cek stok masuk → SO Confirm→Fulfill→cek stok keluar → stock transfer→confirm → stock opname→post) — semua jalan tanpa error, saldo akhir sesuai perhitungan manual.

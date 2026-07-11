@@ -10,16 +10,18 @@ import (
 
 	"github.com/enterprise-digital-platform/purchasing-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/purchasing-service/internal/financeclient"
+	"github.com/enterprise-digital-platform/purchasing-service/internal/warehouseclient"
 )
 
 type Handler struct {
-	pool    *pgxpool.Pool
-	events  *eventbus.Publisher
-	finance *financeclient.Client
+	pool      *pgxpool.Pool
+	events    *eventbus.Publisher
+	finance   *financeclient.Client
+	warehouse *warehouseclient.Client
 }
 
-func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher, finance *financeclient.Client) *Handler {
-	return &Handler{pool: pool, events: events, finance: finance}
+func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher, finance *financeclient.Client, warehouse *warehouseclient.Client) *Handler {
+	return &Handler{pool: pool, events: events, finance: finance, warehouse: warehouse}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {

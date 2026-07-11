@@ -22,6 +22,7 @@ function PurchaseOrdersPage() {
   const [companyId, setCompanyId] = useState('')
   const [suppliers, setSuppliers] = useState([])
   const [accounts, setAccounts] = useState([])
+  const [warehouses, setWarehouses] = useState([])
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -36,6 +37,11 @@ function PurchaseOrdersPage() {
   const [invoiceForm, setInvoiceForm] = useState({ expense_account_id: '', control_account_id: '', tax_account_id: '' })
   const [invoiceError, setInvoiceError] = useState('')
   const [invoiceSaving, setInvoiceSaving] = useState(false)
+
+  const [receivingOrder, setReceivingOrder] = useState(null)
+  const [receiveForm, setReceiveForm] = useState({ warehouse_id: '' })
+  const [receiveError, setReceiveError] = useState('')
+  const [receiveSaving, setReceiveSaving] = useState(false)
 
   function loadOrders(cid) {
     setLoading(true)
@@ -56,6 +62,7 @@ function PurchaseOrdersPage() {
           loadOrders(cid)
           apiClient.get('/api/purchasing/suppliers', { params: { company_id: cid } }).then(({ data }) => setSuppliers(data))
           apiClient.get('/api/finance/accounts', { params: { company_id: cid } }).then(({ data }) => setAccounts(data))
+          apiClient.get('/api/warehouse/warehouses', { params: { company_id: cid } }).then(({ data }) => setWarehouses(data))
         } else {
           setLoading(false)
         }
@@ -122,6 +129,27 @@ function PurchaseOrdersPage() {
     }
   }
 
+  function openReceive(order) {
+    setReceivingOrder(order)
+    setReceiveForm({ warehouse_id: '' })
+    setReceiveError('')
+  }
+
+  async function handleReceive(e) {
+    e.preventDefault()
+    setReceiveSaving(true)
+    setReceiveError('')
+    try {
+      await apiClient.post(`/api/purchasing/purchase-orders/${receivingOrder.id}/receive`, receiveForm)
+      setReceivingOrder(null)
+      loadOrders(companyId)
+    } catch (err) {
+      setReceiveError(err.response?.data?.error ?? 'Gagal menerima barang')
+    } finally {
+      setReceiveSaving(false)
+    }
+  }
+
   function openInvoice(order) {
     setInvoicingOrder(order)
     setInvoiceForm({ expense_account_id: '', control_account_id: '', tax_account_id: '' })
@@ -178,7 +206,7 @@ function PurchaseOrdersPage() {
             </button>
           )}
           {o.status === 'CONFIRMED' && (
-            <button type="button" className="btn btn-sm btn-outline-warning" disabled={actingId === o.id} onClick={() => handleAction(o.id, 'receive')}>
+            <button type="button" className="btn btn-sm btn-outline-warning" disabled={actingId === o.id} onClick={() => openReceive(o)}>
               Terima Barang
             </button>
           )}
@@ -336,6 +364,44 @@ function PurchaseOrdersPage() {
                   </tfoot>
                 </table>
               </div>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {receivingOrder && (
+        <Modal
+          title={`Terima Barang untuk ${receivingOrder.po_number}`}
+          onClose={() => setReceivingOrder(null)}
+          footer={
+            <>
+              <button type="button" className="btn btn-outline-secondary" onClick={() => setReceivingOrder(null)}>
+                Batal
+              </button>
+              <button type="submit" form="receive-po-form" className="btn btn-primary" disabled={receiveSaving}>
+                {receiveSaving ? 'Memproses...' : 'Terima Barang'}
+              </button>
+            </>
+          }
+        >
+          <form id="receive-po-form" onSubmit={handleReceive} className="d-flex flex-column gap-3">
+            {receiveError && <div className="alert alert-danger py-2 small mb-0">{receiveError}</div>}
+            <div className="text-secondary small">
+              Stok masuk akan dicatat otomatis di warehouse-service untuk seluruh baris PO ini.
+            </div>
+            <div>
+              <label className="form-label">Gudang Penerima</label>
+              <select
+                className="form-select"
+                value={receiveForm.warehouse_id}
+                onChange={(e) => setReceiveForm({ ...receiveForm, warehouse_id: e.target.value })}
+                required
+              >
+                <option value="">Pilih gudang...</option>
+                {warehouses.map((wh) => (
+                  <option key={wh.id} value={wh.id}>{wh.code} - {wh.name}</option>
+                ))}
+              </select>
             </div>
           </form>
         </Modal>

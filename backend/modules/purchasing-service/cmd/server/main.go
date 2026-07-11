@@ -10,6 +10,7 @@ import (
 	"github.com/enterprise-digital-platform/purchasing-service/internal/financeclient"
 	"github.com/enterprise-digital-platform/purchasing-service/internal/httpapi"
 	"github.com/enterprise-digital-platform/purchasing-service/internal/store"
+	"github.com/enterprise-digital-platform/purchasing-service/internal/warehouseclient"
 	"github.com/enterprise-digital-platform/purchasing-service/migrations"
 )
 
@@ -31,8 +32,9 @@ func main() {
 	defer events.Close()
 
 	finance := financeclient.New(cfg.FinanceServiceURL)
+	warehouse := warehouseclient.New(cfg.WarehouseServiceURL)
 
-	handler := httpapi.NewHandler(pool, events, finance)
+	handler := httpapi.NewHandler(pool, events, finance, warehouse)
 
 	mux := http.NewServeMux()
 	handler.Register(mux)

@@ -20,6 +20,11 @@ import SalesOrdersPage from './pages/sales/SalesOrdersPage.jsx'
 import SuppliersPage from './pages/purchasing/SuppliersPage.jsx'
 import RequisitionsPage from './pages/purchasing/RequisitionsPage.jsx'
 import PurchaseOrdersPage from './pages/purchasing/PurchaseOrdersPage.jsx'
+import ProductsPage from './pages/warehouse/ProductsPage.jsx'
+import WarehousesPage from './pages/warehouse/WarehousesPage.jsx'
+import StockPage from './pages/warehouse/StockPage.jsx'
+import StockTransfersPage from './pages/warehouse/StockTransfersPage.jsx'
+import StockOpnamePage from './pages/warehouse/StockOpnamePage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -59,6 +64,11 @@ function App() {
         <Route path="/purchasing/suppliers" element={<SuppliersPage />} />
         <Route path="/purchasing/requisitions" element={<RequisitionsPage />} />
         <Route path="/purchasing/orders" element={<PurchaseOrdersPage />} />
+        <Route path="/warehouse/products" element={<ProductsPage />} />
+        <Route path="/warehouse/warehouses" element={<WarehousesPage />} />
+        <Route path="/warehouse/stock" element={<StockPage />} />
+        <Route path="/warehouse/transfers" element={<StockTransfersPage />} />
+        <Route path="/warehouse/opname" element={<StockOpnamePage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

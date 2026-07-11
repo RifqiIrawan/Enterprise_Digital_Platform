@@ -3,18 +3,20 @@ package config
 import "os"
 
 type Config struct {
-	Port              string
-	DatabaseURL       string
-	KafkaBrokers      string
-	FinanceServiceURL string
+	Port                string
+	DatabaseURL         string
+	KafkaBrokers        string
+	FinanceServiceURL   string
+	WarehouseServiceURL string
 }
 
 func Load() *Config {
 	return &Config{
-		Port:              getEnv("PORT", "8088"),
-		DatabaseURL:       getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/purchasing_service?sslmode=disable"),
-		KafkaBrokers:      getEnv("KAFKA_BROKERS", "localhost:9092"),
-		FinanceServiceURL: getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),
+		Port:                getEnv("PORT", "8088"),
+		DatabaseURL:         getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/purchasing_service?sslmode=disable"),
+		KafkaBrokers:        getEnv("KAFKA_BROKERS", "localhost:9092"),
+		FinanceServiceURL:   getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),
+		WarehouseServiceURL: getEnv("WAREHOUSE_SERVICE_URL", "http://localhost:8089"),
 	}
 }
 

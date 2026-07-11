@@ -12,6 +12,7 @@ import (
 
 	"github.com/enterprise-digital-platform/purchasing-service/internal/financeclient"
 	"github.com/enterprise-digital-platform/purchasing-service/internal/model"
+	"github.com/enterprise-digital-platform/purchasing-service/internal/warehouseclient"
 )
 
 const purchaseOrderColumns = `id, company_id, branch_id, po_number, supplier_id, requisition_id, order_date, status, subtotal_amount, tax_amount, total_amount, invoice_id, created_at, updated_at`
@@ -211,8 +212,83 @@ func (h *Handler) confirmPurchaseOrder(w http.ResponseWriter, r *http.Request) {
 	h.transitionPurchaseOrder(w, r, "DRAFT", "CONFIRMED", "purchasing.order.confirmed")
 }
 
+type receivePurchaseOrderRequest struct {
+	WarehouseID string `json:"warehouse_id"`
+}
+
+// receivePurchaseOrder mencatat stok masuk di warehouse-service (lihat
+// internal/warehouseclient) sebelum mengubah status PO ke RECEIVED --
+// panggilan warehouse-service dulu, baru update status lokal setelah sukses,
+// konsisten dengan pola invoicePurchaseOrder saat memanggil finance-service.
 func (h *Handler) receivePurchaseOrder(w http.ResponseWriter, r *http.Request) {
-	h.transitionPurchaseOrder(w, r, "CONFIRMED", "RECEIVED", "purchasing.order.received")
+	id := r.PathValue("id")
+	actor := actorFromHeader(r)
+	ctx := r.Context()
+
+	var req receivePurchaseOrderRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Payload tidak valid")
+		return
+	}
+	if req.WarehouseID == "" {
+		writeError(w, http.StatusBadRequest, "warehouse_id wajib diisi")
+		return
+	}
+
+	var po model.PurchaseOrder
+	err := scanPurchaseOrder(h.pool.QueryRow(ctx, `SELECT `+purchaseOrderColumns+` FROM purchase_orders WHERE id = $1`, id), &po)
+	if err == pgx.ErrNoRows {
+		writeError(w, http.StatusNotFound, "Purchase order tidak ditemukan")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memuat purchase order")
+		return
+	}
+	if po.Status != "CONFIRMED" {
+		writeError(w, http.StatusConflict, "Purchase order tidak ditemukan atau tidak berstatus CONFIRMED")
+		return
+	}
+
+	lines, err := h.fetchPurchaseOrderLines(ctx, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memuat baris purchase order")
+		return
+	}
+
+	warehouseLines := make([]warehouseclient.MovementLineInput, 0, len(lines))
+	for _, l := range lines {
+		warehouseLines = append(warehouseLines, warehouseclient.MovementLineInput{
+			ProductName: l.ProductName,
+			Quantity:    l.Quantity,
+		})
+	}
+
+	err = h.warehouse.PostMovementBatch(headerValue(actor), warehouseclient.PostMovementBatchRequest{
+		CompanyID:     po.CompanyID,
+		BranchID:      po.BranchID,
+		WarehouseID:   req.WarehouseID,
+		MovementType:  "IN",
+		ReferenceType: "PURCHASE_ORDER",
+		ReferenceID:   po.ID,
+		Notes:         "Penerimaan " + po.PONumber,
+		MovementDate:  po.OrderDate.Format("2006-01-02"),
+		Lines:         warehouseLines,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Sprintf("Gagal mencatat stok masuk di warehouse-service: %v", err))
+		return
+	}
+
+	err = scanPurchaseOrder(h.pool.QueryRow(ctx, `
+		UPDATE purchase_orders SET status = 'RECEIVED', updated_at = now() WHERE id = $1 AND status = 'CONFIRMED'
+		RETURNING `+purchaseOrderColumns, id), &po)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Stok berhasil dicatat di warehouse-service, tetapi gagal memperbarui status purchase order lokal")
+		return
+	}
+
+	h.events.Publish("purchasing.order.received", newAuditEvent("purchasing.order.received", actor, &po.CompanyID, "update", "purchase_order", po.ID, po))
+	writeJSON(w, http.StatusOK, po)
 }
 
 type invoicePurchaseOrderRequest struct {

@@ -10,4 +10,5 @@ use (
 	./services/auth-service
 	./services/company-service
 	./services/rbac-service
+	./modules/warehouse-service
 )
