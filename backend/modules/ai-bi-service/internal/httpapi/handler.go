@@ -20,6 +20,8 @@ func NewHandler(cfg *config.Config) *Handler {
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
 	mux.HandleFunc("GET /dashboards/summary", h.dashboardSummary)
+	mux.HandleFunc("GET /forecasting/summary", h.forecastingSummary)
+	mux.HandleFunc("GET /anomaly-detection/scan", h.anomalyScan)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
