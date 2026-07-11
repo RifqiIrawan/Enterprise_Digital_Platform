@@ -19,6 +19,7 @@ var validReferenceTypes = map[string]bool{
 	"TRANSFER":       true,
 	"OPNAME":         true,
 	"MANUAL":         true,
+	"WORK_ORDER":     true,
 }
 
 // findOrCreateProduct mencocokkan product_name teks bebas (dari PO/SO
@@ -223,6 +224,7 @@ func (h *Handler) createManualStockMovement(w http.ResponseWriter, r *http.Reque
 }
 
 type stockMovementLineInput struct {
+	ProductID   string  `json:"product_id"`
 	ProductName string  `json:"product_name"`
 	Unit        string  `json:"unit"`
 	Quantity    float64 `json:"quantity"`
@@ -266,8 +268,8 @@ func (h *Handler) postStockMovementBatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	for _, l := range req.Lines {
-		if strings.TrimSpace(l.ProductName) == "" || l.Quantity <= 0 {
-			writeError(w, http.StatusBadRequest, "Setiap baris wajib punya product_name dan quantity > 0")
+		if (l.ProductID == "" && strings.TrimSpace(l.ProductName) == "") || l.Quantity <= 0 {
+			writeError(w, http.StatusBadRequest, "Setiap baris wajib punya product_id atau product_name, dan quantity > 0")
 			return
 		}
 	}
@@ -298,9 +300,19 @@ func (h *Handler) postStockMovementBatch(w http.ResponseWriter, r *http.Request)
 	actor := actorFromHeader(r)
 	movements := make([]model.StockMovement, 0, len(req.Lines))
 	for _, l := range req.Lines {
-		product, err := findOrCreateProduct(ctx, tx, req.CompanyID, strings.TrimSpace(l.ProductName), l.Unit)
+		var product model.Product
+		var err error
+		if l.ProductID != "" {
+			err = scanProduct(tx.QueryRow(ctx, `SELECT `+productColumns+` FROM products WHERE id = $1`, l.ProductID), &product)
+			if err == pgx.ErrNoRows {
+				writeError(w, http.StatusBadRequest, "Produk tidak ditemukan: "+l.ProductID)
+				return
+			}
+		} else {
+			product, err = findOrCreateProduct(ctx, tx, req.CompanyID, strings.TrimSpace(l.ProductName), l.Unit)
+		}
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Gagal mencocokkan produk: "+l.ProductName)
+			writeError(w, http.StatusInternalServerError, "Gagal mencocokkan produk")
 			return
 		}
 		mv, err := applyStockMovement(ctx, tx, req.CompanyID, req.BranchID, req.WarehouseID, product.ID, req.MovementType, l.Quantity, req.ReferenceType, referenceID, req.Notes, movementDate, actor)

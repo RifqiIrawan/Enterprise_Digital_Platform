@@ -25,6 +25,9 @@ import WarehousesPage from './pages/warehouse/WarehousesPage.jsx'
 import StockPage from './pages/warehouse/StockPage.jsx'
 import StockTransfersPage from './pages/warehouse/StockTransfersPage.jsx'
 import StockOpnamePage from './pages/warehouse/StockOpnamePage.jsx'
+import BomPage from './pages/production/BomPage.jsx'
+import WorkOrdersPage from './pages/production/WorkOrdersPage.jsx'
+import ProductionSchedulePage from './pages/production/ProductionSchedulePage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -69,6 +72,9 @@ function App() {
         <Route path="/warehouse/stock" element={<StockPage />} />
         <Route path="/warehouse/transfers" element={<StockTransfersPage />} />
         <Route path="/warehouse/opname" element={<StockOpnamePage />} />
+        <Route path="/production/bom" element={<BomPage />} />
+        <Route path="/production/work-orders" element={<WorkOrdersPage />} />
+        <Route path="/production/schedule" element={<ProductionSchedulePage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

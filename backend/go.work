@@ -11,4 +11,5 @@ use (
 	./services/company-service
 	./services/rbac-service
 	./modules/warehouse-service
+	./modules/production-service
 )

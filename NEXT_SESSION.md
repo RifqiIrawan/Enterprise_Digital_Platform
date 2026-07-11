@@ -14,10 +14,11 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — Sales module** (customers, quotations, sales orders + invoice AR ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
 | **Fase 2 — Purchasing module** (suppliers, requisitions, purchase orders + invoice AP ke GL) | ✅ Selesai & diverifikasi end-to-end di browser |
 | **Fase 2 — Warehouse module** (products, warehouses, stock balance/movement, stock transfer, stock opname; PO RECEIVED → stock in, SO FULFILLED → stock out) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
-| **Fase 2 — Production, QC, Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
+| **Fase 2 — Production module** (Bill of Material, Work Order draft→in_progress→completed, jadwal produksi; WO COMPLETED → konsumsi komponen & tambah produk jadi di stock) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
+| **Fase 2 — QC, Asset, AI, BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`) |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ❌ Belum bisa dites — Docker Desktop error di mesin ini (lihat "Known Issues") |
-| Git | ✅ 4 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok). Warehouse module belum di-commit (lihat bawah). Belum ada remote. |
+| Git | ✅ 5 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok), `7590cd5` (Warehouse). Production module belum di-commit (lihat bawah). Belum ada remote. |
 
 ---
 
@@ -30,7 +31,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    docker compose up -d
    ```
    Kalau Docker Desktop error (`pipe error 500` / `request returned 500 Internal Server Error`), restart Docker Desktop dulu. Semua service Go **tetap bisa jalan tanpa ini** — publish/consume Kafka didesain best-effort (gagal → log warning, tidak crash).
-3. **Backend — 10 service Go**, masing-masing `go run ./cmd/server` di foldernya:
+3. **Backend — 11 service Go**, masing-masing `go run ./cmd/server` di foldernya:
    | Service | Path | Port |
    |---|---|---|
    | api-gateway | `backend/services/api-gateway` | 8079 |
@@ -43,8 +44,9 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    | sales-service | `backend/modules/sales-service` | 8087 |
    | purchasing-service | `backend/modules/purchasing-service` | 8088 |
    | warehouse-service | `backend/modules/warehouse-service` | 8089 |
+   | production-service | `backend/modules/production-service` | 8090 |
 
-   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`, `warehouse_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`).
+   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`, `warehouse_service`, `production_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`).
 4. **Frontend**:
    ```
    cd frontend/web
@@ -55,7 +57,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 
 Cek cepat semua service hidup:
 ```bash
-for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089; do curl -s http://localhost:$port/health; echo; done
+for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090; do curl -s http://localhost:$port/health; echo; done
 ```
 
 ---
@@ -81,6 +83,7 @@ Supaya pagination DataTable kelihatan, ditambahkan data dummy lewat API (bukan m
 - 14 Users (termasuk `budi@edp.local` dan 10 user dummy nama Indonesia)
 - 14 Roles (13 role sistem bawaan + 1 custom "Finance Viewer" hasil testing)
 - Warehouse module (dari verifikasi end-to-end Playwright sesi ini): 2 gudang (`WH-A` Gudang Utama A, `WH-B` Gudang Cabang B), 1 produk (`SKU-TEST-01` Produk Uji Coba), 1 PO diterima (10 pcs masuk ke WH-A), 1 SO di-fulfill (3 pcs keluar dari WH-A), 1 stock transfer WH-A→WH-B (2 pcs, CONFIRMED), 1 stock opname di WH-A (disesuaikan ke 100 pcs, POSTED). Saldo akhir WH-A = 100 pcs setelah opname (bukan hasil hitung fisik asli, cuma angka tes) — jangan bingung kalau demo ke user, cukup jelaskan ini data uji coba.
+- Production module (dari verifikasi end-to-end Playwright sesi ini): 2 produk tambahan (`SKU-RAW-01` Bahan Baku X, `SKU-FG-01` Barang Jadi Y), 1 BOM (`BOM-01` Resep Barang Jadi Y, 2x Bahan Baku X per unit), 1 work order (`WO-202607-0001`, rencana 10 pcs, COMPLETED) — hasil akhir di WH-A: Bahan Baku X 100→80 pcs (terpakai 20), Barang Jadi Y 0→10 pcs (hasil produksi).
 
 Semua ini valid & aman untuk terus dipakai / didemokan, bukan data korup.
 
@@ -118,13 +121,13 @@ Frontend, per halaman list baru:
 
 ## Next Steps (rekomendasi)
 
-HR, Sales, Purchasing, dan Warehouse sudah selesai (lihat tabel status di atas). Modul Fase 2 berikutnya, urutan disarankan:
-1. **Production** — work order, bill of material, jadwal produksi. Kemungkinan konsumen terbesar dari product master & stock movement yang baru dibangun di Warehouse: BOM butuh referensi ke `products` (warehouse-service), dan penyelesaian work order kemungkinan perlu stock OUT (bahan baku) + stock IN (barang jadi) lewat pola `internal/warehouseclient` yang sudah ada di purchasing-service/sales-service (lihat bawah).
-2. Sisanya (QC, Asset, AI, BI) menyusul.
+HR, Sales, Purchasing, Warehouse, dan Production sudah selesai (lihat tabel status di atas). Modul Fase 2 berikutnya, urutan disarankan:
+1. **QC** — inspeksi kualitas, standar mutu. Kemungkinan terhubung ke Production (inspeksi dilakukan atas hasil work order) dan/atau Purchasing (inspeksi barang PO RECEIVED sebelum diterima penuh) — tapi ini lebih ringan dibanding Production karena kemungkinan tidak perlu menggerakkan stok sendiri, cukup mencatat hasil pass/fail terhadap referensi work_order_id/purchase_order_id.
+2. Sisanya (Asset, AI, BI) menyusul.
 
 Sebelum mulai modul baru, cek dulu apakah proses lain (lihat Known Issues #2) sudah/sedang mengerjakan modul yang sama — hindari tabrakan file/port seperti awal sesi lalu.
 
-### Pola cross-service posting (HR, Sales, Purchasing, & Warehouse sudah pakai ini)
+### Pola cross-service posting (HR, Sales, Purchasing, Warehouse, & Production sudah pakai ini)
 
 Kalau modul baru butuh membuat journal entry / invoice di finance-service, ikuti pola `internal/financeclient` di `hr-service` (posting payroll ke journal entry), `sales-service` (posting sales order ke invoice AR), atau `purchasing-service` (posting purchase order ke invoice AP):
 - Panggilan HTTP langsung ke `FINANCE_SERVICE_URL` (bukan lewat api-gateway), karena finance-service tidak validasi JWT.
@@ -141,3 +144,14 @@ Pola yang sama persis dipakai untuk stock movement lewat `internal/warehouseclie
 - Endpoint `POST /stock-movements/batch` dipanggil service-to-service langsung (bukan lewat api-gateway) oleh purchasing-service/sales-service — sama seperti pola financeclient.
 - Menu RBAC: `stock`, `stock_transfer`, `stock_opname` sudah ada dari seed lama (003-006); menu `products` & `warehouses` baru ditambah migration `008_seed_warehouse_master_menus.sql` sesi ini.
 - Sudah diverifikasi end-to-end pakai Playwright (login → buat gudang/produk → PO Confirm→Terima Barang→cek stok masuk → SO Confirm→Fulfill→cek stok keluar → stock transfer→confirm → stock opname→post) — semua jalan tanpa error, saldo akhir sesuai perhitungan manual.
+
+### Production module — detail implementasi (untuk konteks kalau ada bug/lanjutan)
+
+- `bill_of_materials`/`bom_lines` dan `work_orders`/`work_order_lines` hidup di `production-service` (baru, port 8090, db `production_service`). `product_id` (produk jadi) dan `component_product_id` (bahan baku) menunjuk ke tabel `products` milik warehouse-service TANPA FK fisik (beda database) — production-service percaya `product_id` yang dikirim frontend (yang ambil daftar produk langsung dari `GET /api/warehouse/products`, sama seperti pola dropdown produk di halaman Warehouse).
+- `work_order_lines` men-snapshot `bom_lines.quantity_per_unit * quantity_planned` saat work order dibuat (bukan re-lookup BOM saat completed), supaya perubahan BOM belakangan tidak mengubah kebutuhan komponen WO yang sudah berjalan.
+- Alur status: `DRAFT` → `POST .../start` → `IN_PROGRESS` → `POST .../complete` (body `{quantity_produced}`) → `COMPLETED`. Saat complete, `internal/warehouseclient` (package baru, mirip punya purchasing/sales-service) memanggil warehouse-service `POST /stock-movements/batch` **dua kali**: sekali `movement_type=OUT` untuk semua `work_order_lines` (konsumsi komponen), sekali lagi `movement_type=IN` untuk `product_id` sebanyak `quantity_produced` (hasil produksi) — baru setelah keduanya sukses, status lokal diupdate ke COMPLETED (pola sama seperti invoice/receive/fulfill: panggil service lain dulu, baru update lokal).
+- **Penting**: karena production-service sudah tahu `product_id` pasti (bukan cuma nama teks seperti PO/SO), endpoint `POST /stock-movements/batch` di warehouse-service diperluas menerima field `product_id` opsional di tiap baris (selain `product_name` yang sudah ada) — kalau `product_id` diisi, warehouse-service langsung pakai itu tanpa name-matching/auto-create. Ini masih backward-compatible, purchasing-service/sales-service tetap kirim `product_name` seperti sebelumnya.
+- **Bug yang sempat ketemu & sudah diperbaiki**: kolom `stock_movements.reference_type` di warehouse-service punya CHECK constraint DB yang cuma mengizinkan `PURCHASE_ORDER/SALES_ORDER/TRANSFER/OPNAME/MANUAL` — lupa nambahin `WORK_ORDER` di constraint-nya (cuma ditambah di validasi Go-nya). Karena migration lama sudah tercatat `applied` di `schema_migrations`, fix-nya lewat migration BARU `002_add_work_order_reference_type.sql` (ALTER CONSTRAINT), bukan edit `001_init.sql`. Kalau nanti nambah `reference_type` baru lagi di modul lain, jangan lupa sinkronkan CHECK constraint DB-nya juga, tidak cukup update `validReferenceTypes` map di Go saja.
+- Menu RBAC (`work_orders`, `bom`, `production_schedule`) sudah ada dari seed lama (003/004/005/006 rbac-service) — tidak perlu migration baru untuk Production, beda dengan Warehouse yang sempat butuh 2 menu master baru.
+- Halaman "Jadwal Produksi" (`/production/schedule`) bukan tabel baru — cuma me-render ulang data `GET /work-orders` yang sama, dikelompokkan per `planned_start_date` di sisi frontend, supaya tidak over-engineer tabel terpisah untuk sesuatu yang bisa diturunkan dari data yang sudah ada.
+- Sudah diverifikasi end-to-end pakai Playwright (login → buat produk bahan baku & produk jadi → stok masuk manual bahan baku → buat BOM → buat Work Order → Mulai → Selesaikan → cek saldo bahan baku turun & produk jadi bertambah di Stok Gudang → cek Jadwal Produksi) — semua jalan tanpa error setelah fix constraint di atas.
