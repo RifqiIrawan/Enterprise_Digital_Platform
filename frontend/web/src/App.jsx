@@ -32,6 +32,7 @@ import QualityStandardsPage from './pages/qc/QualityStandardsPage.jsx'
 import QualityInspectionsPage from './pages/qc/QualityInspectionsPage.jsx'
 import AssetRegisterPage from './pages/asset/AssetRegisterPage.jsx'
 import MaintenanceSchedulePage from './pages/asset/MaintenanceSchedulePage.jsx'
+import BIDashboardsPage from './pages/aibi/BIDashboardsPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -83,6 +84,7 @@ function App() {
         <Route path="/qc/inspections" element={<QualityInspectionsPage />} />
         <Route path="/asset/register" element={<AssetRegisterPage />} />
         <Route path="/asset/maintenance" element={<MaintenanceSchedulePage />} />
+        <Route path="/ai-bi/dashboards" element={<BIDashboardsPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

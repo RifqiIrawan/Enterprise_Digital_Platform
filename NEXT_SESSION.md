@@ -17,10 +17,10 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — Production module** (Bill of Material, Work Order draft→in_progress→completed, jadwal produksi; WO COMPLETED → konsumsi komponen & tambah produk jadi di stock) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — QC module** (Standar Mutu per produk, Inspeksi Kualitas dengan hasil PASS/FAIL/PARTIAL otomatis, opsional terhubung ke PO/Work Order) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — Asset module** (Pendataan Aset, Maintenance Schedule dengan overdue indicator, complete/cancel) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
-| **Fase 2 — AI & BI** | ⏳ Belum dikerjakan (masih placeholder README di `backend/modules/`). **Ini modul terakhir Fase 2** — lihat catatan khusus di "Next Steps" sebelum mulai, kemungkinan besar butuh pendekatan beda dari modul CRUD transaksional lainnya. |
+| **Fase 2 — AI & BI** | 🟡 **Sebagian**: BI Dashboards ✅ selesai & diverifikasi (agregasi live lintas 8 service, lihat detail di bawah). Forecasting & Anomaly Detection ⏳ belum dikerjakan (keputusan scope sesi ini, lihat "Next Steps") — menu sidebar-nya ada tapi halamannya masih jatuh ke `PlaceholderPage`. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
-| Git | ✅ 7 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok), `7590cd5` (Warehouse), `c0e600b` (Production), `b08a005` (QC), `359d6dc` (Asset). Docker fix + audit topics belum di-commit (lihat bawah). Belum ada remote. |
+| Git | ✅ 9 commit di branch `master`: `a796b1b` (checkpoint Fase 1+Finance+HR), `1fa8c1f` (Sales), `8ee2ef6` (update dok), `6440e11` (Purchasing), `f9e58a0` (update dok), `7590cd5` (Warehouse), `c0e600b` (Production), `b08a005` (QC), `359d6dc` (Asset), `51b6567` (Docker fix + audit topics), `cc579b1` (dok). AI/BI module belum di-commit (lihat bawah). Belum ada remote. |
 
 ---
 
@@ -34,7 +34,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    ```
    Kalau Docker Desktop error (`pipe error 500` / `request returned 500 Internal Server Error`), restart Docker Desktop dulu. Semua service Go **tetap bisa jalan tanpa ini** — publish/consume Kafka didesain best-effort (gagal → log warning, tidak crash). Kalau image `bitnami/kafka:*` gagal pull ("not found"), itu karena Bitnami memindahkan image gratisnya ke `bitnamilegacy/*` (lihat komentar di `infra/docker-compose.yml`, sudah di-fix ke `bitnamilegacy/kafka:3.7.1`).
    **Penting**: kalau restart `audit-service` setelah Kafka baru naik, restart SEKALI LAGI kalau consumer group-nya baru saja subscribe topic yang baru saja auto-created (lihat Known Issues #4) — assignment pertama bisa miss topic yang belum ada saat join.
-3. **Backend — 13 service Go**, masing-masing `go run ./cmd/server` di foldernya:
+3. **Backend — 14 service Go**, masing-masing `go run ./cmd/server` di foldernya:
    | Service | Path | Port |
    |---|---|---|
    | api-gateway | `backend/services/api-gateway` | 8079 |
@@ -50,8 +50,9 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
    | production-service | `backend/modules/production-service` | 8090 |
    | qc-service | `backend/modules/qc-service` | 8091 |
    | asset-service | `backend/modules/asset-service` | 8092 |
+   | ai-bi-service | `backend/modules/ai-bi-service` | 8093 |
 
-   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`, `warehouse_service`, `production_service`, `qc_service`, `asset_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`).
+   Migrasi jalan otomatis saat startup (embed FS + tabel `schema_migrations`, aman dijalankan berkali-kali). Databasenya (`hr_service`, `sales_service`, `purchasing_service`, `warehouse_service`, `production_service`, `qc_service`, `asset_service`) perlu dibuat dulu kalau belum ada (`CREATE DATABASE hr_service;` dst lewat psql, role `platform`). **ai-bi-service TIDAK punya database sendiri** — murni agregasi HTTP dari service lain, tidak ada migrasi untuk dijalankan.
 4. **Frontend**:
    ```
    cd frontend/web
@@ -62,7 +63,7 @@ Terakhir dikerjakan: **2026-07-11**. Dokumen ini ringkasan supaya sesi besok bis
 
 Cek cepat semua service hidup:
 ```bash
-for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092; do curl -s http://localhost:$port/health; echo; done
+for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092 8093; do curl -s http://localhost:$port/health; echo; done
 ```
 
 ---
@@ -133,14 +134,13 @@ Frontend, per halaman list baru:
 
 ## Next Steps (rekomendasi)
 
-HR, Sales, Purchasing, Warehouse, Production, QC, dan Asset sudah selesai (lihat tabel status di atas). **Seluruh modul Fase 2 yang bersifat CRUD transaksional sudah lengkap.** Sisa satu modul: **AI & BI**.
+HR, Sales, Purchasing, Warehouse, Production, QC, dan Asset sudah selesai. **Seluruh modul Fase 2 yang bersifat CRUD transaksional sudah lengkap.** AI & BI sebagian selesai (BI Dashboards ✅), sisa:
 
-⚠️ **PENTING — jangan langsung scaffold AI/BI dengan pola yang sama seperti 8 modul sebelumnya.** Menu yang sudah di-seed (`dashboards` /ai-bi/dashboards, `forecasting` /ai-bi/forecasting, `anomaly_detection` /ai-bi/anomaly-detection — lihat 003_seed_business_menus.sql) itu indikatif dari awal proyek, belum tentu representasi scope yang benar. AI/BI secara sifat beda dari modul lain:
-- Modul lain masing-masing "memiliki" datanya sendiri (tabel transaksi + master di database sendiri). AI/BI sebaliknya *tidak* punya data transaksi sendiri — tugasnya membaca/agregasi data dari 8 service lain (finance, hr, sales, purchasing, warehouse, production, qc, asset) untuk ditampilkan sebagai dashboard/forecast/anomaly.
-- Pertanyaan yang perlu dijawab dulu bersama user sebelum coding: apakah ai-bi-service query langsung ke database service lain (melanggar "no cross-database FK/query" tapi read-only mungkin bisa diterima?), atau lewat HTTP call ke tiap service (lambat kalau agregasi berat), atau butuh semacam data warehouse/materialized view terpisah? Forecasting & anomaly detection juga menyiratkan komputasi (statistik/ML) yang jauh beda dari CRUD+state-transition yang selama ini dipakai.
-- Rekomendasi: mulai sesi berikutnya dengan **bertanya ke user** scope realistis untuk sesi ini (mis. "BI Dashboards" saja dulu sebagai read-only aggregation view, tunda forecasting/anomaly yang butuh ML), sebelum menulis kode apa pun.
+1. **Forecasting** (`/ai-bi/forecasting`) — proyeksi tren (mis. sales/stock beberapa bulan ke depan). User sudah memutuskan sesi ini scope-nya cuma BI Dashboards (agregasi live, tanpa komputasi statistik), forecasting sengaja ditunda. Kalau mulai ini: **tanya dulu** apakah cukup proyeksi statistik sederhana (moving average / linear regression atas histori dari service lain, dihitung on-the-fly di `ai-bi-service`, TANPA model ML sungguhan) atau ada ekspektasi lebih. Tidak perlu database baru untuk pendekatan sederhana ini — masih bisa jadi endpoint tambahan di `ai-bi-service` yang sudah ada.
+2. **Anomaly Detection** (`/ai-bi/anomaly-detection`) — deteksi anomali (mis. lonjakan pengeluaran, stok tiba-tiba minus banyak). Sama seperti Forecasting, tanya dulu scope realistisnya (heuristik sederhana seperti z-score/threshold vs. sesuatu yang lebih canggih) sebelum coding.
+3. Setelah keduanya (atau kalau user memutuskan cukup segini untuk AI/BI), Fase 2 platform ini genap selesai secara keseluruhan.
 
-Sebelum mulai modul baru, cek dulu apakah proses lain (lihat Known Issues #2) sudah/sedang mengerjakan modul yang sama — hindari tabrakan file/port seperti awal sesi lalu.
+Sebelum mulai modul baru, cek dulu apakah proses lain (lihat Known Issues #3) sudah/sedang mengerjakan modul yang sama — hindari tabrakan file/port seperti awal sesi lalu.
 
 ### Pola cross-service posting (HR, Sales, Purchasing, Warehouse, & Production pakai ini; QC & Asset sengaja TIDAK)
 
@@ -189,3 +189,13 @@ Pola yang sama persis dipakai untuk stock movement lewat `internal/warehouseclie
 - "Overdue" (jadwal yang tanggalnya sudah lewat tapi masih `SCHEDULED`) dihitung di frontend saat render (`MaintenanceSchedulePage.jsx`), bukan status tersendiri di database — menghindari kebutuhan job terjadwal untuk memperbarui status.
 - Menu RBAC (`asset_register`, `asset_maintenance`) sudah ada dari seed lama (003/004/005/006 rbac-service) — tidak perlu migration baru, sama seperti Production & QC.
 - Sudah diverifikasi end-to-end pakai Playwright (login → buat aset dengan lokasi gudang → jadwalkan maintenance tanggal mundur & tanggal maju → selesaikan yang tanggal mundur (cek completed_date & indikator overdue) → batalkan yang tanggal maju → cek status aset) — semua transisi jalan tanpa error.
+
+### BI Dashboards (AI & BI, sebagian) — detail implementasi (untuk konteks kalau ada bug/lanjutan)
+
+- `ai-bi-service` (baru, port 8093) **TIDAK punya database sendiri** — beda secara struktural dari 8 module service lain. Tidak ada `internal/store`, `internal/model`, `internal/eventbus`, atau `migrations/`, dan `go.mod`-nya tidak punya dependency SAMA SEKALI (murni stdlib: `net/http`, `encoding/json`, `sync`) karena tidak butuh pgx/kafka-go/uuid.
+- Satu-satunya endpoint: `GET /dashboards/summary?company_id=` di `internal/httpapi/summary.go`. Memanggil 8 service lain secara PARALEL (goroutine + `sync.WaitGroup.Go`, method Go 1.24+) langsung lewat HTTP (bukan lewat api-gateway, sama seperti pola financeclient/warehouseclient), lalu agregasi field yang relevan (total, sum, count by status) di memori. Tidak ada caching/database — tiap request menghitung ulang dari data live.
+- **Toleran kegagalan sebagian**: kalau satu service gagal dihubungi (mis. lagi down), bagian dashboard itu jadi nilai nol dan errornya masuk ke field `errors: [{source, message}]` di response — dashboard tetap tampil dengan bagian yang berhasil, tidak gagal total. Frontend (`BIDashboardsPage.jsx`) menampilkan alert warning kalau `errors` tidak kosong.
+- `warehouse.low_stock_count` pakai heuristik hardcoded `quantity < 10` (`lowStockThreshold` const di `summary.go`) karena produk belum punya field minimum-stock-level sendiri di warehouse-service — kalau nanti field itu ditambahkan, ganti heuristik ini jadi bandingkan ke field asli per produk.
+- Warna status di halaman dashboard (`StatusBreakdown` component) sengaja DISAMAKAN dengan `STATUS_BADGE` yang sudah dipakai di `SalesOrdersPage`/`PurchaseOrdersPage`/`WorkOrdersPage` masing-masing (bukan palet baru) supaya konsisten dengan bahasa visual yang sudah ada di seluruh aplikasi.
+- Menu RBAC `dashboards` sudah ada dari seed lama, tidak perlu migration baru. Menu `forecasting` dan `anomaly_detection` JUGA sudah ada dari seed lama tapi sengaja belum ada halaman/route frontend untuk itu (lihat "Next Steps") — keduanya masih jatuh ke `PlaceholderPage` lewat catch-all route `*` di `App.jsx`.
+- Sudah diverifikasi end-to-end: curl langsung ke endpoint (dengan JWT dari login) mengonfirmasi semua 8 domain terisi data asli tanpa error, lalu Playwright load halaman `/ai-bi/dashboards` di browser dan konfirmasi semua stat tile & bar breakdown tampil benar (termasuk warna merah otomatis di QC Pass Rate 33.3% karena di bawah 70%), tanpa console error.

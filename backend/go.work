@@ -14,4 +14,5 @@ use (
 	./modules/production-service
 	./modules/qc-service
 	./modules/asset-service
+	./modules/ai-bi-service
 )
