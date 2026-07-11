@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 function formatValue(anomaly) {
   if (anomaly.entity_type === 'stock_movement') {
@@ -22,7 +23,7 @@ const ENTITY_LABEL = {
 }
 
 function AnomalyDetectionPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -37,19 +38,12 @@ function AnomalyDetectionPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) loadScan(cid)
-        else setLoading(false)
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadScan(companyId)
+  }, [companyId])
 
   const columns = [
     { key: 'source', label: 'Modul', render: (a) => SOURCE_LABEL[a.source] ?? a.source },

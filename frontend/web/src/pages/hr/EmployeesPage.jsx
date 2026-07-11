@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const EMPLOYMENT_TYPES = ['PERMANENT', 'CONTRACT', 'INTERN', 'OUTSOURCE']
 const PTKP_STATUSES = ['TK/0', 'TK/1', 'TK/2', 'TK/3', 'K/0', 'K/1', 'K/2', 'K/3']
@@ -36,7 +37,7 @@ function formatMoney(n) {
 }
 
 function EmployeesPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -57,19 +58,12 @@ function EmployeesPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) loadEmployees(cid)
-        else setLoading(false)
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadEmployees(companyId)
+  }, [companyId])
 
   function openCreate() {
     setEditingId(null)

@@ -1,30 +1,30 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import StatTile from '../../components/dashboard/StatTile.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 function formatMoney(n) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n ?? 0)
 }
 
 function ArApPage() {
+  const { companyId } = useCompany()
   const [summary, setSummary] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
     apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id
-        if (!cid) {
-          setLoading(false)
-          return
-        }
-        return apiClient.get('/api/finance/ar-ap-summary', { params: { company_id: cid } }).then(({ data }) => setSummary(data))
-      })
+      .get('/api/finance/ar-ap-summary', { params: { company_id: companyId } })
+      .then(({ data }) => setSummary(data))
       .catch(() => setError('Gagal memuat ringkasan AR/AP. Pastikan finance-service aktif.'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [companyId])
 
   const ar = summary.find((s) => s.invoice_type === 'AR')
   const ap = summary.find((s) => s.invoice_type === 'AP')

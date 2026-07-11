@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { clearSession, getCurrentUser } from '../../utils/auth.js'
+import CompanySwitcher from './CompanySwitcher.jsx'
 
 function initials(fullName) {
   return fullName
@@ -33,31 +34,35 @@ function Topbar({ title, onToggleSidebar }) {
         <h1 className="h5 mb-0">{title}</h1>
       </div>
 
-      <div className="dropdown">
-        <button
-          type="button"
-          className="btn btn-link text-decoration-none d-flex align-items-center gap-2 p-0"
-          data-bs-toggle="dropdown"
-          aria-expanded="false"
-        >
-          <span className="edp-avatar">{initials(user?.full_name ?? '?')}</span>
-          <span className="d-none d-sm-inline text-body">{user?.full_name}</span>
-          <i className="bi bi-chevron-down small text-secondary" />
-        </button>
-        <ul className="dropdown-menu dropdown-menu-end">
-          <li>
-            <span className="dropdown-item-text text-secondary small">{user?.email}</span>
-          </li>
-          <li>
-            <hr className="dropdown-divider" />
-          </li>
-          <li>
-            <button type="button" className="dropdown-item" onClick={handleLogout}>
-              <i className="bi bi-box-arrow-right me-2" />
-              Keluar
-            </button>
-          </li>
-        </ul>
+      <div className="d-flex align-items-center gap-3">
+        <CompanySwitcher />
+
+        <div className="dropdown">
+          <button
+            type="button"
+            className="btn btn-link text-decoration-none d-flex align-items-center gap-2 p-0"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+          >
+            <span className="edp-avatar">{initials(user?.full_name ?? '?')}</span>
+            <span className="d-none d-sm-inline text-body">{user?.full_name}</span>
+            <i className="bi bi-chevron-down small text-secondary" />
+          </button>
+          <ul className="dropdown-menu dropdown-menu-end">
+            <li>
+              <span className="dropdown-item-text text-secondary small">{user?.email}</span>
+            </li>
+            <li>
+              <hr className="dropdown-divider" />
+            </li>
+            <li>
+              <button type="button" className="dropdown-item" onClick={handleLogout}>
+                <i className="bi bi-box-arrow-right me-2" />
+                Keluar
+              </button>
+            </li>
+          </ul>
+        </div>
       </div>
     </header>
   )

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const STATUSES = ['PRESENT', 'LATE', 'EARLY_LEAVE', 'ABSENT', 'LEAVE']
 
@@ -39,7 +40,7 @@ function combineDateTime(logDate, timeStr) {
 }
 
 function AttendancePage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [employees, setEmployees] = useState([])
   const [logs, setLogs] = useState([])
   const [period, setPeriod] = useState(currentPeriod())
@@ -62,29 +63,18 @@ function AttendancePage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadLogs(cid, period)
-          apiClient.get('/api/hr/employees', { params: { company_id: cid, status: 'ACTIVE' } }).then(({ data }) => setEmployees(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    apiClient.get('/api/hr/employees', { params: { company_id: companyId, status: 'ACTIVE' } }).then(({ data }) => setEmployees(data))
+  }, [companyId])
 
   useEffect(() => {
-    if (companyId) loadLogs(companyId, period)
+    if (!companyId) return
+    loadLogs(companyId, period)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [period])
+  }, [companyId, period])
 
   const employeeName = (id) => {
     const emp = employees.find((e) => e.id === id)

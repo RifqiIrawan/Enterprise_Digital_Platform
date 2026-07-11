@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyForm = { asset_code: '', name: '', category: '', warehouse_id: '', acquisition_date: '', acquisition_cost: '', notes: '' }
 
@@ -16,7 +17,7 @@ const STATUS_BADGE = {
 }
 
 function AssetRegisterPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [warehouses, setWarehouses] = useState([])
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -39,23 +40,13 @@ function AssetRegisterPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadAssets(cid)
-          apiClient.get('/api/warehouse/warehouses', { params: { company_id: cid } }).then(({ data }) => setWarehouses(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadAssets(companyId)
+    apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
+  }, [companyId])
 
   const warehouseName = (id) => {
     if (!id) return '—'

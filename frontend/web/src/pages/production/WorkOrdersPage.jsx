@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyForm = { bom_id: '', warehouse_id: '', quantity_planned: 1, planned_start_date: new Date().toISOString().slice(0, 10), planned_end_date: '', notes: '' }
 
@@ -13,7 +14,7 @@ const STATUS_BADGE = {
 }
 
 function WorkOrdersPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [boms, setBoms] = useState([])
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
@@ -42,25 +43,15 @@ function WorkOrdersPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadOrders(cid)
-          apiClient.get('/api/production/boms', { params: { company_id: cid } }).then(({ data }) => setBoms(data.filter((b) => b.is_active)))
-          apiClient.get('/api/warehouse/warehouses', { params: { company_id: cid } }).then(({ data }) => setWarehouses(data))
-          apiClient.get('/api/warehouse/products', { params: { company_id: cid } }).then(({ data }) => setProducts(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadOrders(companyId)
+    apiClient.get('/api/production/boms', { params: { company_id: companyId } }).then(({ data }) => setBoms(data.filter((b) => b.is_active)))
+    apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
+    apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
+  }, [companyId])
 
   const bomName = (id) => boms.find((b) => b.id === id)?.name ?? id
   const productName = (id) => {

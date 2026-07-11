@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import ForecastLineChart from './ForecastLineChart.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 function formatMoney(n) {
   return `Rp ${new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(n ?? 0)}`
@@ -11,7 +12,7 @@ function formatQty(n) {
 }
 
 function ForecastingPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -26,19 +27,12 @@ function ForecastingPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) loadForecast(cid)
-        else setLoading(false)
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadForecast(companyId)
+  }, [companyId])
 
   return (
     <div className="d-flex flex-column gap-3">

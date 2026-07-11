@@ -4,6 +4,7 @@ import Modal from '../../../components/common/Modal.jsx'
 import DataTable, { TruncatedText } from '../../../components/common/DataTable.jsx'
 import RolePickerDropdown from '../../../components/common/RolePickerDropdown.jsx'
 import { colorFor, initials } from '../../../utils/avatarColor.js'
+import { useCompany } from '../../../store/CompanyContext.jsx'
 
 const emptyUserForm = { email: '', full_name: '', phone: '', password: '' }
 
@@ -31,9 +32,9 @@ function formatLastLogin(value) {
 }
 
 function UserRoleAssignmentPage() {
+  const { companyId } = useCompany()
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
-  const [companies, setCompanies] = useState([])
   const [userRolesMap, setUserRolesMap] = useState({}) // userId -> UserRoleView[]
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -59,19 +60,17 @@ function UserRoleAssignmentPage() {
     Promise.all([
       apiClient.get('/api/auth/users'),
       apiClient.get('/api/rbac/roles'),
-      apiClient.get('/api/company/companies'),
     ])
-      .then(async ([usersRes, rolesRes, companiesRes]) => {
+      .then(async ([usersRes, rolesRes]) => {
         setUsers(usersRes.data)
         setRoles(rolesRes.data)
-        setCompanies(companiesRes.data)
 
         const entries = await Promise.all(
           usersRes.data.map(async (u) => [u.id, await loadUserRoles(u.id)])
         )
         setUserRolesMap(Object.fromEntries(entries))
       })
-      .catch(() => setError('Gagal memuat data. Pastikan auth-service, rbac-service, dan company-service aktif.'))
+      .catch(() => setError('Gagal memuat data. Pastikan auth-service dan rbac-service aktif.'))
       .finally(() => setLoading(false))
   }
 
@@ -82,8 +81,6 @@ function UserRoleAssignmentPage() {
     setUserRolesMap((prev) => ({ ...prev, [userId]: data }))
     return data
   }
-
-  const defaultCompanyId = companies[0]?.id ?? ''
 
   // Hanya role yang benar-benar dipakai minimal satu user yang jadi tab,
   // supaya tidak menampilkan belasan tab kosong dari seluruh role sistem.
@@ -106,7 +103,7 @@ function UserRoleAssignmentPage() {
   }, [users, userRolesMap, activeFilter])
 
   async function handleAssign(roleIds) {
-    if (roleIds.length === 0 || !defaultCompanyId || !managingUser) return
+    if (roleIds.length === 0 || !companyId || !managingUser) return
     setAssigning(true)
     try {
       const results = await Promise.allSettled(
@@ -114,7 +111,7 @@ function UserRoleAssignmentPage() {
           apiClient.post('/api/rbac/user-roles', {
             user_id: managingUser.id,
             role_id: roleId,
-            company_id: defaultCompanyId,
+            company_id: companyId,
           })
         )
       )
@@ -238,7 +235,7 @@ function UserRoleAssignmentPage() {
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
-      {!loading && companies.length === 0 && (
+      {!loading && !companyId && (
         <div className="alert alert-warning py-2 small">
           Belum ada company terdaftar &mdash; role tidak bisa ditugaskan sebelum ada company.
         </div>
@@ -320,7 +317,7 @@ function UserRoleAssignmentPage() {
               <RolePickerDropdown
                 key={managingUser.id}
                 roles={assignableRoles}
-                disabled={!defaultCompanyId || assignableRoles.length === 0}
+                disabled={!companyId || assignableRoles.length === 0}
                 onAssign={handleAssign}
                 assigning={assigning}
               />

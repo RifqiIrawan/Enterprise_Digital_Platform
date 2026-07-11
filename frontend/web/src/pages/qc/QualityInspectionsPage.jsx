@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyForm = {
   standard_id: '',
@@ -28,7 +29,7 @@ const REFERENCE_LABEL = {
 }
 
 function QualityInspectionsPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [standards, setStandards] = useState([])
   const [products, setProducts] = useState([])
   const [purchaseOrders, setPurchaseOrders] = useState([])
@@ -52,26 +53,16 @@ function QualityInspectionsPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadInspections(cid)
-          apiClient.get('/api/qc/standards', { params: { company_id: cid } }).then(({ data }) => setStandards(data.filter((s) => s.is_active)))
-          apiClient.get('/api/warehouse/products', { params: { company_id: cid } }).then(({ data }) => setProducts(data))
-          apiClient.get('/api/purchasing/purchase-orders', { params: { company_id: cid } }).then(({ data }) => setPurchaseOrders(data))
-          apiClient.get('/api/production/work-orders', { params: { company_id: cid } }).then(({ data }) => setWorkOrders(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadInspections(companyId)
+    apiClient.get('/api/qc/standards', { params: { company_id: companyId } }).then(({ data }) => setStandards(data.filter((s) => s.is_active)))
+    apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
+    apiClient.get('/api/purchasing/purchase-orders', { params: { company_id: companyId } }).then(({ data }) => setPurchaseOrders(data))
+    apiClient.get('/api/production/work-orders', { params: { company_id: companyId } }).then(({ data }) => setWorkOrders(data))
+  }, [companyId])
 
   const standardName = (id) => standards.find((s) => s.id === id)?.name ?? id
   const productName = (id) => {

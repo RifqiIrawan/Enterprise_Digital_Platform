@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 function formatMoney(n) {
   return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(n ?? 0)
@@ -14,7 +15,7 @@ function currentPeriod() {
 const STATUS_BADGE = { DRAFT: 'text-bg-secondary', POSTED: 'text-bg-success' }
 
 function PayrollPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [accounts, setAccounts] = useState([])
   const [runs, setRuns] = useState([])
   const [loading, setLoading] = useState(true)
@@ -48,23 +49,13 @@ function PayrollPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadRuns(cid)
-          apiClient.get('/api/finance/accounts', { params: { company_id: cid } }).then(({ data }) => setAccounts(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadRuns(companyId)
+    apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
+  }, [companyId])
 
   async function handleProcess(e) {
     e.preventDefault()

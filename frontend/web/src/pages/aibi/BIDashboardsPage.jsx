@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 function formatMoney(n) {
   return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(n ?? 0)
@@ -57,7 +58,7 @@ function passRateColor(pct) {
 }
 
 function BIDashboardsPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -72,19 +73,12 @@ function BIDashboardsPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) loadSummary(cid)
-        else setLoading(false)
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadSummary(companyId)
+  }, [companyId])
 
   return (
     <div className="d-flex flex-column gap-3">

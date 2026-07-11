@@ -4,6 +4,7 @@ import Sidebar from '../components/layout/Sidebar.jsx'
 import Topbar from '../components/layout/Topbar.jsx'
 import apiClient from '../services/apiClient.js'
 import { getCurrentUser } from '../utils/auth.js'
+import { CompanyProvider } from '../store/CompanyContext.jsx'
 
 const isMobile = () => typeof window !== 'undefined' && window.innerWidth < 768
 
@@ -35,23 +36,25 @@ function MainLayout() {
   const title = flattenTitles(moduleTree)[pathname] ?? 'Enterprise Digital Platform'
 
   return (
-    <div className="edp-shell d-flex">
-      {!collapsed && isMobile() && (
-        <div className="edp-sidebar-backdrop d-md-none" onClick={() => setCollapsed(true)} />
-      )}
-      <Sidebar
-        collapsed={collapsed}
-        onNavigate={() => isMobile() && setCollapsed(true)}
-        moduleTree={moduleTree}
-        menuError={menuError}
-      />
-      <div className="flex-grow-1 d-flex flex-column min-vw-0">
-        <Topbar title={title} onToggleSidebar={() => setCollapsed((v) => !v)} />
-        <main className="edp-content flex-grow-1 p-3 p-md-4">
-          <Outlet />
-        </main>
+    <CompanyProvider>
+      <div className="edp-shell d-flex">
+        {!collapsed && isMobile() && (
+          <div className="edp-sidebar-backdrop d-md-none" onClick={() => setCollapsed(true)} />
+        )}
+        <Sidebar
+          collapsed={collapsed}
+          onNavigate={() => isMobile() && setCollapsed(true)}
+          moduleTree={moduleTree}
+          menuError={menuError}
+        />
+        <div className="flex-grow-1 d-flex flex-column min-vw-0">
+          <Topbar title={title} onToggleSidebar={() => setCollapsed((v) => !v)} />
+          <main className="edp-content flex-grow-1 p-3 p-md-4">
+            <Outlet />
+          </main>
+        </div>
       </div>
-    </div>
+    </CompanyProvider>
   )
 }
 

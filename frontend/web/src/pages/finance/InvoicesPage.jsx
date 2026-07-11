@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyLine = { account_id: '', description: '', quantity: 1, unit_price: '' }
 const emptyForm = {
@@ -78,7 +79,7 @@ function invoiceColumns(postingId, handlePost) {
 }
 
 function InvoicesPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [accounts, setAccounts] = useState([])
   const [invoices, setInvoices] = useState([])
   const [typeFilter, setTypeFilter] = useState('all')
@@ -101,23 +102,13 @@ function InvoicesPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadInvoices(cid)
-          apiClient.get('/api/finance/accounts', { params: { company_id: cid } }).then(({ data }) => setAccounts(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadInvoices(companyId)
+    apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
+  }, [companyId])
 
   const filtered = typeFilter === 'all' ? invoices : invoices.filter((i) => i.invoice_type === typeFilter)
 

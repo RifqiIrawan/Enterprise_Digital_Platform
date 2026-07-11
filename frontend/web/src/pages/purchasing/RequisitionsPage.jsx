@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyLine = { product_name: '', description: '', quantity: 1, estimated_price: '' }
 const emptyForm = {
@@ -24,7 +25,7 @@ const STATUS_BADGE = {
 }
 
 function RequisitionsPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [suppliers, setSuppliers] = useState([])
   const [requisitions, setRequisitions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -51,23 +52,13 @@ function RequisitionsPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadRequisitions(cid)
-          apiClient.get('/api/purchasing/suppliers', { params: { company_id: cid } }).then(({ data }) => setSuppliers(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadRequisitions(companyId)
+    apiClient.get('/api/purchasing/suppliers', { params: { company_id: companyId } }).then(({ data }) => setSuppliers(data))
+  }, [companyId])
 
   function updateLine(index, patch) {
     setForm((f) => ({ ...f, lines: f.lines.map((l, i) => (i === index ? { ...l, ...patch } : l)) }))

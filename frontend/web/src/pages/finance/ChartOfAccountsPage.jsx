@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyForm = { account_code: '', account_name: '', account_type: 'ASSET' }
 const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE']
@@ -15,7 +16,7 @@ const TYPE_BADGE = {
 }
 
 function ChartOfAccountsPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -35,19 +36,12 @@ function ChartOfAccountsPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) loadAccounts(cid)
-        else setLoading(false)
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadAccounts(companyId)
+  }, [companyId])
 
   async function handleSubmit(e) {
     e.preventDefault()

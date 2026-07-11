@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyForm = { sku: '', name: '', unit: 'pcs', category: '', cost_price: '', is_active: true }
 
@@ -10,7 +11,7 @@ function formatMoney(n) {
 }
 
 function ProductsPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -31,19 +32,12 @@ function ProductsPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) loadProducts(cid)
-        else setLoading(false)
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadProducts(companyId)
+  }, [companyId])
 
   function openCreate() {
     setEditingId(null)

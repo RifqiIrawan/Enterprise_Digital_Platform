@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyForm = { product_id: '', movement_type: 'IN', quantity: '', notes: '', movement_date: new Date().toISOString().slice(0, 10) }
 
@@ -19,7 +20,7 @@ const REFERENCE_LABEL = {
 }
 
 function StockPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
@@ -48,29 +49,19 @@ function StockPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (!cid) {
-          setLoading(false)
-          return
-        }
-        apiClient.get('/api/warehouse/products', { params: { company_id: cid } }).then(({ data }) => setProducts(data))
-        apiClient.get('/api/warehouse/warehouses', { params: { company_id: cid } }).then(({ data }) => {
-          setWarehouses(data)
-          const whId = data[0]?.id ?? ''
-          setWarehouseId(whId)
-          if (whId) loadStock(cid, whId)
-          else setLoading(false)
-        })
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
+    apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => {
+      setWarehouses(data)
+      const whId = data[0]?.id ?? ''
+      setWarehouseId(whId)
+      if (whId) loadStock(companyId, whId)
+      else setLoading(false)
+    })
+  }, [companyId])
 
   function changeWarehouse(whId) {
     setWarehouseId(whId)

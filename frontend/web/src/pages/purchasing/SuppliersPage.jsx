@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyForm = { supplier_code: '', name: '', email: '', phone: '', address: '', tax_id: '', is_active: true }
 
 function SuppliersPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -27,19 +28,12 @@ function SuppliersPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) loadSuppliers(cid)
-        else setLoading(false)
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadSuppliers(companyId)
+  }, [companyId])
 
   function openCreate() {
     setEditingId(null)

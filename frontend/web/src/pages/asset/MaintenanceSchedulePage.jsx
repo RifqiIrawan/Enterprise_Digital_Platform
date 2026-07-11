@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyForm = { asset_id: '', maintenance_type: '', scheduled_date: new Date().toISOString().slice(0, 10), notes: '' }
 
@@ -18,7 +19,7 @@ function isOverdue(schedule) {
 }
 
 function MaintenanceSchedulePage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [assets, setAssets] = useState([])
   const [schedules, setSchedules] = useState([])
   const [loading, setLoading] = useState(true)
@@ -40,23 +41,13 @@ function MaintenanceSchedulePage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadSchedules(cid)
-          apiClient.get('/api/asset/assets', { params: { company_id: cid } }).then(({ data }) => setAssets(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadSchedules(companyId)
+    apiClient.get('/api/asset/assets', { params: { company_id: companyId } }).then(({ data }) => setAssets(data))
+  }, [companyId])
 
   const assetName = (id) => {
     const a = assets.find((a) => a.id === id)

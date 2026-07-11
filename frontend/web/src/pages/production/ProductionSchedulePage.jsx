@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const STATUS_BADGE = {
   DRAFT: 'text-bg-secondary',
@@ -9,6 +10,7 @@ const STATUS_BADGE = {
 }
 
 function ProductionSchedulePage() {
+  const { companyId } = useCompany()
   const [orders, setOrders] = useState([])
   const [boms, setBoms] = useState([])
   const [products, setProducts] = useState([])
@@ -16,32 +18,24 @@ function ProductionSchedulePage() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        if (!cid) {
-          setLoading(false)
-          return
-        }
-        Promise.all([
-          apiClient.get('/api/production/work-orders', { params: { company_id: cid } }),
-          apiClient.get('/api/production/boms', { params: { company_id: cid } }),
-          apiClient.get('/api/warehouse/products', { params: { company_id: cid } }),
-        ])
-          .then(([ordersRes, bomsRes, productsRes]) => {
-            setOrders(ordersRes.data)
-            setBoms(bomsRes.data)
-            setProducts(productsRes.data)
-          })
-          .catch(() => setError('Gagal memuat jadwal produksi. Pastikan production-service aktif.'))
-          .finally(() => setLoading(false))
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    Promise.all([
+      apiClient.get('/api/production/work-orders', { params: { company_id: companyId } }),
+      apiClient.get('/api/production/boms', { params: { company_id: companyId } }),
+      apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }),
+    ])
+      .then(([ordersRes, bomsRes, productsRes]) => {
+        setOrders(ordersRes.data)
+        setBoms(bomsRes.data)
+        setProducts(productsRes.data)
       })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+      .catch(() => setError('Gagal memuat jadwal produksi. Pastikan production-service aktif.'))
+      .finally(() => setLoading(false))
+  }, [companyId])
 
   const bomName = (id) => boms.find((b) => b.id === id)?.name ?? id
   const productName = (id) => {

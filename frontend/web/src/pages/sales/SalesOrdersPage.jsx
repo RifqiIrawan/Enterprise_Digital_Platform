@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyLine = { product_name: '', description: '', quantity: 1, unit_price: '' }
 const emptyForm = { customer_id: '', order_date: new Date().toISOString().slice(0, 10), lines: [{ ...emptyLine }] }
@@ -19,7 +20,7 @@ const STATUS_BADGE = {
 }
 
 function SalesOrdersPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [customers, setCustomers] = useState([])
   const [accounts, setAccounts] = useState([])
   const [warehouses, setWarehouses] = useState([])
@@ -53,25 +54,15 @@ function SalesOrdersPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadOrders(cid)
-          apiClient.get('/api/sales/customers', { params: { company_id: cid } }).then(({ data }) => setCustomers(data))
-          apiClient.get('/api/finance/accounts', { params: { company_id: cid } }).then(({ data }) => setAccounts(data))
-          apiClient.get('/api/warehouse/warehouses', { params: { company_id: cid } }).then(({ data }) => setWarehouses(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadOrders(companyId)
+    apiClient.get('/api/sales/customers', { params: { company_id: companyId } }).then(({ data }) => setCustomers(data))
+    apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
+    apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
+  }, [companyId])
 
   const customerName = (id) => customers.find((c) => c.id === id)?.name ?? id
 

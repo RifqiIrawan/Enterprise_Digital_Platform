@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyLine = { product_id: '', counted_quantity: 0 }
 const emptyForm = { warehouse_id: '', opname_date: new Date().toISOString().slice(0, 10), notes: '', lines: [{ ...emptyLine }] }
@@ -12,7 +13,7 @@ const STATUS_BADGE = {
 }
 
 function StockOpnamePage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
   const [opnames, setOpnames] = useState([])
@@ -37,24 +38,14 @@ function StockOpnamePage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadOpnames(cid)
-          apiClient.get('/api/warehouse/warehouses', { params: { company_id: cid } }).then(({ data }) => setWarehouses(data))
-          apiClient.get('/api/warehouse/products', { params: { company_id: cid } }).then(({ data }) => setProducts(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadOpnames(companyId)
+    apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
+    apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
+  }, [companyId])
 
   const warehouseName = (id) => warehouses.find((w) => w.id === id)?.name ?? id
 

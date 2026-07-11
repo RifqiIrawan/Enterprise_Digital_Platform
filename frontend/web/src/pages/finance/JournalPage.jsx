@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyLine = { account_id: '', debit_amount: '', credit_amount: '', description: '' }
 const emptyForm = { entry_date: new Date().toISOString().slice(0, 10), description: '', lines: [{ ...emptyLine }, { ...emptyLine }] }
@@ -68,7 +69,7 @@ function journalColumns(postingId, handlePost) {
 }
 
 function JournalPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [accounts, setAccounts] = useState([])
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -90,23 +91,13 @@ function JournalPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadEntries(cid)
-          apiClient.get('/api/finance/accounts', { params: { company_id: cid } }).then(({ data }) => setAccounts(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadEntries(companyId)
+    apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
+  }, [companyId])
 
   function updateLine(index, patch) {
     setForm((f) => ({ ...f, lines: f.lines.map((l, i) => (i === index ? { ...l, ...patch } : l)) }))

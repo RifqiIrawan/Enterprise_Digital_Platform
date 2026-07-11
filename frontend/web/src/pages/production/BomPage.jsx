@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
+import { useCompany } from '../../store/CompanyContext.jsx'
 
 const emptyLine = { component_product_id: '', quantity_per_unit: 1 }
 const emptyForm = { bom_code: '', name: '', product_id: '', lines: [{ ...emptyLine }] }
 
 function BomPage() {
-  const [companyId, setCompanyId] = useState('')
+  const { companyId } = useCompany()
   const [products, setProducts] = useState([])
   const [boms, setBoms] = useState([])
   const [loading, setLoading] = useState(true)
@@ -33,23 +34,13 @@ function BomPage() {
   }
 
   useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
-      .then(({ data }) => {
-        const cid = data[0]?.id ?? ''
-        setCompanyId(cid)
-        if (cid) {
-          loadBoms(cid)
-          apiClient.get('/api/warehouse/products', { params: { company_id: cid } }).then(({ data }) => setProducts(data))
-        } else {
-          setLoading(false)
-        }
-      })
-      .catch(() => {
-        setError('Gagal memuat data company.')
-        setLoading(false)
-      })
-  }, [])
+    if (!companyId) {
+      setLoading(false)
+      return
+    }
+    loadBoms(companyId)
+    apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
+  }, [companyId])
 
   const productName = (id) => {
     const p = products.find((p) => p.id === id)
