@@ -41,8 +41,8 @@ func findOrCreateProduct(ctx context.Context, tx pgx.Tx, companyID, name, unit s
 	}
 	sku := "AUTO-" + strings.ToUpper(uuid.NewString()[:8])
 	err = scanProduct(tx.QueryRow(ctx, `
-		INSERT INTO products (company_id, sku, name, unit)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO products (company_id, sku, name, unit, category)
+		VALUES ($1, $2, $3, $4, '')
 		RETURNING `+productColumns, companyID, sku, name, unit), &p)
 	return p, err
 }
