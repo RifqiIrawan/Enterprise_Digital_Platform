@@ -1,0 +1,45 @@
+# Reference shape only -- REPLACE_ME_INGRESS_CLASS and REPLACE_ME_DOMAIN
+# must be filled in per environment (an overlay can patch or replace this
+# entirely). No ingress controller is assumed to exist in every cluster
+# this might be applied to; the dev overlay skips this and uses
+# `kubectl port-forward` instead (see overlays/dev/README.md).
+#
+# Two separate hosts, not one host with path-based routing -- this matches
+# the api-<env>.<domain> / <env>.<domain> split already used in
+# infra/environments/*/frontend.env.example (VITE_API_BASE_URL), so the
+# frontend's build-time API base URL actually lines up with where the
+# gateway is really reachable.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: edp-ingress
+  annotations:
+    # cert-manager.io/cluster-issuer: REPLACE_ME_CERT_ISSUER  # uncomment once cert-manager is set up
+spec:
+  ingressClassName: REPLACE_ME_INGRESS_CLASS
+  rules:
+    - host: api.REPLACE_ME_DOMAIN
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 8079
+    - host: REPLACE_ME_DOMAIN
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+  # tls:
+  #   - hosts:
+  #       - REPLACE_ME_DOMAIN
+  #       - api.REPLACE_ME_DOMAIN
+  #     secretName: edp-tls

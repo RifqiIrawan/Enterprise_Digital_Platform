@@ -1,0 +1,152 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - auth-service.yaml
+  - company-service.yaml
+  - rbac-service.yaml
+  - audit-service.yaml
+  - api-gateway.yaml
+  - finance-service.yaml
+  - hr-service.yaml
+  - sales-service.yaml
+  - purchasing-service.yaml
+  - warehouse-service.yaml
+  - production-service.yaml
+  - qc-service.yaml
+  - asset-service.yaml
+  - ai-bi-service.yaml
+  - frontend.yaml
+  - ingress.yaml
+
+# Non-secret config only -- REPLACE_ME_* values here are meant to be
+# overridden per environment via a `configMapGenerator` with
+# `behavior: merge` in each overlay (see overlays/dev/kustomization.yaml
+# for a real example). Cross-service URLs use plain K8s Service DNS names
+# (e.g. http://finance-service:8085), which resolve correctly within any
+# namespace as long as that namespace has all these Services deployed --
+# true in every overlay here, so those values do NOT need per-environment
+# overrides, only the external infra ones (DATABASE_URL, KAFKA_BROKERS,
+# REDIS_URL, CLICKHOUSE_URL) do.
+#
+# jwt-secret is intentionally NOT defined here at all (not even as a
+# placeholder) -- see the comment on auth-service.yaml/api-gateway.yaml.
+# Every overlay must supply its own secretGenerator (or external secret)
+# named "jwt-secret", or auth-service/api-gateway's pods fail to start.
+configMapGenerator:
+  - name: auth-service-config
+    literals:
+      - PORT=8081
+      - APP_ENV=REPLACE_ME_APP_ENV
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_AUTH
+      - REDIS_URL=REPLACE_ME_REDIS_URL
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - ACCESS_TOKEN_TTL=15m
+      - REFRESH_TOKEN_TTL=168h
+
+  - name: company-service-config
+    literals:
+      - PORT=8082
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_COMPANY
+      - REDIS_URL=REPLACE_ME_REDIS_URL
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+
+  - name: rbac-service-config
+    literals:
+      - PORT=8083
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_RBAC
+      - REDIS_URL=REPLACE_ME_REDIS_URL
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+
+  - name: audit-service-config
+    literals:
+      - PORT=8084
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_AUDIT
+      - CLICKHOUSE_URL=REPLACE_ME_CLICKHOUSE_URL
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - KAFKA_GROUP_ID=audit-service
+
+  - name: api-gateway-config
+    literals:
+      - PORT=8079
+      - APP_ENV=REPLACE_ME_APP_ENV
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - COMPANY_SERVICE_URL=http://company-service:8082
+      - RBAC_SERVICE_URL=http://rbac-service:8083
+      - AUDIT_SERVICE_URL=http://audit-service:8084
+      - FINANCE_SERVICE_URL=http://finance-service:8085
+      - HR_SERVICE_URL=http://hr-service:8086
+      - SALES_SERVICE_URL=http://sales-service:8087
+      - PURCHASING_SERVICE_URL=http://purchasing-service:8088
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - PRODUCTION_SERVICE_URL=http://production-service:8090
+      - QC_SERVICE_URL=http://qc-service:8091
+      - ASSET_SERVICE_URL=http://asset-service:8092
+      - AI_BI_SERVICE_URL=http://ai-bi-service:8093
+      - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
+
+  - name: finance-service-config
+    literals:
+      - PORT=8085
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_FINANCE
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+
+  - name: hr-service-config
+    literals:
+      - PORT=8086
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_HR
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - FINANCE_SERVICE_URL=http://finance-service:8085
+
+  - name: sales-service-config
+    literals:
+      - PORT=8087
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_SALES
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - FINANCE_SERVICE_URL=http://finance-service:8085
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+
+  - name: purchasing-service-config
+    literals:
+      - PORT=8088
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_PURCHASING
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - FINANCE_SERVICE_URL=http://finance-service:8085
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+
+  - name: warehouse-service-config
+    literals:
+      - PORT=8089
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_WAREHOUSE
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+
+  - name: production-service-config
+    literals:
+      - PORT=8090
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_PRODUCTION
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+
+  - name: qc-service-config
+    literals:
+      - PORT=8091
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_QC
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+
+  - name: asset-service-config
+    literals:
+      - PORT=8092
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_ASSET
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+
+  - name: ai-bi-service-config
+    literals:
+      - PORT=8093
+      - SALES_SERVICE_URL=http://sales-service:8087
+      - PURCHASING_SERVICE_URL=http://purchasing-service:8088
+      - FINANCE_SERVICE_URL=http://finance-service:8085
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - PRODUCTION_SERVICE_URL=http://production-service:8090
+      - QC_SERVICE_URL=http://qc-service:8091
+      - HR_SERVICE_URL=http://hr-service:8086
+      - ASSET_SERVICE_URL=http://asset-service:8092

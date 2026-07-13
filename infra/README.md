@@ -103,15 +103,36 @@ start (`log.Fatalf`) kalau `APP_ENV` bukan `development` tapi `JWT_SECRET`
 masih default `change-me` — proteksi supaya kesalahan config seperti ini
 tidak lolos ke deployment sungguhan.
 
+## Kubernetes (Kustomize)
+
+`kubernetes/base/` + `kubernetes/overlays/{dev,staging,prod}/` — manifest
+plain (Deployment/Service/ConfigMap/Secret/Ingress via Kustomize, bukan
+Helm). **`overlays/dev` benar-benar bisa dipakai hari ini** terhadap cluster
+lokal (Docker Desktop Kubernetes, dites nyata sesi ini — 15 pod naik, semua
+`1/1 Running`, health check + panggilan lintas-service lewat K8s Service DNS
+sukses, lihat `kubernetes/overlays/dev/README.md` untuk cara pakai).
+`overlays/staging`/`overlays/prod` sengaja masih kerangka tipis (namespace +
+replica count saja) — belum ada infrastruktur staging/prod sungguhan untuk
+diisi nilai aslinya (lihat README masing-masing untuk daftar lengkap yang
+masih kurang).
+
+```
+kubectl apply -k infra/kubernetes/overlays/dev
+kubectl -n edp-dev get pods -w
+```
+
 ## Struktur
 ```
 infra/
 ├── docker-compose.yml       # infra (Kafka/Redis/MinIO/ClickHouse) + seluruh app stack lokal (opsional)
 ├── environments/            # template env var staging/prod (*.env.example per service)
 ├── kafka/topics.md          # konvensi penamaan topic
-├── kubernetes/               # placeholder manifest (fase deployment K8s)
-│   ├── base/
-│   └── overlays/{dev,staging,prod}/
+├── kubernetes/
+│   ├── base/                 # Deployment+Service+ConfigMap+Ingress per service (Kustomize)
+│   └── overlays/
+│       ├── dev/               # lengkap & bisa dipakai (host.docker.internal, image lokal, jwt-secret dev)
+│       ├── staging/            # kerangka tipis, belum bisa dipakai
+│       └── prod/                # kerangka tipis, belum bisa dipakai
 └── scripts/                 # dev-up.ps1, dev-down.ps1
 
 # Dockerfile tiap service ada di direktorinya sendiri, bukan di sini:
@@ -125,5 +146,7 @@ Fase 1 — docker-compose untuk local dev infra SELESAI. Dockerfile + docker-com
 untuk full app stack (14 service Go + frontend) SELESAI. Template environment
 config staging/prod (`environments/`) + guard `JWT_SECRET` SELESAI (tapi belum
 ada infrastruktur staging/prod sungguhan untuk diisi ke templatenya). Manifest
-Kubernetes masih placeholder, menyusul sesuai `14_Kubernetes_Deployment.md`.
-CI/CD belum dikerjakan (butuh git remote dulu supaya bisa diverifikasi jalan).
+Kubernetes (Kustomize, `base/` + `overlays/dev` lengkap & teruji, `staging`/`prod`
+kerangka tipis) SELESAI. CI/CD belum dikerjakan (butuh git remote dulu supaya
+bisa diverifikasi jalan) — satu-satunya item production-readiness yang tersisa
+dari 4 opsi awal.

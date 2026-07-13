@@ -1,0 +1,163 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: edp-dev
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+# Swap the REPLACE_ME_REGISTRY placeholder for the images already built
+# locally by `docker compose build` (infra/docker-compose.yml) -- no
+# registry needed, since a local cluster that shares the host's Docker
+# image store (Docker Desktop Kubernetes, or `kind --load`/`minikube image
+# load` elsewhere) can use them directly. imagePullPolicy: IfNotPresent in
+# base means it won't try to pull these from anywhere.
+images:
+  - name: REPLACE_ME_REGISTRY/auth-service
+    newName: infra-auth-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/company-service
+    newName: infra-company-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/rbac-service
+    newName: infra-rbac-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/audit-service
+    newName: infra-audit-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/api-gateway
+    newName: infra-api-gateway
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/finance-service
+    newName: infra-finance-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/hr-service
+    newName: infra-hr-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/sales-service
+    newName: infra-sales-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/purchasing-service
+    newName: infra-purchasing-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/warehouse-service
+    newName: infra-warehouse-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/production-service
+    newName: infra-production-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/qc-service
+    newName: infra-qc-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/asset-service
+    newName: infra-asset-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/ai-bi-service
+    newName: infra-ai-bi-service
+    newTag: latest
+  - name: REPLACE_ME_REGISTRY/frontend
+    newName: infra-frontend
+    newTag: latest
+
+# Postgres/Kafka/Redis/ClickHouse are NOT deployed into the cluster here --
+# they're the same infra containers from `infra/docker-compose.yml`
+# (`docker compose up -d clickhouse redis minio kafka`) plus native
+# Postgres, reached from inside pods via host.docker.internal at their
+# HOST-mapped ports (the same ports a natively-run `go run ./cmd/server`
+# process would use) -- Docker Desktop Kubernetes shares the same
+# host.docker.internal resolution as Docker Desktop's regular containers.
+# This deliberately reuses already-validated infra instead of standing up
+# a second copy inside the cluster.
+configMapGenerator:
+  - name: auth-service-config
+    behavior: merge
+    literals:
+      - APP_ENV=development
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/auth_service?sslmode=disable
+      - REDIS_URL=host.docker.internal:6379
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: company-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/company_service?sslmode=disable
+      - REDIS_URL=host.docker.internal:6379
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: rbac-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/rbac_service?sslmode=disable
+      - REDIS_URL=host.docker.internal:6379
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: audit-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/audit_service?sslmode=disable
+      - CLICKHOUSE_URL=http://host.docker.internal:8123
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: api-gateway-config
+    behavior: merge
+    literals:
+      - APP_ENV=development
+      - CORS_ALLOWED_ORIGIN=http://localhost:3000
+  - name: finance-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: hr-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/hr_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: sales-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: purchasing-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/purchasing_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: warehouse-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/warehouse_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: production-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/production_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: qc-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/qc_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: asset-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/asset_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+
+# Dev-only, obviously not a real secret. Never reuse this value anywhere
+# past a local cluster on this machine.
+secretGenerator:
+  - name: jwt-secret
+    literals:
+      - JWT_SECRET=dev-only-not-a-real-secret
+
+# No Ingress in dev -- Docker Desktop Kubernetes doesn't ship an ingress
+# controller by default, and installing one is out of scope here. Use
+# `kubectl port-forward` instead (see README.md in this directory).
+patches:
+  - target:
+      kind: Ingress
+      name: edp-ingress
+    patch: |
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: Ingress
+      metadata:
+        name: edp-ingress

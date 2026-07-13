@@ -1,0 +1,53 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# THIN SCAFFOLD -- renders successfully (`kubectl kustomize` this
+# directory) but is NOT deployable as-is. See README.md in this directory
+# for the full list of what's still missing (real DATABASE_URL/KAFKA_BROKERS/
+# etc, a jwt-secret, a real image registry, Ingress host/class). Compare
+# with ../dev, which is fully wired and actually deployable today.
+
+namespace: edp-staging
+
+resources:
+  - ../../base
+  - namespace.yaml
+
+# Modest horizontal bump over base's single replica -- not load-tested,
+# just "more than one so a single pod restart isn't a full outage".
+replicas:
+  - name: auth-service
+    count: 2
+  - name: company-service
+    count: 2
+  - name: rbac-service
+    count: 2
+  - name: audit-service
+    count: 2
+  - name: api-gateway
+    count: 2
+  - name: finance-service
+    count: 2
+  - name: hr-service
+    count: 2
+  - name: sales-service
+    count: 2
+  - name: purchasing-service
+    count: 2
+  - name: warehouse-service
+    count: 2
+  - name: production-service
+    count: 2
+  - name: qc-service
+    count: 2
+  - name: asset-service
+    count: 2
+  - name: ai-bi-service
+    count: 2
+  - name: frontend
+    count: 2
+
+# Deliberately NOT included here (see README.md for why): configMapGenerator
+# overrides for DATABASE_URL/KAFKA_BROKERS/REDIS_URL/CLICKHOUSE_URL/APP_ENV/
+# CORS_ALLOWED_ORIGIN, a jwt-secret secretGenerator, an images: transformer
+# pointing at a real registry, and an Ingress host/class patch.
