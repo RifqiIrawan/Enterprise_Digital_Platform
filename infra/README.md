@@ -87,10 +87,27 @@ Rebuild image setelah ganti kode: `docker compose build <nama-service>` lalu
 `docker compose up -d <nama-service>`. Mematikan seluruhnya (app + infra):
 `docker compose down`.
 
+**Penting**: `docker-compose.yml` ini murni untuk dev lokal satu mesin (asumsi
+`host.docker.internal`, container network yang sama). Untuk deployment
+staging/prod sungguhan (topologi berbeda, tanpa `host.docker.internal`), lihat
+`environments/` di bawah — bukan file compose ini.
+
+## Environment config staging/prod
+
+`environments/staging/` dan `environments/production/` berisi template env
+var (`*.env.example`) untuk tiap 14 service + frontend, siap diisi kalau
+infrastruktur staging/prod sungguhan sudah ada — lihat
+`environments/README.md` untuk penjelasan lengkap & alasan kenapa ini
+terpisah dari `docker-compose.yml`. `auth-service` dan `api-gateway` menolak
+start (`log.Fatalf`) kalau `APP_ENV` bukan `development` tapi `JWT_SECRET`
+masih default `change-me` — proteksi supaya kesalahan config seperti ini
+tidak lolos ke deployment sungguhan.
+
 ## Struktur
 ```
 infra/
-├── docker-compose.yml       # infra (Kafka/Redis/MinIO/ClickHouse) + seluruh app stack (opsional)
+├── docker-compose.yml       # infra (Kafka/Redis/MinIO/ClickHouse) + seluruh app stack lokal (opsional)
+├── environments/            # template env var staging/prod (*.env.example per service)
 ├── kafka/topics.md          # konvensi penamaan topic
 ├── kubernetes/               # placeholder manifest (fase deployment K8s)
 │   ├── base/
@@ -105,7 +122,8 @@ frontend/web/Dockerfile
 
 ## Status
 Fase 1 — docker-compose untuk local dev infra SELESAI. Dockerfile + docker-compose
-untuk full app stack (14 service Go + frontend) SELESAI. Manifest Kubernetes
-masih placeholder, menyusul sesuai `14_Kubernetes_Deployment.md`. CI/CD dan
-environment config staging/prod (di luar `docker-compose.yml` lokal ini) juga
-belum dikerjakan.
+untuk full app stack (14 service Go + frontend) SELESAI. Template environment
+config staging/prod (`environments/`) + guard `JWT_SECRET` SELESAI (tapi belum
+ada infrastruktur staging/prod sungguhan untuk diisi ke templatenya). Manifest
+Kubernetes masih placeholder, menyusul sesuai `14_Kubernetes_Deployment.md`.
+CI/CD belum dikerjakan (butuh git remote dulu supaya bisa diverifikasi jalan).

@@ -15,6 +15,11 @@ frontend/web/dist/
 */.env
 */.env.local
 
+# Filled-in staging/production env configs (real secrets) -- only the
+# *.env.example templates in infra/environments/ are meant to be committed.
+infra/environments/**/*.env
+!infra/environments/**/*.env.example
+
 # Logs
 *.log
 

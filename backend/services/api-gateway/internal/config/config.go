@@ -1,9 +1,13 @@
 package config
 
-import "os"
+import (
+	"log"
+	"os"
+)
 
 type Config struct {
 	Port                 string
+	AppEnv               string
 	AuthServiceURL       string
 	CompanyServiceURL    string
 	RBACServiceURL       string
@@ -22,8 +26,9 @@ type Config struct {
 }
 
 func Load() *Config {
-	return &Config{
+	cfg := &Config{
 		Port:                 getEnv("PORT", "8079"),
+		AppEnv:               getEnv("APP_ENV", "development"),
 		AuthServiceURL:       getEnv("AUTH_SERVICE_URL", "http://localhost:8081"),
 		CompanyServiceURL:    getEnv("COMPANY_SERVICE_URL", "http://localhost:8082"),
 		RBACServiceURL:       getEnv("RBAC_SERVICE_URL", "http://localhost:8083"),
@@ -40,6 +45,14 @@ func Load() *Config {
 		JWTSecret:            getEnv("JWT_SECRET", "change-me"),
 		CORSAllowedOrigin:    getEnv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 	}
+	// api-gateway verifies incoming JWTs with this same secret (must match
+	// auth-service) -- see the matching guard/comment in
+	// auth-service/internal/config/config.go for why this can't just be a
+	// misconfiguration warning.
+	if cfg.AppEnv != "development" && cfg.JWTSecret == "change-me" {
+		log.Fatalf("api-gateway: JWT_SECRET wajib diset eksplisit saat APP_ENV=%s (tidak boleh memakai default 'change-me')", cfg.AppEnv)
+	}
+	return cfg
 }
 
 func getEnv(key, fallback string) string {
