@@ -54,13 +54,21 @@ services:
     ports:
       - "9092:9092"
     environment:
+      # Two listeners: PLAINTEXT (advertised as localhost:9092) for clients
+      # outside Docker -- e.g. a service run natively via `go run` on the
+      # host -- and INTERNAL (advertised as kafka:29092) for the app
+      # containers below. Without the second listener, a containerized
+      # client's initial bootstrap to kafka:9092 succeeds but the broker's
+      # metadata response advertises "localhost", which resolves to the
+      # client's own container and breaks every produce/consume after that.
       - KAFKA_CFG_NODE_ID=0
       - KAFKA_CFG_PROCESS_ROLES=controller,broker
-      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
-      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,INTERNAL://:29092,CONTROLLER://:9093
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
       - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@kafka:9093
       - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
-      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,INTERNAL:PLAINTEXT
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=INTERNAL
     volumes:
       - kafka_data:/bitnami/kafka
     networks:
@@ -72,8 +80,330 @@ services:
       - kafka
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     ports:
       - "8099:8080"   # host 8090 clashes with production-service (backend/modules/production-service)
+    networks:
+      - edp-network
+
+  # ---------------------------------------------------------------------
+  # App services (all 14 Go services + frontend). Optional: infra above can
+  # run alone for `go run ./cmd/server` local dev; these let the whole
+  # stack run as containers with `docker compose up -d`. Postgres stays
+  # native (see infra/README.md), so every service below reaches it via the
+  # special host.docker.internal hostname rather than "localhost" (which
+  # inside a container means the container itself). All databases listed in
+  # infra/README.md must already exist before starting these.
+  # ---------------------------------------------------------------------
+
+  auth-service:
+    build:
+      context: ../backend/services/auth-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8081"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/auth_service?sslmode=disable
+      REDIS_URL: redis:6379
+      KAFKA_BROKERS: kafka:29092
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+      - kafka
+    ports:
+      - "8081:8081"
+    networks:
+      - edp-network
+
+  company-service:
+    build:
+      context: ../backend/services/company-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8082"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/company_service?sslmode=disable
+      REDIS_URL: redis:6379
+      KAFKA_BROKERS: kafka:29092
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+      - kafka
+    ports:
+      - "8082:8082"
+    networks:
+      - edp-network
+
+  rbac-service:
+    build:
+      context: ../backend/services/rbac-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8083"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/rbac_service?sslmode=disable
+      REDIS_URL: redis:6379
+      KAFKA_BROKERS: kafka:29092
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - redis
+      - kafka
+    ports:
+      - "8083:8083"
+    networks:
+      - edp-network
+
+  audit-service:
+    build:
+      context: ../backend/services/audit-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8084"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/audit_service?sslmode=disable
+      CLICKHOUSE_URL: http://clickhouse:8123
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_GROUP_ID: audit-service
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - clickhouse
+      - kafka
+    ports:
+      - "8084:8084"
+    networks:
+      - edp-network
+
+  finance-service:
+    build:
+      context: ../backend/modules/finance-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8085"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+    ports:
+      - "8085:8085"
+    networks:
+      - edp-network
+
+  hr-service:
+    build:
+      context: ../backend/modules/hr-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8086"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/hr_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      FINANCE_SERVICE_URL: http://finance-service:8085
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+      - finance-service
+    ports:
+      - "8086:8086"
+    networks:
+      - edp-network
+
+  sales-service:
+    build:
+      context: ../backend/modules/sales-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8087"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      FINANCE_SERVICE_URL: http://finance-service:8085
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+      - finance-service
+      - warehouse-service
+    ports:
+      - "8087:8087"
+    networks:
+      - edp-network
+
+  purchasing-service:
+    build:
+      context: ../backend/modules/purchasing-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8088"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/purchasing_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      FINANCE_SERVICE_URL: http://finance-service:8085
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+      - finance-service
+      - warehouse-service
+    ports:
+      - "8088:8088"
+    networks:
+      - edp-network
+
+  warehouse-service:
+    build:
+      context: ../backend/modules/warehouse-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8089"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/warehouse_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+    ports:
+      - "8089:8089"
+    networks:
+      - edp-network
+
+  production-service:
+    build:
+      context: ../backend/modules/production-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8090"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/production_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+      - warehouse-service
+    ports:
+      - "8090:8090"
+    networks:
+      - edp-network
+
+  qc-service:
+    build:
+      context: ../backend/modules/qc-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8091"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/qc_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+    ports:
+      - "8091:8091"
+    networks:
+      - edp-network
+
+  asset-service:
+    build:
+      context: ../backend/modules/asset-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8092"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/asset_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+    ports:
+      - "8092:8092"
+    networks:
+      - edp-network
+
+  ai-bi-service:
+    build:
+      context: ../backend/modules/ai-bi-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8093"
+      SALES_SERVICE_URL: http://sales-service:8087
+      PURCHASING_SERVICE_URL: http://purchasing-service:8088
+      FINANCE_SERVICE_URL: http://finance-service:8085
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+      PRODUCTION_SERVICE_URL: http://production-service:8090
+      QC_SERVICE_URL: http://qc-service:8091
+      HR_SERVICE_URL: http://hr-service:8086
+      ASSET_SERVICE_URL: http://asset-service:8092
+    # No database/Kafka of its own -- pure live HTTP aggregation, see
+    # backend/modules/ai-bi-service/internal/httpapi/summary.go.
+    depends_on:
+      - sales-service
+      - purchasing-service
+      - finance-service
+      - warehouse-service
+      - production-service
+      - qc-service
+      - hr-service
+      - asset-service
+    ports:
+      - "8093:8093"
+    networks:
+      - edp-network
+
+  api-gateway:
+    build:
+      context: ../backend/services/api-gateway
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8079"
+      AUTH_SERVICE_URL: http://auth-service:8081
+      COMPANY_SERVICE_URL: http://company-service:8082
+      RBAC_SERVICE_URL: http://rbac-service:8083
+      AUDIT_SERVICE_URL: http://audit-service:8084
+      FINANCE_SERVICE_URL: http://finance-service:8085
+      HR_SERVICE_URL: http://hr-service:8086
+      SALES_SERVICE_URL: http://sales-service:8087
+      PURCHASING_SERVICE_URL: http://purchasing-service:8088
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+      PRODUCTION_SERVICE_URL: http://production-service:8090
+      QC_SERVICE_URL: http://qc-service:8091
+      ASSET_SERVICE_URL: http://asset-service:8092
+      AI_BI_SERVICE_URL: http://ai-bi-service:8093
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+    depends_on:
+      - auth-service
+      - company-service
+      - rbac-service
+      - audit-service
+      - finance-service
+      - hr-service
+      - sales-service
+      - purchasing-service
+      - warehouse-service
+      - production-service
+      - qc-service
+      - asset-service
+      - ai-bi-service
+    ports:
+      - "8079:8079"
+    networks:
+      - edp-network
+
+  frontend:
+    build:
+      context: ../frontend/web
+      dockerfile: Dockerfile
+      args:
+        # Baked into the JS bundle at build time -- points at the
+        # host-exposed api-gateway port since this is what the user's
+        # browser (not the container network) has to reach.
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8079}
+    depends_on:
+      - api-gateway
+    ports:
+      - "3000:80"
     networks:
       - edp-network
