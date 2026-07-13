@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,10 +14,10 @@ import (
 	"github.com/enterprise-digital-platform/warehouse-service/internal/model"
 )
 
-const stockTransferColumns = `id, company_id, transfer_number, from_warehouse_id, to_warehouse_id, transfer_date, status, notes, created_at, updated_at`
+const stockTransferColumns = `id, company_id, branch_id, transfer_number, from_warehouse_id, to_warehouse_id, transfer_date, status, notes, created_at, updated_at`
 
 func scanStockTransfer(row pgx.Row, t *model.StockTransfer) error {
-	return row.Scan(&t.ID, &t.CompanyID, &t.TransferNumber, &t.FromWarehouseID, &t.ToWarehouseID, &t.TransferDate, &t.Status, &t.Notes, &t.CreatedAt, &t.UpdatedAt)
+	return row.Scan(&t.ID, &t.CompanyID, &t.BranchID, &t.TransferNumber, &t.FromWarehouseID, &t.ToWarehouseID, &t.TransferDate, &t.Status, &t.Notes, &t.CreatedAt, &t.UpdatedAt)
 }
 
 func (h *Handler) listStockTransfers(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +26,15 @@ func (h *Handler) listStockTransfers(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "company_id wajib diisi")
 		return
 	}
-	rows, err := h.pool.Query(r.Context(), `SELECT `+stockTransferColumns+` FROM stock_transfers WHERE company_id = $1 ORDER BY transfer_date DESC, transfer_number DESC`, companyID)
+	query := `SELECT ` + stockTransferColumns + ` FROM stock_transfers WHERE company_id = $1`
+	args := []any{companyID}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += ` AND (branch_id = $` + strconv.Itoa(len(args)) + ` OR branch_id IS NULL)`
+	}
+	query += ` ORDER BY transfer_date DESC, transfer_number DESC`
+
+	rows, err := h.pool.Query(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat data mutasi antar gudang")
 		return
@@ -51,6 +60,7 @@ type transferLineInput struct {
 
 type createStockTransferRequest struct {
 	CompanyID       string              `json:"company_id"`
+	BranchID        *string             `json:"branch_id"`
 	FromWarehouseID string              `json:"from_warehouse_id"`
 	ToWarehouseID   string              `json:"to_warehouse_id"`
 	TransferDate    string              `json:"transfer_date"`
@@ -106,10 +116,10 @@ func (h *Handler) createStockTransfer(w http.ResponseWriter, r *http.Request) {
 
 	var t model.StockTransfer
 	err = scanStockTransfer(tx.QueryRow(ctx, `
-		INSERT INTO stock_transfers (company_id, transfer_number, from_warehouse_id, to_warehouse_id, transfer_date, notes)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO stock_transfers (company_id, branch_id, transfer_number, from_warehouse_id, to_warehouse_id, transfer_date, notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING `+stockTransferColumns,
-		req.CompanyID, transferNumber, req.FromWarehouseID, req.ToWarehouseID, transferDate, req.Notes,
+		req.CompanyID, req.BranchID, transferNumber, req.FromWarehouseID, req.ToWarehouseID, transferDate, req.Notes,
 	), &t)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal membuat mutasi antar gudang")
@@ -221,11 +231,11 @@ func (h *Handler) confirmStockTransfer(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(ctx)
 
 	for _, l := range lines {
-		if _, err := applyStockMovement(ctx, tx, t.CompanyID, nil, t.FromWarehouseID, l.ProductID, "OUT", l.Quantity, "TRANSFER", &t.ID, "Mutasi "+t.TransferNumber, t.TransferDate, actor); err != nil {
+		if _, err := applyStockMovement(ctx, tx, t.CompanyID, t.BranchID, t.FromWarehouseID, l.ProductID, "OUT", l.Quantity, "TRANSFER", &t.ID, "Mutasi "+t.TransferNumber, t.TransferDate, actor); err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal mencatat stok keluar dari gudang asal")
 			return
 		}
-		if _, err := applyStockMovement(ctx, tx, t.CompanyID, nil, t.ToWarehouseID, l.ProductID, "IN", l.Quantity, "TRANSFER", &t.ID, "Mutasi "+t.TransferNumber, t.TransferDate, actor); err != nil {
+		if _, err := applyStockMovement(ctx, tx, t.CompanyID, t.BranchID, t.ToWarehouseID, l.ProductID, "IN", l.Quantity, "TRANSFER", &t.ID, "Mutasi "+t.TransferNumber, t.TransferDate, actor); err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal mencatat stok masuk ke gudang tujuan")
 			return
 		}

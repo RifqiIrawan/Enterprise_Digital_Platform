@@ -14,7 +14,7 @@ const STATUS_BADGE = {
 }
 
 function StockTransfersPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
   const [transfers, setTransfers] = useState([])
@@ -27,10 +27,10 @@ function StockTransfersPage() {
   const [saving, setSaving] = useState(false)
   const [actingId, setActingId] = useState(null)
 
-  function loadTransfers(cid) {
+  function loadTransfers(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/warehouse/stock-transfers', { params: { company_id: cid } })
+      .get('/api/warehouse/stock-transfers', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setTransfers(data))
       .catch(() => setError('Gagal memuat data mutasi antar gudang. Pastikan warehouse-service aktif.'))
       .finally(() => setLoading(false))
@@ -41,10 +41,10 @@ function StockTransfersPage() {
       setLoading(false)
       return
     }
-    loadTransfers(companyId)
+    loadTransfers(companyId, branchId)
     apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
     apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const warehouseName = (id) => warehouses.find((w) => w.id === id)?.name ?? id
 
@@ -73,6 +73,7 @@ function StockTransfersPage() {
     try {
       await apiClient.post('/api/warehouse/stock-transfers', {
         company_id: companyId,
+        branch_id: branchId || null,
         from_warehouse_id: form.from_warehouse_id,
         to_warehouse_id: form.to_warehouse_id,
         transfer_date: form.transfer_date,
@@ -82,7 +83,7 @@ function StockTransfersPage() {
           .map((l) => ({ product_id: l.product_id, quantity: Number(l.quantity) || 0 })),
       })
       setCreating(false)
-      loadTransfers(companyId)
+      loadTransfers(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat mutasi antar gudang')
     } finally {
@@ -94,7 +95,7 @@ function StockTransfersPage() {
     setActingId(id)
     try {
       await apiClient.post(`/api/warehouse/stock-transfers/${id}/confirm`)
-      loadTransfers(companyId)
+      loadTransfers(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal mengonfirmasi mutasi antar gudang')
     } finally {

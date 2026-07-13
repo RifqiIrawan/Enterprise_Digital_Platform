@@ -16,10 +16,10 @@ var validAttendanceStatuses = map[string]bool{
 	"PRESENT": true, "LATE": true, "EARLY_LEAVE": true, "ABSENT": true, "LEAVE": true,
 }
 
-const attendanceColumns = `id, company_id, employee_id, log_date, check_in, check_out, source, status, created_at`
+const attendanceColumns = `id, company_id, branch_id, employee_id, log_date, check_in, check_out, source, status, created_at`
 
 func scanAttendance(row pgx.Row, a *model.AttendanceLog) error {
-	return row.Scan(&a.ID, &a.CompanyID, &a.EmployeeID, &a.LogDate, &a.CheckIn, &a.CheckOut, &a.Source, &a.Status, &a.CreatedAt)
+	return row.Scan(&a.ID, &a.CompanyID, &a.BranchID, &a.EmployeeID, &a.LogDate, &a.CheckIn, &a.CheckOut, &a.Source, &a.Status, &a.CreatedAt)
 }
 
 func (h *Handler) listAttendance(w http.ResponseWriter, r *http.Request) {
@@ -39,6 +39,10 @@ func (h *Handler) listAttendance(w http.ResponseWriter, r *http.Request) {
 	if period := r.URL.Query().Get("period"); period != "" {
 		args = append(args, period)
 		query += " AND to_char(log_date, 'YYYY-MM') = $" + strconv.Itoa(len(args))
+	}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += " AND (branch_id = $" + strconv.Itoa(len(args)) + " OR branch_id IS NULL)"
 	}
 	query += " ORDER BY log_date DESC"
 
@@ -63,6 +67,7 @@ func (h *Handler) listAttendance(w http.ResponseWriter, r *http.Request) {
 
 type attendanceRequest struct {
 	CompanyID  string  `json:"company_id"`
+	BranchID   *string `json:"branch_id"`
 	EmployeeID string  `json:"employee_id"`
 	LogDate    string  `json:"log_date"` // YYYY-MM-DD
 	CheckIn    *string `json:"check_in"` // RFC3339, opsional
@@ -106,11 +111,11 @@ func (h *Handler) createAttendance(w http.ResponseWriter, r *http.Request) {
 
 	var a model.AttendanceLog
 	err = h.pool.QueryRow(r.Context(), `
-		INSERT INTO attendance_logs (company_id, employee_id, log_date, check_in, check_out, status)
-		VALUES ($1, $2, $3, $4, $5, $6)
+		INSERT INTO attendance_logs (company_id, branch_id, employee_id, log_date, check_in, check_out, status)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		RETURNING `+attendanceColumns,
-		req.CompanyID, req.EmployeeID, logDate, checkIn, checkOut, req.Status,
-	).Scan(&a.ID, &a.CompanyID, &a.EmployeeID, &a.LogDate, &a.CheckIn, &a.CheckOut, &a.Source, &a.Status, &a.CreatedAt)
+		req.CompanyID, req.BranchID, req.EmployeeID, logDate, checkIn, checkOut, req.Status,
+	).Scan(&a.ID, &a.CompanyID, &a.BranchID, &a.EmployeeID, &a.LogDate, &a.CheckIn, &a.CheckOut, &a.Source, &a.Status, &a.CreatedAt)
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate key") {
 			writeError(w, http.StatusConflict, "Sudah ada catatan absensi untuk karyawan ini di tanggal tersebut")
@@ -153,7 +158,7 @@ func (h *Handler) updateAttendance(w http.ResponseWriter, r *http.Request) {
 		WHERE id = $4
 		RETURNING `+attendanceColumns,
 		checkIn, checkOut, req.Status, id,
-	).Scan(&a.ID, &a.CompanyID, &a.EmployeeID, &a.LogDate, &a.CheckIn, &a.CheckOut, &a.Source, &a.Status, &a.CreatedAt)
+	).Scan(&a.ID, &a.CompanyID, &a.BranchID, &a.EmployeeID, &a.LogDate, &a.CheckIn, &a.CheckOut, &a.Source, &a.Status, &a.CreatedAt)
 	if err == pgx.ErrNoRows {
 		writeError(w, http.StatusNotFound, "Catatan absensi tidak ditemukan")
 		return

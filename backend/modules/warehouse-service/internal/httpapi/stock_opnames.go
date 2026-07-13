@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,10 +13,10 @@ import (
 	"github.com/enterprise-digital-platform/warehouse-service/internal/model"
 )
 
-const stockOpnameColumns = `id, company_id, warehouse_id, opname_number, opname_date, status, notes, created_at, updated_at`
+const stockOpnameColumns = `id, company_id, branch_id, warehouse_id, opname_number, opname_date, status, notes, created_at, updated_at`
 
 func scanStockOpname(row pgx.Row, o *model.StockOpname) error {
-	return row.Scan(&o.ID, &o.CompanyID, &o.WarehouseID, &o.OpnameNumber, &o.OpnameDate, &o.Status, &o.Notes, &o.CreatedAt, &o.UpdatedAt)
+	return row.Scan(&o.ID, &o.CompanyID, &o.BranchID, &o.WarehouseID, &o.OpnameNumber, &o.OpnameDate, &o.Status, &o.Notes, &o.CreatedAt, &o.UpdatedAt)
 }
 
 func (h *Handler) listStockOpnames(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +25,15 @@ func (h *Handler) listStockOpnames(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "company_id wajib diisi")
 		return
 	}
-	rows, err := h.pool.Query(r.Context(), `SELECT `+stockOpnameColumns+` FROM stock_opnames WHERE company_id = $1 ORDER BY opname_date DESC, opname_number DESC`, companyID)
+	query := `SELECT ` + stockOpnameColumns + ` FROM stock_opnames WHERE company_id = $1`
+	args := []any{companyID}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += ` AND (branch_id = $` + strconv.Itoa(len(args)) + ` OR branch_id IS NULL)`
+	}
+	query += ` ORDER BY opname_date DESC, opname_number DESC`
+
+	rows, err := h.pool.Query(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat data stock opname")
 		return
@@ -50,6 +59,7 @@ type opnameLineInput struct {
 
 type createStockOpnameRequest struct {
 	CompanyID   string            `json:"company_id"`
+	BranchID    *string           `json:"branch_id"`
 	WarehouseID string            `json:"warehouse_id"`
 	OpnameDate  string            `json:"opname_date"`
 	Notes       string            `json:"notes"`
@@ -104,10 +114,10 @@ func (h *Handler) createStockOpname(w http.ResponseWriter, r *http.Request) {
 
 	var o model.StockOpname
 	err = scanStockOpname(tx.QueryRow(ctx, `
-		INSERT INTO stock_opnames (company_id, warehouse_id, opname_number, opname_date, notes)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO stock_opnames (company_id, branch_id, warehouse_id, opname_number, opname_date, notes)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING `+stockOpnameColumns,
-		req.CompanyID, req.WarehouseID, opnameNumber, opnameDate, req.Notes,
+		req.CompanyID, req.BranchID, req.WarehouseID, opnameNumber, opnameDate, req.Notes,
 	), &o)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal membuat stock opname")
@@ -237,7 +247,7 @@ func (h *Handler) postStockOpname(w http.ResponseWriter, r *http.Request) {
 			movementType = "OUT"
 			quantity = -diff
 		}
-		if _, err := applyStockMovement(ctx, tx, o.CompanyID, nil, o.WarehouseID, l.ProductID, movementType, quantity, "OPNAME", &o.ID, "Stock opname "+o.OpnameNumber, o.OpnameDate, actor); err != nil {
+		if _, err := applyStockMovement(ctx, tx, o.CompanyID, o.BranchID, o.WarehouseID, l.ProductID, movementType, quantity, "OPNAME", &o.ID, "Stock opname "+o.OpnameNumber, o.OpnameDate, actor); err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal mencatat penyesuaian stok")
 			return
 		}

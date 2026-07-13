@@ -132,3 +132,38 @@ func TestListAttendance_FiltersByEmployeeAndPeriod(t *testing.T) {
 		t.Fatalf("expected exactly 1 log for empA in 2026-07, got %+v", logs)
 	}
 }
+
+// TestListAttendance_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListAttendance_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkLog := func(branchID *string, logDate string) {
+		emp := mustSeedEmployee(t, srv, companyID, 5_000_000, 0)
+		requireStatus(t, postJSON(t, srv.URL+"/attendance", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "employee_id": emp.ID, "log_date": logDate, "status": "PRESENT",
+		}), http.StatusCreated)
+	}
+	mkLog(&branchA, "2026-07-10")
+	mkLog(nil, "2026-07-10")
+	mkLog(&branchB, "2026-07-10")
+
+	resp := getJSON(t, srv.URL+"/attendance?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var logs []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &logs)
+	if len(logs) != 2 {
+		t.Fatalf("expected 2 logs (branchA + NULL), got %d: %+v", len(logs), logs)
+	}
+	for _, l := range logs {
+		if l.BranchID != nil && *l.BranchID == branchB {
+			t.Errorf("branchB log leaked into branchA-filtered results: %+v", logs)
+		}
+	}
+}

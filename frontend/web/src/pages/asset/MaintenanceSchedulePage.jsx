@@ -19,7 +19,7 @@ function isOverdue(schedule) {
 }
 
 function MaintenanceSchedulePage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [assets, setAssets] = useState([])
   const [schedules, setSchedules] = useState([])
   const [loading, setLoading] = useState(true)
@@ -31,10 +31,10 @@ function MaintenanceSchedulePage() {
   const [saving, setSaving] = useState(false)
   const [actingId, setActingId] = useState(null)
 
-  function loadSchedules(cid) {
+  function loadSchedules(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/asset/maintenance-schedules', { params: { company_id: cid } })
+      .get('/api/asset/maintenance-schedules', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setSchedules(data))
       .catch(() => setError('Gagal memuat data jadwal maintenance. Pastikan asset-service aktif.'))
       .finally(() => setLoading(false))
@@ -45,9 +45,9 @@ function MaintenanceSchedulePage() {
       setLoading(false)
       return
     }
-    loadSchedules(companyId)
+    loadSchedules(companyId, branchId)
     apiClient.get('/api/asset/assets', { params: { company_id: companyId } }).then(({ data }) => setAssets(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const assetName = (id) => {
     const a = assets.find((a) => a.id === id)
@@ -67,13 +67,14 @@ function MaintenanceSchedulePage() {
     try {
       await apiClient.post('/api/asset/maintenance-schedules', {
         company_id: companyId,
+        branch_id: branchId || null,
         asset_id: form.asset_id,
         maintenance_type: form.maintenance_type,
         scheduled_date: form.scheduled_date,
         notes: form.notes,
       })
       setCreating(false)
-      loadSchedules(companyId)
+      loadSchedules(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat jadwal maintenance')
     } finally {
@@ -85,7 +86,7 @@ function MaintenanceSchedulePage() {
     setActingId(id)
     try {
       await apiClient.post(`/api/asset/maintenance-schedules/${id}/${action}`)
-      loadSchedules(companyId)
+      loadSchedules(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal memproses jadwal maintenance')
     } finally {

@@ -13,7 +13,7 @@ const STATUS_BADGE = {
 }
 
 function StockOpnamePage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
   const [opnames, setOpnames] = useState([])
@@ -28,10 +28,10 @@ function StockOpnamePage() {
   const [viewing, setViewing] = useState(null)
   const [posting, setPosting] = useState(false)
 
-  function loadOpnames(cid) {
+  function loadOpnames(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/warehouse/stock-opnames', { params: { company_id: cid } })
+      .get('/api/warehouse/stock-opnames', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setOpnames(data))
       .catch(() => setError('Gagal memuat data stock opname. Pastikan warehouse-service aktif.'))
       .finally(() => setLoading(false))
@@ -42,10 +42,10 @@ function StockOpnamePage() {
       setLoading(false)
       return
     }
-    loadOpnames(companyId)
+    loadOpnames(companyId, branchId)
     apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
     apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const warehouseName = (id) => warehouses.find((w) => w.id === id)?.name ?? id
 
@@ -74,6 +74,7 @@ function StockOpnamePage() {
     try {
       await apiClient.post('/api/warehouse/stock-opnames', {
         company_id: companyId,
+        branch_id: branchId || null,
         warehouse_id: form.warehouse_id,
         opname_date: form.opname_date,
         notes: form.notes,
@@ -82,7 +83,7 @@ function StockOpnamePage() {
           .map((l) => ({ product_id: l.product_id, counted_quantity: Number(l.counted_quantity) || 0 })),
       })
       setCreating(false)
-      loadOpnames(companyId)
+      loadOpnames(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat stock opname')
     } finally {
@@ -99,7 +100,7 @@ function StockOpnamePage() {
     try {
       await apiClient.post(`/api/warehouse/stock-opnames/${viewing.id}/post`)
       setViewing(null)
-      loadOpnames(companyId)
+      loadOpnames(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal memposting stock opname')
     } finally {

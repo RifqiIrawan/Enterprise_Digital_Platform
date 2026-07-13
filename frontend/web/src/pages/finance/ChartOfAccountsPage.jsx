@@ -16,7 +16,7 @@ const TYPE_BADGE = {
 }
 
 function ChartOfAccountsPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -26,10 +26,10 @@ function ChartOfAccountsPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadAccounts(cid) {
+  function loadAccounts(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/finance/accounts', { params: { company_id: cid } })
+      .get('/api/finance/accounts', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setAccounts(data))
       .catch(() => setError('Gagal memuat chart of accounts. Pastikan finance-service aktif.'))
       .finally(() => setLoading(false))
@@ -40,18 +40,18 @@ function ChartOfAccountsPage() {
       setLoading(false)
       return
     }
-    loadAccounts(companyId)
-  }, [companyId])
+    loadAccounts(companyId, branchId)
+  }, [companyId, branchId])
 
   async function handleSubmit(e) {
     e.preventDefault()
     setSaving(true)
     setFormError('')
     try {
-      await apiClient.post('/api/finance/accounts', { ...form, company_id: companyId })
+      await apiClient.post('/api/finance/accounts', { ...form, company_id: companyId, branch_id: branchId || null })
       setCreating(false)
       setForm(emptyForm)
-      loadAccounts(companyId)
+      loadAccounts(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat account')
     } finally {

@@ -5,6 +5,7 @@ import "time"
 type Account struct {
 	ID          string    `json:"id" db:"id"`
 	CompanyID   string    `json:"company_id" db:"company_id"`
+	BranchID    *string   `json:"branch_id" db:"branch_id"`
 	AccountCode string    `json:"account_code" db:"account_code"`
 	AccountName string    `json:"account_name" db:"account_name"`
 	AccountType string    `json:"account_type" db:"account_type"` // ASSET | LIABILITY | EQUITY | REVENUE | EXPENSE

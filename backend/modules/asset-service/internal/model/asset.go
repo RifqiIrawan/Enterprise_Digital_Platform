@@ -21,6 +21,7 @@ type Asset struct {
 type MaintenanceSchedule struct {
 	ID              string     `json:"id" db:"id"`
 	CompanyID       string     `json:"company_id" db:"company_id"`
+	BranchID        *string    `json:"branch_id" db:"branch_id"`
 	AssetID         string     `json:"asset_id" db:"asset_id"`
 	MaintenanceType string     `json:"maintenance_type" db:"maintenance_type"`
 	ScheduledDate   time.Time  `json:"scheduled_date" db:"scheduled_date"`

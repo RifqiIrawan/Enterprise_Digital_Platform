@@ -40,7 +40,7 @@ function combineDateTime(logDate, timeStr) {
 }
 
 function AttendancePage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [employees, setEmployees] = useState([])
   const [logs, setLogs] = useState([])
   const [period, setPeriod] = useState(currentPeriod())
@@ -53,10 +53,10 @@ function AttendancePage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadLogs(cid, p) {
+  function loadLogs(cid, p, bid) {
     setLoading(true)
     apiClient
-      .get('/api/hr/attendance', { params: { company_id: cid, period: p } })
+      .get('/api/hr/attendance', { params: { company_id: cid, period: p, branch_id: bid } })
       .then(({ data }) => setLogs(data))
       .catch(() => setError('Gagal memuat data absensi. Pastikan hr-service aktif.'))
       .finally(() => setLoading(false))
@@ -72,9 +72,9 @@ function AttendancePage() {
 
   useEffect(() => {
     if (!companyId) return
-    loadLogs(companyId, period)
+    loadLogs(companyId, period, branchId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, period])
+  }, [companyId, period, branchId])
 
   const employeeName = (id) => {
     const emp = employees.find((e) => e.id === id)
@@ -108,6 +108,7 @@ function AttendancePage() {
     try {
       const payload = {
         company_id: companyId,
+        branch_id: branchId || null,
         employee_id: form.employee_id,
         log_date: form.log_date,
         check_in: combineDateTime(form.log_date, form.check_in),
@@ -120,7 +121,7 @@ function AttendancePage() {
         await apiClient.post('/api/hr/attendance', payload)
       }
       setEditing(false)
-      loadLogs(companyId, period)
+      loadLogs(companyId, period, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal menyimpan absensi')
     } finally {

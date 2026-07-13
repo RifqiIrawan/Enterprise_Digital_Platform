@@ -62,6 +62,7 @@ type StockMovement struct {
 type StockTransfer struct {
 	ID              string    `json:"id" db:"id"`
 	CompanyID       string    `json:"company_id" db:"company_id"`
+	BranchID        *string   `json:"branch_id" db:"branch_id"`
 	TransferNumber  string    `json:"transfer_number" db:"transfer_number"`
 	FromWarehouseID string    `json:"from_warehouse_id" db:"from_warehouse_id"`
 	ToWarehouseID   string    `json:"to_warehouse_id" db:"to_warehouse_id"`
@@ -86,6 +87,7 @@ type StockTransferLine struct {
 type StockOpname struct {
 	ID           string    `json:"id" db:"id"`
 	CompanyID    string    `json:"company_id" db:"company_id"`
+	BranchID     *string   `json:"branch_id" db:"branch_id"`
 	WarehouseID  string    `json:"warehouse_id" db:"warehouse_id"`
 	OpnameNumber string    `json:"opname_number" db:"opname_number"`
 	OpnameDate   time.Time `json:"opname_date" db:"opname_date"`

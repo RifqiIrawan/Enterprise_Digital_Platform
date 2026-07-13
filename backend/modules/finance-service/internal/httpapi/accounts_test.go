@@ -168,3 +168,38 @@ func TestListAccounts_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/accounts")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListAccounts_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListAccounts_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkAccount := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/accounts", map[string]any{
+			"company_id": companyID, "branch_id": branchID,
+			"account_code": "ACC-" + uuid.NewString()[:8], "account_name": "Test Account", "account_type": "ASSET",
+		}), http.StatusCreated)
+	}
+	mkAccount(&branchA)
+	mkAccount(nil)
+	mkAccount(&branchB)
+
+	resp := getJSON(t, srv.URL+"/accounts?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var accounts []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &accounts)
+	if len(accounts) != 2 {
+		t.Fatalf("expected 2 accounts (branchA + NULL), got %d: %+v", len(accounts), accounts)
+	}
+	for _, a := range accounts {
+		if a.BranchID != nil && *a.BranchID == branchB {
+			t.Errorf("branchB account leaked into branchA-filtered results: %+v", accounts)
+		}
+	}
+}

@@ -196,3 +196,40 @@ func TestListMaintenanceSchedules_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/maintenance-schedules")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListMaintenanceSchedules_FilteredByBranch confirms branch_id filtering
+// is NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListMaintenanceSchedules_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	asset := mustSeedAsset(t, srv, companyID)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkSchedule := func(branchID *string) {
+		resp := postJSON(t, srv.URL+"/maintenance-schedules", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "asset_id": asset.ID,
+			"maintenance_type": "Servis Rutin", "scheduled_date": today(),
+		})
+		requireStatus(t, resp, http.StatusCreated)
+	}
+	mkSchedule(&branchA)
+	mkSchedule(nil)
+	mkSchedule(&branchB)
+
+	resp := getJSON(t, srv.URL+"/maintenance-schedules?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var schedules []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &schedules)
+	if len(schedules) != 2 {
+		t.Fatalf("expected 2 schedules (branchA + NULL), got %d: %+v", len(schedules), schedules)
+	}
+	for _, s := range schedules {
+		if s.BranchID != nil && *s.BranchID == branchB {
+			t.Errorf("branchB schedule leaked into branchA-filtered results: %+v", schedules)
+		}
+	}
+}

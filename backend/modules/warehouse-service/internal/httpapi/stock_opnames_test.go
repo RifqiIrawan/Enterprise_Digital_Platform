@@ -183,3 +183,41 @@ func TestListStockOpnames_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/stock-opnames")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListStockOpnames_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListStockOpnames_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	wh := mustSeedWarehouse(t, srv, companyID)
+	p := mustSeedProduct(t, srv, companyID)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkOpname := func(branchID *string) {
+		resp := postJSON(t, srv.URL+"/stock-opnames", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "warehouse_id": wh.ID, "opname_date": today(),
+			"lines": []map[string]any{{"product_id": p.ID, "counted_quantity": 5}},
+		})
+		requireStatus(t, resp, http.StatusCreated)
+	}
+	mkOpname(&branchA)
+	mkOpname(nil)
+	mkOpname(&branchB)
+
+	resp := getJSON(t, srv.URL+"/stock-opnames?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var opnames []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &opnames)
+	if len(opnames) != 2 {
+		t.Fatalf("expected 2 opnames (branchA + NULL), got %d: %+v", len(opnames), opnames)
+	}
+	for _, o := range opnames {
+		if o.BranchID != nil && *o.BranchID == branchB {
+			t.Errorf("branchB opname leaked into branchA-filtered results: %+v", opnames)
+		}
+	}
+}

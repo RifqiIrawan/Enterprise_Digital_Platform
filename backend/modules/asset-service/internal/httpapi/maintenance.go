@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,10 +12,10 @@ import (
 	"github.com/enterprise-digital-platform/asset-service/internal/model"
 )
 
-const maintenanceColumns = `id, company_id, asset_id, maintenance_type, scheduled_date, completed_date, status, notes, created_at, updated_at`
+const maintenanceColumns = `id, company_id, branch_id, asset_id, maintenance_type, scheduled_date, completed_date, status, notes, created_at, updated_at`
 
 func scanMaintenance(row pgx.Row, m *model.MaintenanceSchedule) error {
-	return row.Scan(&m.ID, &m.CompanyID, &m.AssetID, &m.MaintenanceType, &m.ScheduledDate, &m.CompletedDate, &m.Status, &m.Notes, &m.CreatedAt, &m.UpdatedAt)
+	return row.Scan(&m.ID, &m.CompanyID, &m.BranchID, &m.AssetID, &m.MaintenanceType, &m.ScheduledDate, &m.CompletedDate, &m.Status, &m.Notes, &m.CreatedAt, &m.UpdatedAt)
 }
 
 func (h *Handler) listMaintenanceSchedules(w http.ResponseWriter, r *http.Request) {
@@ -28,8 +29,12 @@ func (h *Handler) listMaintenanceSchedules(w http.ResponseWriter, r *http.Reques
 	query := `SELECT ` + maintenanceColumns + ` FROM maintenance_schedules WHERE company_id = $1`
 	args := []any{companyID}
 	if assetID != "" {
-		query += ` AND asset_id = $2`
 		args = append(args, assetID)
+		query += ` AND asset_id = $` + strconv.Itoa(len(args))
+	}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += ` AND (branch_id = $` + strconv.Itoa(len(args)) + ` OR branch_id IS NULL)`
 	}
 	query += ` ORDER BY scheduled_date ASC`
 
@@ -53,11 +58,12 @@ func (h *Handler) listMaintenanceSchedules(w http.ResponseWriter, r *http.Reques
 }
 
 type maintenanceRequest struct {
-	CompanyID       string `json:"company_id"`
-	AssetID         string `json:"asset_id"`
-	MaintenanceType string `json:"maintenance_type"`
-	ScheduledDate   string `json:"scheduled_date"`
-	Notes           string `json:"notes"`
+	CompanyID       string  `json:"company_id"`
+	BranchID        *string `json:"branch_id"`
+	AssetID         string  `json:"asset_id"`
+	MaintenanceType string  `json:"maintenance_type"`
+	ScheduledDate   string  `json:"scheduled_date"`
+	Notes           string  `json:"notes"`
 }
 
 func (h *Handler) createMaintenanceSchedule(w http.ResponseWriter, r *http.Request) {
@@ -89,10 +95,10 @@ func (h *Handler) createMaintenanceSchedule(w http.ResponseWriter, r *http.Reque
 
 	var m model.MaintenanceSchedule
 	err = scanMaintenance(h.pool.QueryRow(r.Context(), `
-		INSERT INTO maintenance_schedules (company_id, asset_id, maintenance_type, scheduled_date, notes)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO maintenance_schedules (company_id, branch_id, asset_id, maintenance_type, scheduled_date, notes)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING `+maintenanceColumns,
-		req.CompanyID, req.AssetID, req.MaintenanceType, scheduledDate, req.Notes,
+		req.CompanyID, req.BranchID, req.AssetID, req.MaintenanceType, scheduledDate, req.Notes,
 	), &m)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal membuat jadwal maintenance")

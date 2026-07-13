@@ -144,3 +144,42 @@ func TestListStockTransfers_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/stock-transfers")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListStockTransfers_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListStockTransfers_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	whA := mustSeedWarehouse(t, srv, companyID)
+	whB := mustSeedWarehouse(t, srv, companyID)
+	p := mustSeedProduct(t, srv, companyID)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkTransfer := func(branchID *string) {
+		resp := postJSON(t, srv.URL+"/stock-transfers", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "from_warehouse_id": whA.ID, "to_warehouse_id": whB.ID, "transfer_date": today(),
+			"lines": []map[string]any{{"product_id": p.ID, "quantity": 1}},
+		})
+		requireStatus(t, resp, http.StatusCreated)
+	}
+	mkTransfer(&branchA)
+	mkTransfer(nil)
+	mkTransfer(&branchB)
+
+	resp := getJSON(t, srv.URL+"/stock-transfers?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var transfers []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &transfers)
+	if len(transfers) != 2 {
+		t.Fatalf("expected 2 transfers (branchA + NULL), got %d: %+v", len(transfers), transfers)
+	}
+	for _, tr := range transfers {
+		if tr.BranchID != nil && *tr.BranchID == branchB {
+			t.Errorf("branchB transfer leaked into branchA-filtered results: %+v", transfers)
+		}
+	}
+}
