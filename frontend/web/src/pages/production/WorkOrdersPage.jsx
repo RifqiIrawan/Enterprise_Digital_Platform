@@ -14,7 +14,7 @@ const STATUS_BADGE = {
 }
 
 function WorkOrdersPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [boms, setBoms] = useState([])
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
@@ -33,10 +33,10 @@ function WorkOrdersPage() {
   const [completeError, setCompleteError] = useState('')
   const [completeSaving, setCompleteSaving] = useState(false)
 
-  function loadOrders(cid) {
+  function loadOrders(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/production/work-orders', { params: { company_id: cid } })
+      .get('/api/production/work-orders', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setOrders(data))
       .catch(() => setError('Gagal memuat data work order. Pastikan production-service aktif.'))
       .finally(() => setLoading(false))
@@ -47,11 +47,11 @@ function WorkOrdersPage() {
       setLoading(false)
       return
     }
-    loadOrders(companyId)
+    loadOrders(companyId, branchId)
     apiClient.get('/api/production/boms', { params: { company_id: companyId } }).then(({ data }) => setBoms(data.filter((b) => b.is_active)))
     apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
     apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const bomName = (id) => boms.find((b) => b.id === id)?.name ?? id
   const productName = (id) => {
@@ -73,6 +73,7 @@ function WorkOrdersPage() {
     try {
       await apiClient.post('/api/production/work-orders', {
         company_id: companyId,
+        branch_id: branchId || null,
         bom_id: form.bom_id,
         warehouse_id: form.warehouse_id,
         quantity_planned: Number(form.quantity_planned) || 0,
@@ -81,7 +82,7 @@ function WorkOrdersPage() {
         notes: form.notes,
       })
       setCreating(false)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat work order')
     } finally {
@@ -93,7 +94,7 @@ function WorkOrdersPage() {
     setActingId(id)
     try {
       await apiClient.post(`/api/production/work-orders/${id}/start`)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal memulai work order')
     } finally {
@@ -116,7 +117,7 @@ function WorkOrdersPage() {
         quantity_produced: Number(completeQty) || 0,
       })
       setCompletingOrder(null)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       setCompleteError(err.response?.data?.error ?? 'Gagal menyelesaikan work order')
     } finally {

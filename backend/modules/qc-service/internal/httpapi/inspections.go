@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,7 +27,15 @@ func (h *Handler) listInspections(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "company_id wajib diisi")
 		return
 	}
-	rows, err := h.pool.Query(r.Context(), `SELECT `+inspectionColumns+` FROM quality_inspections WHERE company_id = $1 ORDER BY inspection_date DESC, inspection_number DESC`, companyID)
+	query := `SELECT ` + inspectionColumns + ` FROM quality_inspections WHERE company_id = $1`
+	args := []any{companyID}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += ` AND (branch_id = $` + strconv.Itoa(len(args)) + ` OR branch_id IS NULL)`
+	}
+	query += ` ORDER BY inspection_date DESC, inspection_number DESC`
+
+	rows, err := h.pool.Query(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat data inspeksi")
 		return

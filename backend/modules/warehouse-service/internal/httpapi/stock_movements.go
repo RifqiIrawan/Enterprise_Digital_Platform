@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -133,8 +134,12 @@ func (h *Handler) listStockMovements(w http.ResponseWriter, r *http.Request) {
 		WHERE sm.company_id = $1`
 	args := []any{companyID}
 	if warehouseID != "" {
-		query += ` AND sm.warehouse_id = $2`
 		args = append(args, warehouseID)
+		query += ` AND sm.warehouse_id = $` + strconv.Itoa(len(args))
+	}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += ` AND (sm.branch_id = $` + strconv.Itoa(len(args)) + ` OR sm.branch_id IS NULL)`
 	}
 	query += ` ORDER BY sm.movement_date DESC, sm.created_at DESC LIMIT 200`
 

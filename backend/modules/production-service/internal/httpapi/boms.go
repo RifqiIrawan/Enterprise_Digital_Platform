@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -23,7 +24,15 @@ func (h *Handler) listBOMs(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "company_id wajib diisi")
 		return
 	}
-	rows, err := h.pool.Query(r.Context(), `SELECT `+bomColumns+` FROM bill_of_materials WHERE company_id = $1 ORDER BY bom_code ASC`, companyID)
+	query := `SELECT ` + bomColumns + ` FROM bill_of_materials WHERE company_id = $1`
+	args := []any{companyID}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += ` AND (branch_id = $` + strconv.Itoa(len(args)) + ` OR branch_id IS NULL)`
+	}
+	query += ` ORDER BY bom_code ASC`
+
+	rows, err := h.pool.Query(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat data BOM")
 		return

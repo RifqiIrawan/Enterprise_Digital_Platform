@@ -183,3 +183,45 @@ func TestGetJournalEntry_NotFound(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/journal-entries/"+uuid.NewString())
 	requireStatus(t, resp, http.StatusNotFound)
 }
+
+// TestListJournalEntries_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) entries alongside that branch's own entries, not just an exact
+// match -- otherwise every pre-existing un-branched record would vanish the
+// moment a user picks a branch.
+func TestListJournalEntries_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	debitAcc := mustSeedAccount(t, srv, companyID, "ASSET")
+	creditAcc := mustSeedAccount(t, srv, companyID, "REVENUE")
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkEntry := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/journal-entries", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "entry_date": journalDate(),
+			"lines": []map[string]any{
+				{"account_id": debitAcc.ID, "debit_amount": 10},
+				{"account_id": creditAcc.ID, "credit_amount": 10},
+			},
+		}), http.StatusCreated)
+	}
+	mkEntry(&branchA)
+	mkEntry(nil)
+	mkEntry(&branchB)
+
+	resp := getJSON(t, srv.URL+"/journal-entries?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var entries []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &entries)
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries (branchA + NULL), got %d: %+v", len(entries), entries)
+	}
+	for _, e := range entries {
+		if e.BranchID != nil && *e.BranchID == branchB {
+			t.Errorf("branchB entry leaked into branchA-filtered results: %+v", entries)
+		}
+	}
+}

@@ -7,7 +7,7 @@ import { useCompany } from '../../store/CompanyContext.jsx'
 const emptyForm = { supplier_code: '', name: '', email: '', phone: '', address: '', tax_id: '', is_active: true }
 
 function SuppliersPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -18,10 +18,10 @@ function SuppliersPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadSuppliers(cid) {
+  function loadSuppliers(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/purchasing/suppliers', { params: { company_id: cid } })
+      .get('/api/purchasing/suppliers', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setSuppliers(data))
       .catch(() => setError('Gagal memuat data supplier. Pastikan purchasing-service aktif.'))
       .finally(() => setLoading(false))
@@ -32,8 +32,8 @@ function SuppliersPage() {
       setLoading(false)
       return
     }
-    loadSuppliers(companyId)
-  }, [companyId])
+    loadSuppliers(companyId, branchId)
+  }, [companyId, branchId])
 
   function openCreate() {
     setEditingId(null)
@@ -74,6 +74,7 @@ function SuppliersPage() {
       } else {
         await apiClient.post('/api/purchasing/suppliers', {
           company_id: companyId,
+          branch_id: branchId || null,
           supplier_code: form.supplier_code,
           name: form.name,
           email: form.email,
@@ -83,7 +84,7 @@ function SuppliersPage() {
         })
       }
       setEditing(false)
-      loadSuppliers(companyId)
+      loadSuppliers(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal menyimpan data supplier')
     } finally {

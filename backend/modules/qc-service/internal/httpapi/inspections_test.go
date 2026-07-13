@@ -192,6 +192,41 @@ func TestGetInspection_NotFound(t *testing.T) {
 	requireStatus(t, resp, http.StatusNotFound)
 }
 
+// TestListInspections_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive (see TestListStandards_FilteredByBranch for rationale).
+func TestListInspections_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	standard := mustSeedStandard(t, srv, companyID)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkInspection := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/inspections", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "standard_id": standard.ID,
+			"inspection_date": today(), "inspected_quantity": 5,
+		}), http.StatusCreated)
+	}
+	mkInspection(&branchA)
+	mkInspection(nil)
+	mkInspection(&branchB)
+
+	resp := getJSON(t, srv.URL+"/inspections?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var inspections []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &inspections)
+	if len(inspections) != 2 {
+		t.Fatalf("expected 2 inspections (branchA + NULL), got %d: %+v", len(inspections), inspections)
+	}
+	for _, insp := range inspections {
+		if insp.BranchID != nil && *insp.BranchID == branchB {
+			t.Errorf("branchB inspection leaked into branchA-filtered results: %+v", inspections)
+		}
+	}
+}
+
 func TestListInspections_MissingCompanyID(t *testing.T) {
 	srv := newServer(t)
 	resp := getJSON(t, srv.URL+"/inspections")

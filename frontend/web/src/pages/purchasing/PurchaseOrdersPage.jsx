@@ -20,7 +20,7 @@ const STATUS_BADGE = {
 }
 
 function PurchaseOrdersPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [suppliers, setSuppliers] = useState([])
   const [accounts, setAccounts] = useState([])
   const [warehouses, setWarehouses] = useState([])
@@ -44,10 +44,10 @@ function PurchaseOrdersPage() {
   const [receiveError, setReceiveError] = useState('')
   const [receiveSaving, setReceiveSaving] = useState(false)
 
-  function loadOrders(cid) {
+  function loadOrders(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/purchasing/purchase-orders', { params: { company_id: cid } })
+      .get('/api/purchasing/purchase-orders', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setOrders(data))
       .catch(() => setError('Gagal memuat data purchase order. Pastikan purchasing-service aktif.'))
       .finally(() => setLoading(false))
@@ -58,11 +58,11 @@ function PurchaseOrdersPage() {
       setLoading(false)
       return
     }
-    loadOrders(companyId)
+    loadOrders(companyId, branchId)
     apiClient.get('/api/purchasing/suppliers', { params: { company_id: companyId } }).then(({ data }) => setSuppliers(data))
     apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
     apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const supplierName = (id) => suppliers.find((s) => s.id === id)?.name ?? id
 
@@ -87,6 +87,7 @@ function PurchaseOrdersPage() {
     try {
       await apiClient.post('/api/purchasing/purchase-orders', {
         company_id: companyId,
+        branch_id: branchId || null,
         supplier_id: form.supplier_id,
         order_date: form.order_date,
         lines: form.lines
@@ -100,7 +101,7 @@ function PurchaseOrdersPage() {
       })
       setCreating(false)
       setForm(emptyForm)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat purchase order')
     } finally {
@@ -112,7 +113,7 @@ function PurchaseOrdersPage() {
     setActingId(id)
     try {
       await apiClient.post(`/api/purchasing/purchase-orders/${id}/${action}`)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal memproses purchase order')
     } finally {
@@ -133,7 +134,7 @@ function PurchaseOrdersPage() {
     try {
       await apiClient.post(`/api/purchasing/purchase-orders/${receivingOrder.id}/receive`, receiveForm)
       setReceivingOrder(null)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       setReceiveError(err.response?.data?.error ?? 'Gagal menerima barang')
     } finally {
@@ -154,7 +155,7 @@ function PurchaseOrdersPage() {
     try {
       await apiClient.post(`/api/purchasing/purchase-orders/${invoicingOrder.id}/invoice`, invoiceForm)
       setInvoicingOrder(null)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       setInvoiceError(err.response?.data?.error ?? 'Gagal membuat invoice')
     } finally {

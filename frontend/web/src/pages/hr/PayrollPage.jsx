@@ -15,7 +15,7 @@ function currentPeriod() {
 const STATUS_BADGE = { DRAFT: 'text-bg-secondary', POSTED: 'text-bg-success' }
 
 function PayrollPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [accounts, setAccounts] = useState([])
   const [runs, setRuns] = useState([])
   const [loading, setLoading] = useState(true)
@@ -39,10 +39,10 @@ function PayrollPage() {
   const [postError, setPostError] = useState('')
   const [postSaving, setPostSaving] = useState(false)
 
-  function loadRuns(cid) {
+  function loadRuns(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/hr/payroll-runs', { params: { company_id: cid } })
+      .get('/api/hr/payroll-runs', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setRuns(data))
       .catch(() => setError('Gagal memuat data payroll. Pastikan hr-service aktif.'))
       .finally(() => setLoading(false))
@@ -53,18 +53,18 @@ function PayrollPage() {
       setLoading(false)
       return
     }
-    loadRuns(companyId)
+    loadRuns(companyId, branchId)
     apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   async function handleProcess(e) {
     e.preventDefault()
     setProcessSaving(true)
     setProcessError('')
     try {
-      await apiClient.post('/api/hr/payroll-runs', { company_id: companyId, period: processPeriod })
+      await apiClient.post('/api/hr/payroll-runs', { company_id: companyId, branch_id: branchId || null, period: processPeriod })
       setProcessing(false)
-      loadRuns(companyId)
+      loadRuns(companyId, branchId)
     } catch (err) {
       setProcessError(err.response?.data?.error ?? 'Gagal memproses payroll')
     } finally {
@@ -95,7 +95,7 @@ function PayrollPage() {
     try {
       await apiClient.post(`/api/hr/payroll-runs/${postingRun.id}/post`, postForm)
       setPostingRun(null)
-      loadRuns(companyId)
+      loadRuns(companyId, branchId)
     } catch (err) {
       setPostError(err.response?.data?.error ?? 'Gagal posting payroll ke GL')
     } finally {

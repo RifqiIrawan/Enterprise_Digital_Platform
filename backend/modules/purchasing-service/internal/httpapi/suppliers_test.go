@@ -125,3 +125,38 @@ func TestListSuppliers_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/suppliers")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListSuppliers_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListSuppliers_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkSupplier := func(branchID *string) {
+		code := "SUP-" + uuid.NewString()[:8]
+		requireStatus(t, postJSON(t, srv.URL+"/suppliers", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "supplier_code": code, "name": "Test Supplier " + code,
+		}), http.StatusCreated)
+	}
+	mkSupplier(&branchA)
+	mkSupplier(nil)
+	mkSupplier(&branchB)
+
+	resp := getJSON(t, srv.URL+"/suppliers?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var suppliers []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &suppliers)
+	if len(suppliers) != 2 {
+		t.Fatalf("expected 2 suppliers (branchA + NULL), got %d: %+v", len(suppliers), suppliers)
+	}
+	for _, s := range suppliers {
+		if s.BranchID != nil && *s.BranchID == branchB {
+			t.Errorf("branchB supplier leaked into branchA-filtered results: %+v", suppliers)
+		}
+	}
+}

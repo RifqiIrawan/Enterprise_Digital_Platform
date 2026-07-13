@@ -10,7 +10,7 @@ const STATUS_BADGE = {
 }
 
 function ProductionSchedulePage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [orders, setOrders] = useState([])
   const [boms, setBoms] = useState([])
   const [products, setProducts] = useState([])
@@ -24,7 +24,7 @@ function ProductionSchedulePage() {
     }
     setLoading(true)
     Promise.all([
-      apiClient.get('/api/production/work-orders', { params: { company_id: companyId } }),
+      apiClient.get('/api/production/work-orders', { params: { company_id: companyId, branch_id: branchId } }),
       apiClient.get('/api/production/boms', { params: { company_id: companyId } }),
       apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }),
     ])
@@ -35,7 +35,7 @@ function ProductionSchedulePage() {
       })
       .catch(() => setError('Gagal memuat jadwal produksi. Pastikan production-service aktif.'))
       .finally(() => setLoading(false))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const bomName = (id) => boms.find((b) => b.id === id)?.name ?? id
   const productName = (id) => {

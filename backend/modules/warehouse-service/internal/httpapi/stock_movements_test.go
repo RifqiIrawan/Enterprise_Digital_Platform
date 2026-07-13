@@ -216,6 +216,43 @@ func TestListStockMovements_FilteredByWarehouse(t *testing.T) {
 	}
 }
 
+// TestListStockMovements_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive, and composes correctly with the existing warehouse_id
+// filter now that both use dynamic placeholder numbering.
+func TestListStockMovements_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	wh := mustSeedWarehouse(t, srv, companyID)
+	p := mustSeedProduct(t, srv, companyID)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkMovement := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/stock-movements", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "warehouse_id": wh.ID, "product_id": p.ID,
+			"movement_type": "IN", "quantity": 1,
+		}), http.StatusCreated)
+	}
+	mkMovement(&branchA)
+	mkMovement(nil)
+	mkMovement(&branchB)
+
+	resp := getJSON(t, srv.URL+"/stock-movements?company_id="+companyID+"&warehouse_id="+wh.ID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var movements []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &movements)
+	if len(movements) != 2 {
+		t.Fatalf("expected 2 movements (branchA + NULL), got %d: %+v", len(movements), movements)
+	}
+	for _, m := range movements {
+		if m.BranchID != nil && *m.BranchID == branchB {
+			t.Errorf("branchB movement leaked into branchA-filtered results: %+v", movements)
+		}
+	}
+}
+
 func TestListStockBalances_MissingCompanyID(t *testing.T) {
 	srv := newServer(t)
 	resp := getJSON(t, srv.URL+"/stock")

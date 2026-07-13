@@ -20,7 +20,7 @@ const REFERENCE_LABEL = {
 }
 
 function StockPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
@@ -34,11 +34,13 @@ function StockPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadStock(cid, whId) {
+  function loadStock(cid, whId, bid) {
     setLoading(true)
     Promise.all([
+      // Stock balances aren't branch-scoped (no branch_id column on
+      // stock_balances) -- only the movement history is.
       apiClient.get('/api/warehouse/stock', { params: { company_id: cid, warehouse_id: whId } }),
-      apiClient.get('/api/warehouse/stock-movements', { params: { company_id: cid, warehouse_id: whId } }),
+      apiClient.get('/api/warehouse/stock-movements', { params: { company_id: cid, warehouse_id: whId, branch_id: bid } }),
     ])
       .then(([stockRes, movementsRes]) => {
         setBalances(stockRes.data)
@@ -58,14 +60,14 @@ function StockPage() {
       setWarehouses(data)
       const whId = data[0]?.id ?? ''
       setWarehouseId(whId)
-      if (whId) loadStock(companyId, whId)
+      if (whId) loadStock(companyId, whId, branchId)
       else setLoading(false)
     })
-  }, [companyId])
+  }, [companyId, branchId])
 
   function changeWarehouse(whId) {
     setWarehouseId(whId)
-    if (companyId && whId) loadStock(companyId, whId)
+    if (companyId && whId) loadStock(companyId, whId, branchId)
   }
 
   function openCreate() {
@@ -81,6 +83,7 @@ function StockPage() {
     try {
       await apiClient.post('/api/warehouse/stock-movements', {
         company_id: companyId,
+        branch_id: branchId || null,
         warehouse_id: warehouseId,
         product_id: form.product_id,
         movement_type: form.movement_type,
@@ -89,7 +92,7 @@ function StockPage() {
         movement_date: form.movement_date,
       })
       setCreating(false)
-      loadStock(companyId, warehouseId)
+      loadStock(companyId, warehouseId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal mencatat mutasi stok')
     } finally {

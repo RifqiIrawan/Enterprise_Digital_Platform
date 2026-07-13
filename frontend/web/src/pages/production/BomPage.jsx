@@ -8,7 +8,7 @@ const emptyLine = { component_product_id: '', quantity_per_unit: 1 }
 const emptyForm = { bom_code: '', name: '', product_id: '', lines: [{ ...emptyLine }] }
 
 function BomPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [products, setProducts] = useState([])
   const [boms, setBoms] = useState([])
   const [loading, setLoading] = useState(true)
@@ -24,10 +24,10 @@ function BomPage() {
   const [editError, setEditError] = useState('')
   const [editSaving, setEditSaving] = useState(false)
 
-  function loadBoms(cid) {
+  function loadBoms(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/production/boms', { params: { company_id: cid } })
+      .get('/api/production/boms', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setBoms(data))
       .catch(() => setError('Gagal memuat data BOM. Pastikan production-service aktif.'))
       .finally(() => setLoading(false))
@@ -38,9 +38,9 @@ function BomPage() {
       setLoading(false)
       return
     }
-    loadBoms(companyId)
+    loadBoms(companyId, branchId)
     apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const productName = (id) => {
     const p = products.find((p) => p.id === id)
@@ -72,6 +72,7 @@ function BomPage() {
     try {
       await apiClient.post('/api/production/boms', {
         company_id: companyId,
+        branch_id: branchId || null,
         bom_code: form.bom_code,
         name: form.name,
         product_id: form.product_id,
@@ -80,7 +81,7 @@ function BomPage() {
           .map((l) => ({ component_product_id: l.component_product_id, quantity_per_unit: Number(l.quantity_per_unit) || 0 })),
       })
       setCreating(false)
-      loadBoms(companyId)
+      loadBoms(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat BOM')
     } finally {
@@ -101,7 +102,7 @@ function BomPage() {
     try {
       await apiClient.put(`/api/production/boms/${editing.id}`, editForm)
       setEditing(null)
-      loadBoms(companyId)
+      loadBoms(companyId, branchId)
     } catch (err) {
       setEditError(err.response?.data?.error ?? 'Gagal menyimpan BOM')
     } finally {

@@ -169,3 +169,39 @@ func TestListEmployees_ScopedByCompanyAndStatus(t *testing.T) {
 		t.Errorf("expected 0 ACTIVE employees in companyB after termination, got %d", len(activeList))
 	}
 }
+
+// TestListEmployees_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive, and composes correctly with the existing status filter now
+// that both use dynamic placeholder numbering.
+func TestListEmployees_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkEmployee := func(branchID *string) {
+		code := "EMP-" + uuid.NewString()[:8]
+		requireStatus(t, postJSON(t, srv.URL+"/employees", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "employee_code": code, "first_name": "Test",
+			"email": code + "@example.test", "hire_date": "2024-01-01",
+		}), http.StatusCreated)
+	}
+	mkEmployee(&branchA)
+	mkEmployee(nil)
+	mkEmployee(&branchB)
+
+	resp := getJSON(t, srv.URL+"/employees?company_id="+companyID+"&branch_id="+branchA+"&status=ACTIVE")
+	requireStatus(t, resp, http.StatusOK)
+	var employees []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &employees)
+	if len(employees) != 2 {
+		t.Fatalf("expected 2 employees (branchA + NULL), got %d: %+v", len(employees), employees)
+	}
+	for _, e := range employees {
+		if e.BranchID != nil && *e.BranchID == branchB {
+			t.Errorf("branchB employee leaked into branchA-filtered results: %+v", employees)
+		}
+	}
+}

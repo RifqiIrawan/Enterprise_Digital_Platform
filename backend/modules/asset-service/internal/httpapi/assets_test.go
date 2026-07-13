@@ -153,6 +153,41 @@ func TestListAssets_ScopedByCompany(t *testing.T) {
 	}
 }
 
+// TestListAssets_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListAssets_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkAsset := func(branchID *string) {
+		code := "AST-" + uuid.NewString()[:8]
+		requireStatus(t, postJSON(t, srv.URL+"/assets", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "asset_code": code, "name": "Test Asset " + code,
+		}), http.StatusCreated)
+	}
+	mkAsset(&branchA)
+	mkAsset(nil)
+	mkAsset(&branchB)
+
+	resp := getJSON(t, srv.URL+"/assets?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var assets []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &assets)
+	if len(assets) != 2 {
+		t.Fatalf("expected 2 assets (branchA + NULL), got %d: %+v", len(assets), assets)
+	}
+	for _, a := range assets {
+		if a.BranchID != nil && *a.BranchID == branchB {
+			t.Errorf("branchB asset leaked into branchA-filtered results: %+v", assets)
+		}
+	}
+}
+
 func TestListAssets_MissingCompanyID(t *testing.T) {
 	srv := newServer(t)
 	resp := getJSON(t, srv.URL+"/assets")

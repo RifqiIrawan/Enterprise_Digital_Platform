@@ -326,3 +326,38 @@ func TestListPurchaseOrders_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/purchase-orders")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListPurchaseOrders_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive (see TestListSuppliers_FilteredByBranch for rationale).
+func TestListPurchaseOrders_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	supplier := mustSeedSupplier(t, srv, companyID)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkOrder := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/purchase-orders", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "supplier_id": supplier.ID, "order_date": today(),
+			"lines": []map[string]any{{"product_name": "Barang Uji", "quantity": 1, "unit_price": 100}},
+		}), http.StatusCreated)
+	}
+	mkOrder(&branchA)
+	mkOrder(nil)
+	mkOrder(&branchB)
+
+	resp := getJSON(t, srv.URL+"/purchase-orders?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var orders []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &orders)
+	if len(orders) != 2 {
+		t.Fatalf("expected 2 purchase orders (branchA + NULL), got %d: %+v", len(orders), orders)
+	}
+	for _, o := range orders {
+		if o.BranchID != nil && *o.BranchID == branchB {
+			t.Errorf("branchB purchase order leaked into branchA-filtered results: %+v", orders)
+		}
+	}
+}

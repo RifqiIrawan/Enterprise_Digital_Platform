@@ -69,7 +69,7 @@ function journalColumns(postingId, handlePost) {
 }
 
 function JournalPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [accounts, setAccounts] = useState([])
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -81,10 +81,10 @@ function JournalPage() {
   const [saving, setSaving] = useState(false)
   const [postingId, setPostingId] = useState(null)
 
-  function loadEntries(cid) {
+  function loadEntries(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/finance/journal-entries', { params: { company_id: cid } })
+      .get('/api/finance/journal-entries', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setEntries(data))
       .catch(() => setError('Gagal memuat jurnal. Pastikan finance-service aktif.'))
       .finally(() => setLoading(false))
@@ -95,9 +95,9 @@ function JournalPage() {
       setLoading(false)
       return
     }
-    loadEntries(companyId)
+    loadEntries(companyId, branchId)
     apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   function updateLine(index, patch) {
     setForm((f) => ({ ...f, lines: f.lines.map((l, i) => (i === index ? { ...l, ...patch } : l)) }))
@@ -122,6 +122,7 @@ function JournalPage() {
     try {
       await apiClient.post('/api/finance/journal-entries', {
         company_id: companyId,
+        branch_id: branchId || null,
         entry_date: form.entry_date,
         description: form.description,
         lines: form.lines
@@ -135,7 +136,7 @@ function JournalPage() {
       })
       setCreating(false)
       setForm(emptyForm)
-      loadEntries(companyId)
+      loadEntries(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat jurnal')
     } finally {
@@ -148,7 +149,7 @@ function JournalPage() {
     setPostingId(id)
     try {
       await apiClient.post(`/api/finance/journal-entries/${id}/post`)
-      loadEntries(companyId)
+      loadEntries(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal posting jurnal')
     } finally {

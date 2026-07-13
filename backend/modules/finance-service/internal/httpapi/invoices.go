@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,7 +32,11 @@ func (h *Handler) listInvoices(w http.ResponseWriter, r *http.Request) {
 
 	if invoiceType := r.URL.Query().Get("invoice_type"); invoiceType != "" {
 		args = append(args, invoiceType)
-		query += " AND invoice_type = $2"
+		query += " AND invoice_type = $" + strconv.Itoa(len(args))
+	}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += " AND (branch_id = $" + strconv.Itoa(len(args)) + " OR branch_id IS NULL)"
 	}
 	query += " ORDER BY invoice_date DESC, invoice_number DESC"
 

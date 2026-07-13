@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,7 +42,11 @@ func (h *Handler) listEmployees(w http.ResponseWriter, r *http.Request) {
 	args := []any{companyID}
 	if status := r.URL.Query().Get("status"); status != "" {
 		args = append(args, status)
-		query += " AND status = $2"
+		query += " AND status = $" + strconv.Itoa(len(args))
+	}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += " AND (branch_id = $" + strconv.Itoa(len(args)) + " OR branch_id IS NULL)"
 	}
 	query += " ORDER BY employee_code ASC"
 

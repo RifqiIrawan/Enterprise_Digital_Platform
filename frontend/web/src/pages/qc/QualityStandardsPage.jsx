@@ -7,7 +7,7 @@ import { useCompany } from '../../store/CompanyContext.jsx'
 const emptyForm = { standard_code: '', name: '', product_id: '', criteria: '' }
 
 function QualityStandardsPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [products, setProducts] = useState([])
   const [standards, setStandards] = useState([])
   const [loading, setLoading] = useState(true)
@@ -19,10 +19,10 @@ function QualityStandardsPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadStandards(cid) {
+  function loadStandards(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/qc/standards', { params: { company_id: cid } })
+      .get('/api/qc/standards', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setStandards(data))
       .catch(() => setError('Gagal memuat data standar mutu. Pastikan qc-service aktif.'))
       .finally(() => setLoading(false))
@@ -33,9 +33,9 @@ function QualityStandardsPage() {
       setLoading(false)
       return
     }
-    loadStandards(companyId)
+    loadStandards(companyId, branchId)
     apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const productName = (id) => {
     const p = products.find((p) => p.id === id)
@@ -70,6 +70,7 @@ function QualityStandardsPage() {
       } else {
         await apiClient.post('/api/qc/standards', {
           company_id: companyId,
+          branch_id: branchId || null,
           standard_code: form.standard_code,
           name: form.name,
           product_id: form.product_id,
@@ -77,7 +78,7 @@ function QualityStandardsPage() {
         })
       }
       setEditing(false)
-      loadStandards(companyId)
+      loadStandards(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal menyimpan standar mutu')
     } finally {

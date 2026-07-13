@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -23,7 +24,15 @@ func (h *Handler) listCustomers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.pool.Query(r.Context(), `SELECT `+customerColumns+` FROM customers WHERE company_id = $1 ORDER BY customer_code ASC`, companyID)
+	query := `SELECT ` + customerColumns + ` FROM customers WHERE company_id = $1`
+	args := []any{companyID}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += ` AND (branch_id = $` + strconv.Itoa(len(args)) + ` OR branch_id IS NULL)`
+	}
+	query += ` ORDER BY customer_code ASC`
+
+	rows, err := h.pool.Query(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat data customer")
 		return

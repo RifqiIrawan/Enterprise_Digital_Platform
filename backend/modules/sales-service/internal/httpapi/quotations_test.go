@@ -168,3 +168,38 @@ func TestGetQuotation_NotFound(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/quotations/"+uuid.NewString())
 	requireStatus(t, resp, http.StatusNotFound)
 }
+
+// TestListQuotations_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive (see TestListCustomers_FilteredByBranch for rationale).
+func TestListQuotations_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	cust := mustSeedCustomer(t, srv, companyID)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkQuotation := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/quotations", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "customer_id": cust.ID, "quotation_date": today(),
+			"lines": []map[string]any{{"product_name": "Item A", "quantity": 1, "unit_price": 100}},
+		}), http.StatusCreated)
+	}
+	mkQuotation(&branchA)
+	mkQuotation(nil)
+	mkQuotation(&branchB)
+
+	resp := getJSON(t, srv.URL+"/quotations?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var quotations []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &quotations)
+	if len(quotations) != 2 {
+		t.Fatalf("expected 2 quotations (branchA + NULL), got %d: %+v", len(quotations), quotations)
+	}
+	for _, q := range quotations {
+		if q.BranchID != nil && *q.BranchID == branchB {
+			t.Errorf("branchB quotation leaked into branchA-filtered results: %+v", quotations)
+		}
+	}
+}

@@ -305,3 +305,38 @@ func TestListWorkOrders_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/work-orders")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListWorkOrders_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive (see TestListBOMs_FilteredByBranch for rationale).
+func TestListWorkOrders_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	bom := mustSeedBOM(t, srv, companyID)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkWorkOrder := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/work-orders", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "bom_id": bom.ID, "warehouse_id": uuid.NewString(),
+			"quantity_planned": 5, "planned_start_date": today(),
+		}), http.StatusCreated)
+	}
+	mkWorkOrder(&branchA)
+	mkWorkOrder(nil)
+	mkWorkOrder(&branchB)
+
+	resp := getJSON(t, srv.URL+"/work-orders?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var orders []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &orders)
+	if len(orders) != 2 {
+		t.Fatalf("expected 2 work orders (branchA + NULL), got %d: %+v", len(orders), orders)
+	}
+	for _, o := range orders {
+		if o.BranchID != nil && *o.BranchID == branchB {
+			t.Errorf("branchB work order leaked into branchA-filtered results: %+v", orders)
+		}
+	}
+}

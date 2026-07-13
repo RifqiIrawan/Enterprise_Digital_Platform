@@ -157,3 +157,40 @@ func TestListBOMs_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/boms")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListBOMs_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListBOMs_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkBOM := func(branchID *string) {
+		code := "BOM-" + uuid.NewString()[:8]
+		requireStatus(t, postJSON(t, srv.URL+"/boms", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "bom_code": code, "name": "Test BOM " + code,
+			"product_id": uuid.NewString(),
+			"lines":      []map[string]any{{"component_product_id": uuid.NewString(), "quantity_per_unit": 1}},
+		}), http.StatusCreated)
+	}
+	mkBOM(&branchA)
+	mkBOM(nil)
+	mkBOM(&branchB)
+
+	resp := getJSON(t, srv.URL+"/boms?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var boms []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &boms)
+	if len(boms) != 2 {
+		t.Fatalf("expected 2 BOMs (branchA + NULL), got %d: %+v", len(boms), boms)
+	}
+	for _, b := range boms {
+		if b.BranchID != nil && *b.BranchID == branchB {
+			t.Errorf("branchB BOM leaked into branchA-filtered results: %+v", boms)
+		}
+	}
+}

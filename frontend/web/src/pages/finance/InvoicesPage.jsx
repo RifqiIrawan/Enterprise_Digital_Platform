@@ -79,7 +79,7 @@ function invoiceColumns(postingId, handlePost) {
 }
 
 function InvoicesPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [accounts, setAccounts] = useState([])
   const [invoices, setInvoices] = useState([])
   const [typeFilter, setTypeFilter] = useState('all')
@@ -92,10 +92,10 @@ function InvoicesPage() {
   const [saving, setSaving] = useState(false)
   const [postingId, setPostingId] = useState(null)
 
-  function loadInvoices(cid) {
+  function loadInvoices(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/finance/invoices', { params: { company_id: cid } })
+      .get('/api/finance/invoices', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setInvoices(data))
       .catch(() => setError('Gagal memuat invoice. Pastikan finance-service aktif.'))
       .finally(() => setLoading(false))
@@ -106,9 +106,9 @@ function InvoicesPage() {
       setLoading(false)
       return
     }
-    loadInvoices(companyId)
+    loadInvoices(companyId, branchId)
     apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const filtered = typeFilter === 'all' ? invoices : invoices.filter((i) => i.invoice_type === typeFilter)
 
@@ -134,6 +134,7 @@ function InvoicesPage() {
     try {
       await apiClient.post('/api/finance/invoices', {
         company_id: companyId,
+        branch_id: branchId || null,
         invoice_type: form.invoice_type,
         partner_name: form.partner_name,
         invoice_date: form.invoice_date,
@@ -152,7 +153,7 @@ function InvoicesPage() {
       })
       setCreating(false)
       setForm(emptyForm)
-      loadInvoices(companyId)
+      loadInvoices(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat invoice')
     } finally {
@@ -165,7 +166,7 @@ function InvoicesPage() {
     setPostingId(id)
     try {
       await apiClient.post(`/api/finance/invoices/${id}/post`)
-      loadInvoices(companyId)
+      loadInvoices(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal posting invoice')
     } finally {

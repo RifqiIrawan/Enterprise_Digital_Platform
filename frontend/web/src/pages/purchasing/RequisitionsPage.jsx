@@ -25,7 +25,7 @@ const STATUS_BADGE = {
 }
 
 function RequisitionsPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [suppliers, setSuppliers] = useState([])
   const [requisitions, setRequisitions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -42,10 +42,10 @@ function RequisitionsPage() {
   const [convertError, setConvertError] = useState('')
   const [convertSaving, setConvertSaving] = useState(false)
 
-  function loadRequisitions(cid) {
+  function loadRequisitions(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/purchasing/requisitions', { params: { company_id: cid } })
+      .get('/api/purchasing/requisitions', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setRequisitions(data))
       .catch(() => setError('Gagal memuat data purchase requisition. Pastikan purchasing-service aktif.'))
       .finally(() => setLoading(false))
@@ -56,9 +56,9 @@ function RequisitionsPage() {
       setLoading(false)
       return
     }
-    loadRequisitions(companyId)
+    loadRequisitions(companyId, branchId)
     apiClient.get('/api/purchasing/suppliers', { params: { company_id: companyId } }).then(({ data }) => setSuppliers(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   function updateLine(index, patch) {
     setForm((f) => ({ ...f, lines: f.lines.map((l, i) => (i === index ? { ...l, ...patch } : l)) }))
@@ -81,6 +81,7 @@ function RequisitionsPage() {
     try {
       await apiClient.post('/api/purchasing/requisitions', {
         company_id: companyId,
+        branch_id: branchId || null,
         requested_by: form.requested_by,
         pr_date: form.pr_date,
         notes: form.notes,
@@ -95,7 +96,7 @@ function RequisitionsPage() {
       })
       setCreating(false)
       setForm(emptyForm)
-      loadRequisitions(companyId)
+      loadRequisitions(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat purchase requisition')
     } finally {
@@ -107,7 +108,7 @@ function RequisitionsPage() {
     setActingId(id)
     try {
       await apiClient.post(`/api/purchasing/requisitions/${id}/${action}`)
-      loadRequisitions(companyId)
+      loadRequisitions(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal memproses purchase requisition')
     } finally {
@@ -128,7 +129,7 @@ function RequisitionsPage() {
     try {
       await apiClient.post(`/api/purchasing/requisitions/${convertingPR.id}/convert`, { supplier_id: convertSupplierId })
       setConvertingPR(null)
-      loadRequisitions(companyId)
+      loadRequisitions(companyId, branchId)
     } catch (err) {
       setConvertError(err.response?.data?.error ?? 'Gagal mengkonversi requisition')
     } finally {

@@ -7,7 +7,7 @@ import { useCompany } from '../../store/CompanyContext.jsx'
 const emptyForm = { customer_code: '', name: '', email: '', phone: '', address: '', tax_id: '', is_active: true }
 
 function CustomersPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -18,10 +18,10 @@ function CustomersPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadCustomers(cid) {
+  function loadCustomers(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/sales/customers', { params: { company_id: cid } })
+      .get('/api/sales/customers', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setCustomers(data))
       .catch(() => setError('Gagal memuat data customer. Pastikan sales-service aktif.'))
       .finally(() => setLoading(false))
@@ -32,8 +32,8 @@ function CustomersPage() {
       setLoading(false)
       return
     }
-    loadCustomers(companyId)
-  }, [companyId])
+    loadCustomers(companyId, branchId)
+  }, [companyId, branchId])
 
   function openCreate() {
     setEditingId(null)
@@ -74,6 +74,7 @@ function CustomersPage() {
       } else {
         await apiClient.post('/api/sales/customers', {
           company_id: companyId,
+          branch_id: branchId || null,
           customer_code: form.customer_code,
           name: form.name,
           email: form.email,
@@ -83,7 +84,7 @@ function CustomersPage() {
         })
       }
       setEditing(false)
-      loadCustomers(companyId)
+      loadCustomers(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal menyimpan data customer')
     } finally {

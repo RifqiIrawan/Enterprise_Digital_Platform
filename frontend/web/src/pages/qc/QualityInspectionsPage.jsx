@@ -29,7 +29,7 @@ const REFERENCE_LABEL = {
 }
 
 function QualityInspectionsPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [standards, setStandards] = useState([])
   const [products, setProducts] = useState([])
   const [purchaseOrders, setPurchaseOrders] = useState([])
@@ -43,10 +43,10 @@ function QualityInspectionsPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadInspections(cid) {
+  function loadInspections(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/qc/inspections', { params: { company_id: cid } })
+      .get('/api/qc/inspections', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setInspections(data))
       .catch(() => setError('Gagal memuat data inspeksi. Pastikan qc-service aktif.'))
       .finally(() => setLoading(false))
@@ -57,12 +57,12 @@ function QualityInspectionsPage() {
       setLoading(false)
       return
     }
-    loadInspections(companyId)
+    loadInspections(companyId, branchId)
     apiClient.get('/api/qc/standards', { params: { company_id: companyId } }).then(({ data }) => setStandards(data.filter((s) => s.is_active)))
     apiClient.get('/api/warehouse/products', { params: { company_id: companyId } }).then(({ data }) => setProducts(data))
     apiClient.get('/api/purchasing/purchase-orders', { params: { company_id: companyId } }).then(({ data }) => setPurchaseOrders(data))
     apiClient.get('/api/production/work-orders', { params: { company_id: companyId } }).then(({ data }) => setWorkOrders(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const standardName = (id) => standards.find((s) => s.id === id)?.name ?? id
   const productName = (id) => {
@@ -91,6 +91,7 @@ function QualityInspectionsPage() {
     try {
       await apiClient.post('/api/qc/inspections', {
         company_id: companyId,
+        branch_id: branchId || null,
         standard_id: form.standard_id,
         reference_type: form.reference_type,
         reference_id: form.reference_id || undefined,
@@ -102,7 +103,7 @@ function QualityInspectionsPage() {
         notes: form.notes,
       })
       setCreating(false)
-      loadInspections(companyId)
+      loadInspections(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat inspeksi')
     } finally {

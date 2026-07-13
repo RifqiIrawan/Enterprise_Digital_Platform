@@ -170,6 +170,42 @@ func mustProcessPayroll(t *testing.T, srv *httptest.Server, companyID, period st
 	return run
 }
 
+// TestListPayrollRuns_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive (see TestListEmployees_FilteredByBranch for rationale).
+// Each payroll run needs its own period (UNIQUE company_id+period), so three
+// different periods stand in for three separate runs tagged to different branches.
+func TestListPayrollRuns_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	mustSeedEmployee(t, srv, companyID, 5_000_000, 0)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkRun := func(period string, branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/payroll-runs", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "period": period,
+		}), http.StatusCreated)
+	}
+	mkRun("2027-01", &branchA)
+	mkRun("2027-02", nil)
+	mkRun("2027-03", &branchB)
+
+	resp := getJSON(t, srv.URL+"/payroll-runs?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var runs []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &runs)
+	if len(runs) != 2 {
+		t.Fatalf("expected 2 payroll runs (branchA + NULL), got %d: %+v", len(runs), runs)
+	}
+	for _, run := range runs {
+		if run.BranchID != nil && *run.BranchID == branchB {
+			t.Errorf("branchB payroll run leaked into branchA-filtered results: %+v", runs)
+		}
+	}
+}
+
 func TestPostPayrollRun_ValidationErrors(t *testing.T) {
 	srv, _ := newServerWithFinanceStub(t, false)
 	companyID := newCompanyID(t)

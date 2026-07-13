@@ -180,3 +180,37 @@ func TestGetRequisition_NotFound(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/requisitions/"+uuid.NewString())
 	requireStatus(t, resp, http.StatusNotFound)
 }
+
+// TestListRequisitions_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive (see TestListSuppliers_FilteredByBranch for rationale).
+func TestListRequisitions_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkRequisition := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/requisitions", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "pr_date": today(),
+			"lines": []map[string]any{{"product_name": "Item A", "quantity": 1, "estimated_price": 100}},
+		}), http.StatusCreated)
+	}
+	mkRequisition(&branchA)
+	mkRequisition(nil)
+	mkRequisition(&branchB)
+
+	resp := getJSON(t, srv.URL+"/requisitions?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var requisitions []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &requisitions)
+	if len(requisitions) != 2 {
+		t.Fatalf("expected 2 requisitions (branchA + NULL), got %d: %+v", len(requisitions), requisitions)
+	}
+	for _, pr := range requisitions {
+		if pr.BranchID != nil && *pr.BranchID == branchB {
+			t.Errorf("branchB requisition leaked into branchA-filtered results: %+v", requisitions)
+		}
+	}
+}

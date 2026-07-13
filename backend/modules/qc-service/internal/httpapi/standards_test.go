@@ -123,6 +123,42 @@ func TestListStandards_ScopedByCompany(t *testing.T) {
 	}
 }
 
+// TestListStandards_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive: a branch filter must still surface unassigned (NULL
+// branch_id) rows alongside that branch's own rows.
+func TestListStandards_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkStandard := func(branchID *string) {
+		code := "QS-" + uuid.NewString()[:8]
+		requireStatus(t, postJSON(t, srv.URL+"/standards", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "standard_code": code, "name": "Test Standard " + code,
+			"product_id": uuid.NewString(),
+		}), http.StatusCreated)
+	}
+	mkStandard(&branchA)
+	mkStandard(nil)
+	mkStandard(&branchB)
+
+	resp := getJSON(t, srv.URL+"/standards?company_id="+companyID+"&branch_id="+branchA)
+	requireStatus(t, resp, http.StatusOK)
+	var standards []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &standards)
+	if len(standards) != 2 {
+		t.Fatalf("expected 2 standards (branchA + NULL), got %d: %+v", len(standards), standards)
+	}
+	for _, s := range standards {
+		if s.BranchID != nil && *s.BranchID == branchB {
+			t.Errorf("branchB standard leaked into branchA-filtered results: %+v", standards)
+		}
+	}
+}
+
 func TestListStandards_MissingCompanyID(t *testing.T) {
 	srv := newServer(t)
 	resp := getJSON(t, srv.URL+"/standards")

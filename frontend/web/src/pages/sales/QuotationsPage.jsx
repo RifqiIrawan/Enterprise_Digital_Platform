@@ -28,7 +28,7 @@ const STATUS_BADGE = {
 }
 
 function QuotationsPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [customers, setCustomers] = useState([])
   const [quotations, setQuotations] = useState([])
   const [loading, setLoading] = useState(true)
@@ -40,10 +40,10 @@ function QuotationsPage() {
   const [saving, setSaving] = useState(false)
   const [actingId, setActingId] = useState(null)
 
-  function loadQuotations(cid) {
+  function loadQuotations(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/sales/quotations', { params: { company_id: cid } })
+      .get('/api/sales/quotations', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setQuotations(data))
       .catch(() => setError('Gagal memuat data quotation. Pastikan sales-service aktif.'))
       .finally(() => setLoading(false))
@@ -54,9 +54,9 @@ function QuotationsPage() {
       setLoading(false)
       return
     }
-    loadQuotations(companyId)
+    loadQuotations(companyId, branchId)
     apiClient.get('/api/sales/customers', { params: { company_id: companyId } }).then(({ data }) => setCustomers(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const customerName = (id) => customers.find((c) => c.id === id)?.name ?? id
 
@@ -82,6 +82,7 @@ function QuotationsPage() {
     try {
       await apiClient.post('/api/sales/quotations', {
         company_id: companyId,
+        branch_id: branchId || null,
         customer_id: form.customer_id,
         quotation_date: form.quotation_date,
         valid_until: form.valid_until || null,
@@ -98,7 +99,7 @@ function QuotationsPage() {
       })
       setCreating(false)
       setForm(emptyForm)
-      loadQuotations(companyId)
+      loadQuotations(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat quotation')
     } finally {
@@ -111,7 +112,7 @@ function QuotationsPage() {
     setActingId(id)
     try {
       await apiClient.post(`/api/sales/quotations/${id}/${action}`)
-      loadQuotations(companyId)
+      loadQuotations(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal memproses quotation')
     } finally {

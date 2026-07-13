@@ -272,3 +272,42 @@ func TestListInvoices_MissingCompanyID(t *testing.T) {
 	resp := getJSON(t, srv.URL+"/invoices")
 	requireStatus(t, resp, http.StatusBadRequest)
 }
+
+// TestListInvoices_FilteredByBranch confirms branch_id filtering is
+// NULL-inclusive (see TestListJournalEntries_FilteredByBranch for rationale),
+// and that it composes correctly with the existing invoice_type filter now
+// that both use dynamic placeholder numbering.
+func TestListInvoices_FilteredByBranch(t *testing.T) {
+	srv := newServer(t)
+	companyID := newCompanyID(t)
+	controlAcc := mustSeedAccount(t, srv, companyID, "ASSET")
+	revenueAcc := mustSeedAccount(t, srv, companyID, "REVENUE")
+	branchA := uuid.NewString()
+	branchB := uuid.NewString()
+
+	mkInvoice := func(branchID *string) {
+		requireStatus(t, postJSON(t, srv.URL+"/invoices", map[string]any{
+			"company_id": companyID, "branch_id": branchID, "invoice_type": "AR", "invoice_date": invoiceDate(),
+			"partner_name": "PT Uji", "control_account_id": controlAcc.ID,
+			"lines": []map[string]any{{"account_id": revenueAcc.ID, "description": "Item", "quantity": 1, "unit_price": 100}},
+		}), http.StatusCreated)
+	}
+	mkInvoice(&branchA)
+	mkInvoice(nil)
+	mkInvoice(&branchB)
+
+	resp := getJSON(t, srv.URL+"/invoices?company_id="+companyID+"&branch_id="+branchA+"&invoice_type=AR")
+	requireStatus(t, resp, http.StatusOK)
+	var invoices []struct {
+		BranchID *string `json:"branch_id"`
+	}
+	resp.decode(t, &invoices)
+	if len(invoices) != 2 {
+		t.Fatalf("expected 2 invoices (branchA + NULL), got %d: %+v", len(invoices), invoices)
+	}
+	for _, inv := range invoices {
+		if inv.BranchID != nil && *inv.BranchID == branchB {
+			t.Errorf("branchB invoice leaked into branchA-filtered results: %+v", invoices)
+		}
+	}
+}

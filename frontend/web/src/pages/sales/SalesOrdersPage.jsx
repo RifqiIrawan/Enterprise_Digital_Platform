@@ -20,7 +20,7 @@ const STATUS_BADGE = {
 }
 
 function SalesOrdersPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [customers, setCustomers] = useState([])
   const [accounts, setAccounts] = useState([])
   const [warehouses, setWarehouses] = useState([])
@@ -44,10 +44,10 @@ function SalesOrdersPage() {
   const [fulfillError, setFulfillError] = useState('')
   const [fulfillSaving, setFulfillSaving] = useState(false)
 
-  function loadOrders(cid) {
+  function loadOrders(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/sales/sales-orders', { params: { company_id: cid } })
+      .get('/api/sales/sales-orders', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setOrders(data))
       .catch(() => setError('Gagal memuat data sales order. Pastikan sales-service aktif.'))
       .finally(() => setLoading(false))
@@ -58,11 +58,11 @@ function SalesOrdersPage() {
       setLoading(false)
       return
     }
-    loadOrders(companyId)
+    loadOrders(companyId, branchId)
     apiClient.get('/api/sales/customers', { params: { company_id: companyId } }).then(({ data }) => setCustomers(data))
     apiClient.get('/api/finance/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
     apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const customerName = (id) => customers.find((c) => c.id === id)?.name ?? id
 
@@ -87,6 +87,7 @@ function SalesOrdersPage() {
     try {
       await apiClient.post('/api/sales/sales-orders', {
         company_id: companyId,
+        branch_id: branchId || null,
         customer_id: form.customer_id,
         order_date: form.order_date,
         lines: form.lines
@@ -100,7 +101,7 @@ function SalesOrdersPage() {
       })
       setCreating(false)
       setForm(emptyForm)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal membuat sales order')
     } finally {
@@ -112,7 +113,7 @@ function SalesOrdersPage() {
     setActingId(id)
     try {
       await apiClient.post(`/api/sales/sales-orders/${id}/${action}`)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       window.alert(err.response?.data?.error ?? 'Gagal memproses sales order')
     } finally {
@@ -133,7 +134,7 @@ function SalesOrdersPage() {
     try {
       await apiClient.post(`/api/sales/sales-orders/${fulfillingOrder.id}/fulfill`, fulfillForm)
       setFulfillingOrder(null)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       setFulfillError(err.response?.data?.error ?? 'Gagal memproses pengiriman barang')
     } finally {
@@ -154,7 +155,7 @@ function SalesOrdersPage() {
     try {
       await apiClient.post(`/api/sales/sales-orders/${invoicingOrder.id}/invoice`, invoiceForm)
       setInvoicingOrder(null)
-      loadOrders(companyId)
+      loadOrders(companyId, branchId)
     } catch (err) {
       setInvoiceError(err.response?.data?.error ?? 'Gagal membuat invoice')
     } finally {

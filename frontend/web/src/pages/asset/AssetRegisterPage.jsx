@@ -17,7 +17,7 @@ const STATUS_BADGE = {
 }
 
 function AssetRegisterPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [warehouses, setWarehouses] = useState([])
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -30,10 +30,10 @@ function AssetRegisterPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadAssets(cid) {
+  function loadAssets(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/asset/assets', { params: { company_id: cid } })
+      .get('/api/asset/assets', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setAssets(data))
       .catch(() => setError('Gagal memuat data aset. Pastikan asset-service aktif.'))
       .finally(() => setLoading(false))
@@ -44,9 +44,9 @@ function AssetRegisterPage() {
       setLoading(false)
       return
     }
-    loadAssets(companyId)
+    loadAssets(companyId, branchId)
     apiClient.get('/api/warehouse/warehouses', { params: { company_id: companyId } }).then(({ data }) => setWarehouses(data))
-  }, [companyId])
+  }, [companyId, branchId])
 
   const warehouseName = (id) => {
     if (!id) return '—'
@@ -93,6 +93,7 @@ function AssetRegisterPage() {
       } else {
         await apiClient.post('/api/asset/assets', {
           company_id: companyId,
+          branch_id: branchId || null,
           warehouse_id: form.warehouse_id || null,
           asset_code: form.asset_code,
           name: form.name,
@@ -103,7 +104,7 @@ function AssetRegisterPage() {
         })
       }
       setEditing(false)
-      loadAssets(companyId)
+      loadAssets(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal menyimpan data aset')
     } finally {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,10 +21,18 @@ func (h *Handler) listJournalEntries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.pool.Query(r.Context(), `
+	query := `
 		SELECT id, company_id, branch_id, entry_number, entry_date, period, description, reference_type,
 		       reference_id, status, total_debit, total_credit, posted_by, posted_at, created_at
-		FROM journal_entries WHERE company_id = $1 ORDER BY entry_date DESC, entry_number DESC`, companyID)
+		FROM journal_entries WHERE company_id = $1`
+	args := []any{companyID}
+	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
+		args = append(args, branchID)
+		query += ` AND (branch_id = $` + strconv.Itoa(len(args)) + ` OR branch_id IS NULL)`
+	}
+	query += ` ORDER BY entry_date DESC, entry_number DESC`
+
+	rows, err := h.pool.Query(r.Context(), query, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat jurnal")
 		return

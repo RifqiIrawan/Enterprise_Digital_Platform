@@ -37,7 +37,7 @@ function formatMoney(n) {
 }
 
 function EmployeesPage() {
-  const { companyId } = useCompany()
+  const { companyId, branchId } = useCompany()
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -48,10 +48,10 @@ function EmployeesPage() {
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
 
-  function loadEmployees(cid) {
+  function loadEmployees(cid, bid) {
     setLoading(true)
     apiClient
-      .get('/api/hr/employees', { params: { company_id: cid } })
+      .get('/api/hr/employees', { params: { company_id: cid, branch_id: bid } })
       .then(({ data }) => setEmployees(data))
       .catch(() => setError('Gagal memuat data karyawan. Pastikan hr-service aktif.'))
       .finally(() => setLoading(false))
@@ -62,8 +62,8 @@ function EmployeesPage() {
       setLoading(false)
       return
     }
-    loadEmployees(companyId)
-  }, [companyId])
+    loadEmployees(companyId, branchId)
+  }, [companyId, branchId])
 
   function openCreate() {
     setEditingId(null)
@@ -116,6 +116,7 @@ function EmployeesPage() {
       } else {
         await apiClient.post('/api/hr/employees', {
           company_id: companyId,
+          branch_id: branchId || null,
           employee_code: form.employee_code,
           first_name: form.first_name,
           last_name: form.last_name,
@@ -131,7 +132,7 @@ function EmployeesPage() {
         })
       }
       setEditing(false)
-      loadEmployees(companyId)
+      loadEmployees(companyId, branchId)
     } catch (err) {
       setFormError(err.response?.data?.error ?? 'Gagal menyimpan data karyawan')
     } finally {
