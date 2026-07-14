@@ -1,0 +1,89 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: platform
+          POSTGRES_PASSWORD: platform
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - services/api-gateway
+          - services/auth-service
+          - services/company-service
+          - services/rbac-service
+          - services/audit-service
+          - modules/finance-service
+          - modules/hr-service
+          - modules/sales-service
+          - modules/purchasing-service
+          - modules/warehouse-service
+          - modules/production-service
+          - modules/qc-service
+          - modules/asset-service
+          - modules/ai-bi-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.work
+
+      # Each service is built/vetted/tested from inside its own directory
+      # (not `go build ./...` from backend/, the go.work root) because Go's
+      # workspace-mode pattern matching only expands `./...` for directories
+      # that are themselves a `use`-d module -- `backend/` itself isn't one,
+      # so `./...` from there fails to resolve. Running from inside each
+      # service dir also mirrors how the README already tells developers to
+      # run these services (`cd backend/services/auth-service && go run
+      # ./cmd/server`), and workspace mode still applies (shared dependency
+      # versions come from backend/go.work), it just scopes the pattern to
+      # this one module.
+      - name: Build
+        working-directory: backend/${{ matrix.service }}
+        run: go build ./...
+
+      - name: Vet
+        working-directory: backend/${{ matrix.service }}
+        run: go vet ./...
+
+      - name: Test
+        working-directory: backend/${{ matrix.service }}
+        # Services with Postgres-backed integration tests (the 8 Fase 2
+        # modules other than ai-bi-service) connect to the service
+        # container above via localhost:5432, matching each TestMain's
+        # default admin URL (postgres://platform:platform@localhost:5432/
+        # postgres) and creating their own {service}_test database.
+        # ai-bi-service and the Fase 1 services (auth/company/rbac/audit/
+        # api-gateway) don't touch Postgres in tests (or have none yet) --
+        # `go test ./...` is a no-op pass for those.
+        run: go test ./... -v
