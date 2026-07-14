@@ -24,13 +24,14 @@ Enterprise_Digital_Platform/
 │   │   ├── company-service/           # Company, Branch, Department
 │   │   ├── rbac-service/              # Role, Permission, penugasan role
 │   │   └── audit-service/             # audit trail (konsumen event Kafka)
-│   ├── modules/                       # placeholder modul bisnis (Fase 2)
+│   ├── modules/                       # modul bisnis (Fase 2) + IoT Simulator (Fase 6)
 │   │   ├── finance-service/  hr-service/  sales-service/  purchasing-service/
-│   │   └── warehouse-service/  production-service/  qc-service/  asset-service/  ai-service/  bi-service/
+│   │   ├── warehouse-service/  production-service/  qc-service/  asset-service/
+│   │   └── ai-bi-service/  iot-service/
 │   └── go.work                        # Go workspace, menyatukan seluruh service Go
 ├── frontend/                          # seluruh kode client (FE)
 │   └── web/                           # React 18 + Bootstrap 5 (Vite)
-├── infra/                             # docker-compose (Postgres, ClickHouse, Redis, MinIO, Kafka), K8s placeholder
+├── infra/                             # docker-compose (Postgres, ClickHouse, Redis, MinIO, Kafka, Mosquitto), K8s
 └── Enterprise_Digital_Platform_Documentation/   # dokumen arsitektur & roadmap
 ```
 
@@ -40,7 +41,7 @@ Backend dan frontend dipisah sebagai folder mandiri di root repo (`backend/` vs 
 
 1. Nyalakan infrastruktur:
    - **Postgres**: jalan native (bukan Docker) di mesin dev ini — lihat setup di `infra/README.md`.
-   - **ClickHouse, Redis, MinIO, Kafka**:
+   - **ClickHouse, Redis, MinIO, Kafka, Mosquitto (MQTT, untuk IoT Simulator)**:
      ```
      cd infra
      cp .env.example .env
@@ -58,8 +59,8 @@ Backend dan frontend dipisah sebagai folder mandiri di root repo (`backend/` vs 
    npm run dev
    ```
 
-Alternatif: seluruh 14 service Go + frontend juga bisa dijalankan sekaligus sebagai
-container (`cd infra && docker compose up -d --build`), tanpa perlu 15 terminal
+Alternatif: seluruh 15 service Go + frontend juga bisa dijalankan sekaligus sebagai
+container (`cd infra && docker compose up -d --build`), tanpa perlu 16 terminal
 manual — lihat "Full app stack di Docker" di `infra/README.md`. Postgres tetap
 harus jalan native seperti langkah 1 di atas.
 
@@ -79,11 +80,10 @@ harus jalan native seperti langkah 1 di atas.
 | Asset | Asset |
 | Auditor | Read Only |
 | AI Analyst | AI & BI |
+| IoT | IoT Simulator |
 
 ## Roadmap
 - **Fase 1 ✅ selesai**: `backend/services/{api-gateway,auth-service,company-service,rbac-service,audit-service}` — login JWT, CRUD company/branch/department, role & permission management, audit trail via Kafka, semua sudah fungsional (bukan skeleton lagi).
-- **Fase 2 (sedang berjalan)**: implementasi modul bisnis di `backend/modules/`.
-  - ✅ **Finance** — Chart of Accounts, General Ledger/Journal, Invoices (AR/AP) dengan auto-posting ke GL, AR/AP summary.
-  - ⏳ HR, Sales, Purchasing, Warehouse, Production, QC, Asset, AI, BI — belum dikerjakan.
-  - Mengikuti dokumen `04_Database_Design.md`, `09_Kafka_Streaming.md`, `20_Implementation_Guide.md`. Lihat [`NEXT_SESSION.md`](./NEXT_SESSION.md) untuk status detail & panduan lanjutan.
-- **Fase 3**: data warehouse/lake, big data pipeline, dashboard BI, deployment Kubernetes, monitoring, disaster recovery — lihat dokumen `05`–`16`.
+- **Fase 2 ✅ selesai**: seluruh 9 modul bisnis di `backend/modules/` — Finance, HR, Sales, Purchasing, Warehouse, Production, QC, Asset, dan AI & BI (Dashboards, Forecasting, Anomaly Detection), semuanya fungsional & diverifikasi end-to-end. Production-readiness (Dockerfile, docker-compose, K8s manifests, environment config staging/prod, CI/CD GitHub Actions) juga sudah selesai. Lihat [`NEXT_SESSION.md`](./NEXT_SESSION.md) untuk status detail & panduan lanjutan.
+- **Fase 6 (IoT Simulator) — 🚧 sebagian**: `backend/modules/iot-service` — device simulator (Temperature/Humidity/Vibration/RFID/GPS/Barcode) publish ke broker MQTT sungguhan (Mosquitto, `infra/mosquitto/`), di-ingest ke Postgres, alert ambang batas otomatis untuk device numerik, diverifikasi end-to-end lewat pipeline MQTT nyata. **Belum dikerjakan**: Dockerfile/K8s manifest/env config staging-prod/entry CI untuk iot-service (production-readiness khusus modul ini, ditunda sengaja — lihat catatan di `NEXT_SESSION.md`).
+- **Fase 3, 4, 5, 7, 8, 9, 10, 11, 12** (data warehouse/lake, big data pipeline, HRIS lanjutan, asset lanjutan, data engineering, monitoring lanjutan, DevOps lanjutan sesuai penomoran roadmap asli): belum dikerjakan — lihat `Enterprise_Digital_Platform_Documentation/Enterprise_Data_Center_Simulator_Roadmap.md`.

@@ -21,6 +21,7 @@ type Config struct {
 	QCServiceURL         string
 	AssetServiceURL      string
 	AIBIServiceURL       string
+	IoTServiceURL        string
 	JWTSecret            string
 	CORSAllowedOrigin    string
 }
@@ -42,6 +43,7 @@ func Load() *Config {
 		QCServiceURL:         getEnv("QC_SERVICE_URL", "http://localhost:8091"),
 		AssetServiceURL:      getEnv("ASSET_SERVICE_URL", "http://localhost:8092"),
 		AIBIServiceURL:       getEnv("AI_BI_SERVICE_URL", "http://localhost:8093"),
+		IoTServiceURL:        getEnv("IOT_SERVICE_URL", "http://localhost:8094"),
 		JWTSecret:            getEnv("JWT_SECRET", "change-me"),
 		CORSAllowedOrigin:    getEnv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 	}

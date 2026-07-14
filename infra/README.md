@@ -51,6 +51,7 @@ Service yang naik:
 | MinIO | 9002 (API), 9003 (Console) | Object storage (S3-compatible) |
 | Kafka | 9092 (host/native clients), internal listener `kafka:29092` (container clients, lihat di bawah) | Event streaming (KRaft mode, tanpa Zookeeper) |
 | Kafka UI | 8099 | Dashboard untuk inspeksi topic/consumer (host 8090 dipakai production-service) |
+| Mosquitto | 1883 | Broker MQTT untuk IoT Simulator (`backend/modules/iot-service`) — simulator publish, iot-service subscribe untuk ingest. Config di `infra/mosquitto/mosquitto.conf` (anonymous access, dev-only) |
 
 Matikan semua: `./scripts/dev-down.ps1`
 

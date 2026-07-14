@@ -39,6 +39,7 @@ func New(cfg *config.Config) http.Handler {
 		{prefix: "/api/qc", proxy: newProxy(cfg.QCServiceURL, "/api/qc")},
 		{prefix: "/api/asset", proxy: newProxy(cfg.AssetServiceURL, "/api/asset")},
 		{prefix: "/api/ai-bi", proxy: newProxy(cfg.AIBIServiceURL, "/api/ai-bi")},
+		{prefix: "/api/iot", proxy: newProxy(cfg.IoTServiceURL, "/api/iot")},
 	}
 
 	mux := http.NewServeMux()

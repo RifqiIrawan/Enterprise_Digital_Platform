@@ -31,6 +31,19 @@ services:
     networks:
       - edp-network
 
+  mosquitto:
+    # Broker MQTT untuk iot-service (backend/modules/iot-service): simulator
+    # publish reading ke sini, iot-service subscribe untuk ingest. Dev-only,
+    # anonymous access diizinkan (lihat infra/mosquitto/mosquitto.conf) --
+    # pola no-auth yang sama dengan Kafka/Redis/MinIO di file ini.
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - edp-network
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"

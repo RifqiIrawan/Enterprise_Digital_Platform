@@ -15,4 +15,5 @@ use (
 	./modules/qc-service
 	./modules/asset-service
 	./modules/ai-bi-service
+	./modules/iot-service
 )

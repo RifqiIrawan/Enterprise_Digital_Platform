@@ -35,6 +35,9 @@ import MaintenanceSchedulePage from './pages/asset/MaintenanceSchedulePage.jsx'
 import BIDashboardsPage from './pages/aibi/BIDashboardsPage.jsx'
 import ForecastingPage from './pages/aibi/ForecastingPage.jsx'
 import AnomalyDetectionPage from './pages/aibi/AnomalyDetectionPage.jsx'
+import DevicesPage from './pages/iot/DevicesPage.jsx'
+import ReadingsPage from './pages/iot/ReadingsPage.jsx'
+import AlertsPage from './pages/iot/AlertsPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -89,6 +92,9 @@ function App() {
         <Route path="/ai-bi/dashboards" element={<BIDashboardsPage />} />
         <Route path="/ai-bi/forecasting" element={<ForecastingPage />} />
         <Route path="/ai-bi/anomaly-detection" element={<AnomalyDetectionPage />} />
+        <Route path="/iot/devices" element={<DevicesPage />} />
+        <Route path="/iot/readings" element={<ReadingsPage />} />
+        <Route path="/iot/alerts" element={<AlertsPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

@@ -76,6 +76,11 @@ var Topics = []string{
 	"asset.maintenance.scheduled",
 	"asset.maintenance.completed",
 	"asset.maintenance.cancelled",
+	"iot.device.registered",
+	"iot.device.updated",
+	"iot.alert.triggered",
+	"iot.alert.acknowledged",
+	"iot.alert.resolved",
 }
 
 // Start menjalankan satu Reader goroutine per topic. Setiap reader retry
