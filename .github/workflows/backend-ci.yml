@@ -57,6 +57,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.work
+          cache-dependency-path: backend/${{ matrix.service }}/go.sum
 
       # Each service is built/vetted/tested from inside its own directory
       # (not `go build ./...` from backend/, the go.work root) because Go's
