@@ -6,6 +6,12 @@ const FACT_LABEL = {
   finance_journal_lines: 'Finance (General Ledger)',
   sales_order_lines: 'Sales',
   inventory_movements: 'Inventory',
+  hr_payroll_details: 'HR (Payroll)',
+  purchasing_order_lines: 'Purchasing',
+  production_work_orders: 'Production',
+  qc_inspections: 'QC (Inspeksi Kualitas)',
+  asset_maintenance: 'Asset (Maintenance)',
+  iot_readings: 'IoT (Sensor Readings)',
 }
 
 function SyncStatusPage() {
@@ -66,7 +72,7 @@ function SyncStatusPage() {
         <div>
           <h2 className="edp-page-title">Data Warehouse — Sync Status</h2>
           <div className="text-secondary small">
-            ETL batch dari Finance, Sales, dan Inventory ke ClickHouse. Berjalan otomatis tiap beberapa menit, atau bisa dipicu manual di bawah ini.
+            ETL batch dari Finance, Sales, Inventory, HR, Purchasing, Production, QC, Asset, dan IoT ke ClickHouse. Berjalan otomatis tiap beberapa menit, atau bisa dipicu manual di bawah ini.
           </div>
         </div>
         <button type="button" className="btn btn-primary btn-sm" disabled={syncing} onClick={handleSyncNow}>

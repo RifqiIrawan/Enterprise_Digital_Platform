@@ -22,13 +22,20 @@ const (
 
 // sourceSchema mendefinisikan tabel-tabel MINIMAL yang meniru bentuk
 // journal_entries/journal_lines/accounts (finance-service), sales_orders/
-// sales_order_lines/customers (sales-service), dan stock_movements/
-// warehouses/products (warehouse-service) -- HANYA kolom yang benar-benar
-// dipakai extract SQL di finance.go/sales.go/inventory.go. Sengaja TIDAK
-// mengimpor package migrations milik modul lain (itu akan jadi dependency
-// test-time lintas modul yang tidak biasa untuk codebase ini) -- skema di
-// sini independen, dites terhadap SQL extract yang sama persis dipakai
-// produksi, bukan terhadap skema modul lain yang bisa berubah sendiri.
+// sales_order_lines/customers (sales-service), stock_movements/warehouses/
+// products (warehouse-service), employees/payroll_runs/payroll_details
+// (hr-service), suppliers/purchase_orders/purchase_order_lines
+// (purchasing-service), bill_of_materials/work_orders (production-service),
+// quality_standards/quality_inspections (qc-service), assets/
+// maintenance_schedules (asset-service), dan devices/readings
+// (iot-service) -- HANYA kolom yang benar-benar dipakai extract SQL di
+// finance.go/sales.go/inventory.go/hr.go/purchasing.go/production.go/
+// qc.go/asset.go/iot.go (atau wajib diisi karena FK/NOT NULL saat seeding
+// test). Sengaja TIDAK mengimpor package migrations milik modul lain (itu
+// akan jadi dependency test-time lintas modul yang tidak biasa untuk
+// codebase ini) -- skema di sini independen, dites terhadap SQL extract
+// yang sama persis dipakai produksi, bukan terhadap skema modul lain yang
+// bisa berubah sendiri.
 const sourceSchema = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -109,6 +116,143 @@ CREATE TABLE IF NOT EXISTS stock_movements (
 	reference_type VARCHAR(30) NOT NULL DEFAULT 'MANUAL',
 	reference_id UUID,
 	movement_date DATE NOT NULL DEFAULT CURRENT_DATE,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS employees (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	employee_code VARCHAR(20) NOT NULL,
+	department VARCHAR(100)
+);
+
+CREATE TABLE IF NOT EXISTS payroll_runs (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	period VARCHAR(7) NOT NULL,
+	status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+	posted_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS payroll_details (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	payroll_run_id UUID NOT NULL REFERENCES payroll_runs(id),
+	employee_id UUID NOT NULL REFERENCES employees(id),
+	employee_name VARCHAR(200) NOT NULL,
+	basic_salary NUMERIC(15,2) NOT NULL DEFAULT 0,
+	gross_salary NUMERIC(15,2) NOT NULL DEFAULT 0,
+	total_deduction NUMERIC(15,2) NOT NULL DEFAULT 0,
+	net_salary NUMERIC(15,2) NOT NULL DEFAULT 0,
+	working_days SMALLINT NOT NULL DEFAULT 0,
+	present_days SMALLINT NOT NULL DEFAULT 0,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS suppliers (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	supplier_code VARCHAR(20) NOT NULL,
+	name VARCHAR(200) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS purchase_orders (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	po_number VARCHAR(30) NOT NULL,
+	supplier_id UUID NOT NULL REFERENCES suppliers(id),
+	order_date DATE NOT NULL,
+	status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS purchase_order_lines (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	purchase_order_id UUID NOT NULL REFERENCES purchase_orders(id),
+	product_name VARCHAR(200) NOT NULL,
+	quantity NUMERIC(12,2) NOT NULL DEFAULT 1,
+	unit_price NUMERIC(15,2) NOT NULL DEFAULT 0,
+	amount NUMERIC(15,2) NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS bill_of_materials (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	bom_code VARCHAR(30) NOT NULL,
+	product_id UUID NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS work_orders (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	wo_number VARCHAR(30) NOT NULL,
+	bom_id UUID NOT NULL REFERENCES bill_of_materials(id),
+	product_id UUID NOT NULL,
+	warehouse_id UUID NOT NULL,
+	quantity_planned NUMERIC(15,2) NOT NULL,
+	quantity_produced NUMERIC(15,2),
+	status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+	planned_start_date DATE NOT NULL,
+	planned_end_date DATE,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS quality_standards (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	standard_code VARCHAR(30) NOT NULL,
+	product_id UUID NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS quality_inspections (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	inspection_number VARCHAR(30) NOT NULL,
+	standard_id UUID NOT NULL REFERENCES quality_standards(id),
+	product_id UUID NOT NULL,
+	reference_type VARCHAR(20) NOT NULL DEFAULT 'MANUAL',
+	reference_id UUID,
+	reference_number VARCHAR(30),
+	inspected_quantity NUMERIC(15,2) NOT NULL,
+	passed_quantity NUMERIC(15,2) NOT NULL DEFAULT 0,
+	failed_quantity NUMERIC(15,2) NOT NULL DEFAULT 0,
+	result VARCHAR(10) NOT NULL,
+	inspection_date DATE NOT NULL,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS assets (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	asset_code VARCHAR(30) NOT NULL,
+	name VARCHAR(200) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS maintenance_schedules (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	asset_id UUID NOT NULL REFERENCES assets(id),
+	maintenance_type VARCHAR(100) NOT NULL,
+	scheduled_date DATE NOT NULL,
+	completed_date DATE,
+	status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED',
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS devices (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	device_code VARCHAR(30) NOT NULL,
+	device_type VARCHAR(20) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS readings (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	device_id UUID NOT NULL REFERENCES devices(id),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	reading_type VARCHAR(20) NOT NULL,
+	value_numeric NUMERIC(15,4),
+	value_text VARCHAR(200),
+	recorded_at TIMESTAMPTZ NOT NULL,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 `

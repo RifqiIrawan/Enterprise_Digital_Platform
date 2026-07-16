@@ -16,7 +16,17 @@ func main() {
 	cfg := config.Load()
 	ctx := context.Background()
 
-	sources, err := sourcedb.Connect(ctx, cfg.FinanceDatabaseURL, cfg.SalesDatabaseURL, cfg.WarehouseDatabaseURL)
+	sources, err := sourcedb.Connect(ctx, sourcedb.URLs{
+		Finance:    cfg.FinanceDatabaseURL,
+		Sales:      cfg.SalesDatabaseURL,
+		Warehouse:  cfg.WarehouseDatabaseURL,
+		HR:         cfg.HRDatabaseURL,
+		Purchasing: cfg.PurchasingDatabaseURL,
+		Production: cfg.ProductionDatabaseURL,
+		QC:         cfg.QCDatabaseURL,
+		Asset:      cfg.AssetDatabaseURL,
+		IoT:        cfg.IoTDatabaseURL,
+	})
 	if err != nil {
 		log.Fatalf("dw-service: connect source databases failed: %v", err)
 	}

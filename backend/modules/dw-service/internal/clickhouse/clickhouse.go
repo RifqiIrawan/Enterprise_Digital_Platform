@@ -1,5 +1,5 @@
 // Package clickhouse adalah wrapper di atas driver native
-// github.com/ClickHouse/clickhouse-go/v2, dipakai untuk membuat skema (3
+// github.com/ClickHouse/clickhouse-go/v2, dipakai untuk membuat skema (9
 // fact table + 1 tabel state watermark) dan batch-insert hasil ETL.
 // ClickHouse dipilih sebagai destinasi (bukan Postgres) karena ini kolom-
 // store OLAP -- tabel fact di sini sengaja denormalized (pre-joined ke
@@ -26,6 +26,19 @@ import (
 // to Decimal(18, 2) is unsupported" muncul di test).
 func toDecimal(f float64) decimal.Decimal {
 	return decimal.NewFromFloat(f)
+}
+
+// toDecimalPtr is toDecimal's Nullable(Decimal(P,S)) counterpart -- a nil
+// input (Postgres NULL) must stay nil here, not become a zero-value
+// decimal.Decimal, or a genuinely-absent value (e.g. work_orders not yet
+// COMPLETED, so quantity_produced is still unset) would render as "0" in
+// the warehouse instead of NULL.
+func toDecimalPtr(f *float64) *decimal.Decimal {
+	if f == nil {
+		return nil
+	}
+	d := decimal.NewFromFloat(*f)
+	return &d
 }
 
 type Client struct {
@@ -103,6 +116,56 @@ CREATE TABLE IF NOT EXISTS fact_inventory_movements (
     movement_date Date, synced_at DateTime
 ) ENGINE = ReplacingMergeTree(synced_at)
 PARTITION BY toYYYYMM(movement_date) ORDER BY (company_id, movement_id);
+
+CREATE TABLE IF NOT EXISTS fact_hr_payroll_details (
+    detail_id UUID, payroll_run_id UUID, company_id UUID, branch_id Nullable(UUID),
+    period String, run_status String, employee_id UUID, employee_code String,
+    employee_name String, department String, basic_salary Decimal(15,2),
+    gross_salary Decimal(15,2), total_deduction Decimal(15,2), net_salary Decimal(15,2),
+    working_days Int16, present_days Int16, posted_at Nullable(DateTime), synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY period ORDER BY (company_id, detail_id);
+
+CREATE TABLE IF NOT EXISTS fact_purchasing_order_lines (
+    line_id UUID, purchase_order_id UUID, company_id UUID, branch_id Nullable(UUID),
+    po_number String, order_date Date, order_status String, supplier_id UUID,
+    supplier_code String, supplier_name String, product_name String,
+    quantity Decimal(12,2), unit_price Decimal(15,2), amount Decimal(15,2),
+    updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(order_date) ORDER BY (company_id, line_id);
+
+CREATE TABLE IF NOT EXISTS fact_production_work_orders (
+    wo_id UUID, company_id UUID, branch_id Nullable(UUID), wo_number String,
+    bom_id UUID, product_id UUID, warehouse_id UUID, quantity_planned Decimal(15,2),
+    quantity_produced Nullable(Decimal(15,2)), status String, planned_start_date Date,
+    planned_end_date Nullable(Date), updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(planned_start_date) ORDER BY (company_id, wo_id);
+
+CREATE TABLE IF NOT EXISTS fact_qc_inspections (
+    inspection_id UUID, company_id UUID, branch_id Nullable(UUID), inspection_number String,
+    standard_id UUID, standard_code String, product_id UUID, reference_type String,
+    reference_id Nullable(UUID), reference_number Nullable(String),
+    inspected_quantity Decimal(15,2), passed_quantity Decimal(15,2), failed_quantity Decimal(15,2),
+    result String, inspection_date Date, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(inspection_date) ORDER BY (company_id, inspection_id);
+
+CREATE TABLE IF NOT EXISTS fact_asset_maintenance (
+    schedule_id UUID, company_id UUID, branch_id Nullable(UUID), asset_id UUID,
+    asset_code String, asset_name String, maintenance_type String, scheduled_date Date,
+    completed_date Nullable(Date), status String, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(scheduled_date) ORDER BY (company_id, schedule_id);
+
+CREATE TABLE IF NOT EXISTS fact_iot_readings (
+    reading_id UUID, company_id UUID, branch_id Nullable(UUID), device_id UUID,
+    device_code String, device_type String, reading_type String,
+    value_numeric Nullable(Decimal(15,4)), value_text Nullable(String),
+    recorded_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(recorded_at) ORDER BY (company_id, reading_id);
 
 CREATE TABLE IF NOT EXISTS etl_sync_state (
     source_table String, last_synced_at DateTime
@@ -292,6 +355,225 @@ func (c *Client) InsertInventoryMovements(ctx context.Context, rows []InventoryM
 			r.ReferenceID, r.MovementDate, syncedAt,
 		); err != nil {
 			return fmt.Errorf("append inventory row %s: %w", r.MovementID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type HRPayrollDetailRow struct {
+	DetailID       uuid.UUID
+	PayrollRunID   uuid.UUID
+	CompanyID      uuid.UUID
+	BranchID       *uuid.UUID
+	Period         string
+	RunStatus      string
+	EmployeeID     uuid.UUID
+	EmployeeCode   string
+	EmployeeName   string
+	Department     string
+	BasicSalary    float64
+	GrossSalary    float64
+	TotalDeduction float64
+	NetSalary      float64
+	WorkingDays    int16
+	PresentDays    int16
+	PostedAt       *time.Time
+}
+
+func (c *Client) InsertHRPayrollDetails(ctx context.Context, rows []HRPayrollDetailRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_hr_payroll_details")
+	if err != nil {
+		return fmt.Errorf("prepare hr payroll batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.DetailID, r.PayrollRunID, r.CompanyID, r.BranchID, r.Period, r.RunStatus,
+			r.EmployeeID, r.EmployeeCode, r.EmployeeName, r.Department, toDecimal(r.BasicSalary),
+			toDecimal(r.GrossSalary), toDecimal(r.TotalDeduction), toDecimal(r.NetSalary),
+			r.WorkingDays, r.PresentDays, r.PostedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append hr payroll row %s: %w", r.DetailID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type PurchasingOrderLineRow struct {
+	LineID          uuid.UUID
+	PurchaseOrderID uuid.UUID
+	CompanyID       uuid.UUID
+	BranchID        *uuid.UUID
+	PONumber        string
+	OrderDate       time.Time
+	OrderStatus     string
+	SupplierID      uuid.UUID
+	SupplierCode    string
+	SupplierName    string
+	ProductName     string
+	Quantity        float64
+	UnitPrice       float64
+	Amount          float64
+	UpdatedAt       time.Time
+}
+
+func (c *Client) InsertPurchasingOrderLines(ctx context.Context, rows []PurchasingOrderLineRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_purchasing_order_lines")
+	if err != nil {
+		return fmt.Errorf("prepare purchasing batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.LineID, r.PurchaseOrderID, r.CompanyID, r.BranchID, r.PONumber, r.OrderDate, r.OrderStatus,
+			r.SupplierID, r.SupplierCode, r.SupplierName, r.ProductName, toDecimal(r.Quantity),
+			toDecimal(r.UnitPrice), toDecimal(r.Amount), r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append purchasing row %s: %w", r.LineID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type ProductionWorkOrderRow struct {
+	WOID             uuid.UUID
+	CompanyID        uuid.UUID
+	BranchID         *uuid.UUID
+	WONumber         string
+	BOMID            uuid.UUID
+	ProductID        uuid.UUID
+	WarehouseID      uuid.UUID
+	QuantityPlanned  float64
+	QuantityProduced *float64
+	Status           string
+	PlannedStartDate time.Time
+	PlannedEndDate   *time.Time
+	UpdatedAt        time.Time
+}
+
+func (c *Client) InsertProductionWorkOrders(ctx context.Context, rows []ProductionWorkOrderRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_production_work_orders")
+	if err != nil {
+		return fmt.Errorf("prepare production batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.WOID, r.CompanyID, r.BranchID, r.WONumber, r.BOMID, r.ProductID, r.WarehouseID,
+			toDecimal(r.QuantityPlanned), toDecimalPtr(r.QuantityProduced), r.Status,
+			r.PlannedStartDate, r.PlannedEndDate, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append production row %s: %w", r.WOID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type QCInspectionRow struct {
+	InspectionID      uuid.UUID
+	CompanyID         uuid.UUID
+	BranchID          *uuid.UUID
+	InspectionNumber  string
+	StandardID        uuid.UUID
+	StandardCode      string
+	ProductID         uuid.UUID
+	ReferenceType     string
+	ReferenceID       *uuid.UUID
+	ReferenceNumber   *string
+	InspectedQuantity float64
+	PassedQuantity    float64
+	FailedQuantity    float64
+	Result            string
+	InspectionDate    time.Time
+	UpdatedAt         time.Time
+}
+
+func (c *Client) InsertQCInspections(ctx context.Context, rows []QCInspectionRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_qc_inspections")
+	if err != nil {
+		return fmt.Errorf("prepare qc batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.InspectionID, r.CompanyID, r.BranchID, r.InspectionNumber, r.StandardID, r.StandardCode,
+			r.ProductID, r.ReferenceType, r.ReferenceID, r.ReferenceNumber, toDecimal(r.InspectedQuantity),
+			toDecimal(r.PassedQuantity), toDecimal(r.FailedQuantity), r.Result, r.InspectionDate, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append qc row %s: %w", r.InspectionID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type AssetMaintenanceRow struct {
+	ScheduleID      uuid.UUID
+	CompanyID       uuid.UUID
+	BranchID        *uuid.UUID
+	AssetID         uuid.UUID
+	AssetCode       string
+	AssetName       string
+	MaintenanceType string
+	ScheduledDate   time.Time
+	CompletedDate   *time.Time
+	Status          string
+	UpdatedAt       time.Time
+}
+
+func (c *Client) InsertAssetMaintenance(ctx context.Context, rows []AssetMaintenanceRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_asset_maintenance")
+	if err != nil {
+		return fmt.Errorf("prepare asset batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.ScheduleID, r.CompanyID, r.BranchID, r.AssetID, r.AssetCode, r.AssetName,
+			r.MaintenanceType, r.ScheduledDate, r.CompletedDate, r.Status, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append asset row %s: %w", r.ScheduleID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type IoTReadingRow struct {
+	ReadingID    uuid.UUID
+	CompanyID    uuid.UUID
+	BranchID     *uuid.UUID
+	DeviceID     uuid.UUID
+	DeviceCode   string
+	DeviceType   string
+	ReadingType  string
+	ValueNumeric *float64
+	ValueText    *string
+	RecordedAt   time.Time
+}
+
+func (c *Client) InsertIoTReadings(ctx context.Context, rows []IoTReadingRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_iot_readings")
+	if err != nil {
+		return fmt.Errorf("prepare iot batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.ReadingID, r.CompanyID, r.BranchID, r.DeviceID, r.DeviceCode, r.DeviceType, r.ReadingType,
+			toDecimalPtr(r.ValueNumeric), r.ValueText, r.RecordedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append iot row %s: %w", r.ReadingID, err)
 		}
 	}
 	return batch.Send()

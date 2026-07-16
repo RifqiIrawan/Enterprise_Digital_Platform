@@ -402,6 +402,12 @@ services:
       FINANCE_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
       SALES_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
       WAREHOUSE_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/warehouse_service?sslmode=disable
+      HR_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/hr_service?sslmode=disable
+      PURCHASING_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/purchasing_service?sslmode=disable
+      PRODUCTION_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/production_service?sslmode=disable
+      QC_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/qc_service?sslmode=disable
+      ASSET_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/asset_service?sslmode=disable
+      IOT_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/iot_service?sslmode=disable
       # Native protocol port inside the container network is ClickHouse's
       # default 9000 -- the 9101 host remap in the clickhouse service above
       # only applies to connections from outside Docker (e.g. `go run` on
