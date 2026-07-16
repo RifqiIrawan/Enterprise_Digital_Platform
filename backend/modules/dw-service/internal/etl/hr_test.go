@@ -54,7 +54,7 @@ func TestSyncHR_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	detailID, employeeCode := mustSeedPayrollDetail(t, companyID, "POSTED")
 
-	n, err := SyncHR(context.Background(), sourcePool, chClient)
+	n, err := SyncHR(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncHR: %v", err)
 	}

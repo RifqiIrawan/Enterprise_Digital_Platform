@@ -36,7 +36,7 @@ func TestSyncQC_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	inspectionID, standardCode := mustSeedQualityInspection(t, companyID)
 
-	n, err := SyncQC(context.Background(), sourcePool, chClient)
+	n, err := SyncQC(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncQC: %v", err)
 	}

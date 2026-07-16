@@ -36,7 +36,7 @@ func TestSyncIoT_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	readingID, deviceCode := mustSeedReading(t, companyID, 36.5)
 
-	n, err := SyncIoT(context.Background(), sourcePool, chClient)
+	n, err := SyncIoT(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncIoT: %v", err)
 	}

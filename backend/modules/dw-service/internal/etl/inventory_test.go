@@ -46,7 +46,7 @@ func TestSyncInventory_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	movementID, productSKU := mustSeedStockMovement(t, companyID)
 
-	n, err := SyncInventory(context.Background(), sourcePool, chClient)
+	n, err := SyncInventory(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncInventory: %v", err)
 	}

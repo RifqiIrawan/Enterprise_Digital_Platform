@@ -35,7 +35,7 @@ func TestSyncAsset_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	scheduleID, assetCode := mustSeedMaintenanceSchedule(t, companyID)
 
-	n, err := SyncAsset(context.Background(), sourcePool, chClient)
+	n, err := SyncAsset(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncAsset: %v", err)
 	}

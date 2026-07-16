@@ -36,7 +36,7 @@ func TestSyncProduction_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	woID, woNumber := mustSeedWorkOrder(t, companyID, nil)
 
-	n, err := SyncProduction(context.Background(), sourcePool, chClient)
+	n, err := SyncProduction(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncProduction: %v", err)
 	}

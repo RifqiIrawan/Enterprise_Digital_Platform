@@ -3,11 +3,13 @@ package etl
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 )
 
 const assetSourceTable = "asset_maintenance"
@@ -26,7 +28,7 @@ const assetExtractSQL = `
 // sejak 001_init.sql) -- status SCHEDULED/COMPLETED/CANCELLED "overdue"
 // dihitung on the fly di asset-service sendiri (bukan status tersendiri),
 // jadi tidak ada kolom tambahan untuk itu di sini, sama seperti sumbernya.
-func SyncAsset(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, error) {
+func SyncAsset(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
 	watermark, err := dest.GetWatermark(ctx, assetSourceTable)
 	if err != nil {
 		return 0, fmt.Errorf("get asset watermark: %w", err)
@@ -64,6 +66,9 @@ func SyncAsset(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int,
 	syncedAt := time.Now()
 	if err := dest.InsertAssetMaintenance(ctx, out, syncedAt); err != nil {
 		return 0, fmt.Errorf("load asset rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, assetSourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", assetSourceTable, err)
 	}
 	if err := dest.SetWatermark(ctx, assetSourceTable, maxWatermark); err != nil {
 		return 0, fmt.Errorf("advance asset watermark: %w", err)

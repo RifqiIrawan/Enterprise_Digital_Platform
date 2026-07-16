@@ -16,10 +16,10 @@ func TestSyncFinance_RerunIsIdempotent(t *testing.T) {
 	companyID := uuid.New()
 	lineID, _ := mustSeedJournalEntryWithLine(t, companyID, "POSTED")
 
-	if _, err := SyncFinance(context.Background(), sourcePool, chClient); err != nil {
+	if _, err := SyncFinance(context.Background(), sourcePool, chClient, nil); err != nil {
 		t.Fatalf("first SyncFinance: %v", err)
 	}
-	if _, err := SyncFinance(context.Background(), sourcePool, chClient); err != nil {
+	if _, err := SyncFinance(context.Background(), sourcePool, chClient, nil); err != nil {
 		t.Fatalf("second SyncFinance: %v", err)
 	}
 

@@ -3,11 +3,13 @@ package etl
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 )
 
 const qcSourceTable = "qc_inspections"
@@ -29,7 +31,7 @@ const qcExtractSQL = `
 // migrations/001_init.sql qc-service) -- tapi tabelnya tetap punya
 // updated_at (dipakai kalau nanti ada edit pasca-buat), jadi watermark
 // pakai itu, konsisten dengan pola production/purchasing.
-func SyncQC(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, error) {
+func SyncQC(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
 	watermark, err := dest.GetWatermark(ctx, qcSourceTable)
 	if err != nil {
 		return 0, fmt.Errorf("get qc watermark: %w", err)
@@ -69,6 +71,9 @@ func SyncQC(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, er
 	syncedAt := time.Now()
 	if err := dest.InsertQCInspections(ctx, out, syncedAt); err != nil {
 		return 0, fmt.Errorf("load qc rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, qcSourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", qcSourceTable, err)
 	}
 	if err := dest.SetWatermark(ctx, qcSourceTable, maxWatermark); err != nil {
 		return 0, fmt.Errorf("advance qc watermark: %w", err)

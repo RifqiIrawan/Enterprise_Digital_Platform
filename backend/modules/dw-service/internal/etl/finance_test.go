@@ -59,7 +59,7 @@ func TestSyncFinance_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	lineID, accountCode := mustSeedJournalEntryWithLine(t, companyID, "POSTED")
 
-	n, err := SyncFinance(context.Background(), sourcePool, chClient)
+	n, err := SyncFinance(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncFinance: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestSyncFinance_DraftEntrySynced(t *testing.T) {
 	companyID := uuid.New()
 	lineID, _ := mustSeedJournalEntryWithLine(t, companyID, "DRAFT")
 
-	if _, err := SyncFinance(context.Background(), sourcePool, chClient); err != nil {
+	if _, err := SyncFinance(context.Background(), sourcePool, chClient, nil); err != nil {
 		t.Fatalf("SyncFinance: %v", err)
 	}
 

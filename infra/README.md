@@ -48,7 +48,7 @@ Service yang naik:
 | PostgreSQL | 5432 | **Native**, bukan Docker — lihat di atas. Satu database per service (`auth_service`, `company_service`, `rbac_service`, `audit_service`, dst) |
 | ClickHouse | 8123 (HTTP), 9101 (native) | OLAP / data warehouse, lihat `05_Data_Warehouse_Architecture.md` |
 | Redis | 6379 | Cache, session, rate limiting |
-| MinIO | 9002 (API), 9003 (Console) | Object storage (S3-compatible) |
+| MinIO | 9004 (API), 9003 (Console) | Object storage (S3-compatible). API port sengaja BUKAN 9002 (default sebelumnya) — sesi Data Lake (2026-07-16/17) menemukan itu bentrok dengan container project lain di mesin dev (`smart-parking-mosquitto`, tidak terkait project ini) |
 | Kafka | 9092 (host/native clients), internal listener `kafka:29092` (container clients, lihat di bawah) | Event streaming (KRaft mode, tanpa Zookeeper) |
 | Kafka UI | 8099 | Dashboard untuk inspeksi topic/consumer (host 8090 dipakai production-service) |
 | Mosquitto | 1883 | Broker MQTT untuk IoT Simulator (`backend/modules/iot-service`) — simulator publish, iot-service subscribe untuk ingest. Config di `infra/mosquitto/mosquitto.conf` (anonymous access, dev-only) |

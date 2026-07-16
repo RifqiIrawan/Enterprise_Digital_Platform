@@ -44,6 +44,23 @@ jobs:
         ports:
           - 9101:9000
           - 8123:8123
+      # Also only used by modules/dw-service (internal/datalake and the
+      # lake_test.go dual-write test), same SKIP-if-unreachable pattern as
+      # clickhouse above. bitnamilegacy/minio (not minio/minio) specifically
+      # -- GitHub Actions' `services:` block has no way to override a
+      # container's CMD, and the official minio/minio image needs an
+      # explicit `server /data` argument or it just prints help and exits;
+      # Bitnami's entrypoint runs the server directly from its own default
+      # CMD, no argument override needed (same reasoning as
+      # bitnamilegacy/kafka in infra/docker-compose.yml, verified locally
+      # before use here).
+      minio:
+        image: bitnamilegacy/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+          - 9004:9000
 
     strategy:
       fail-fast: false
@@ -102,10 +119,14 @@ jobs:
         # database. ai-bi-service and the Fase 1 services (auth/company/
         # rbac/audit/api-gateway) don't touch Postgres in tests (or have
         # none yet) -- `go test ./...` is a no-op pass for those. dw-service
-        # is the odd one out: it needs BOTH Postgres (localhost:5432, same
-        # as the other modules) AND the clickhouse service above
+        # is the odd one out: it needs Postgres (localhost:5432, same
+        # as the other modules), the clickhouse service above
         # (localhost:9101) for its internal/etl tests -- see
-        # testmain_test.go. iot-service's MQTT/simulator code isn't touched
-        # by its tests at all (only internal/httpapi + internal/ingest,
-        # both pure Postgres), so no mosquitto service is needed here.
+        # testmain_test.go -- and the minio service above (localhost:9004)
+        # for internal/datalake's tests and the lake_test.go dual-write
+        # test (every other internal/etl test passes lake=nil, MinIO is a
+        # best-effort side-channel, not a hard dependency for the rest of
+        # the fact-table tests). iot-service's MQTT/simulator code isn't
+        # touched by its tests at all (only internal/httpapi + internal/
+        # ingest, both pure Postgres), so no mosquitto service is needed here.
         run: go test ./... -v

@@ -161,6 +161,10 @@ configMapGenerator:
       - CLICKHOUSE_ADDR=host.docker.internal:9101
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=clickhouse
+      # 9004, not the "obvious" 9002 -- see infra/docker-compose.yml for why.
+      - MINIO_ENDPOINT=host.docker.internal:9004
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
   - name: iot-service-config
     behavior: merge
     literals:

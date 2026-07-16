@@ -3,11 +3,13 @@ package etl
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 )
 
 const hrSourceTable = "hr_payroll_details"
@@ -30,7 +32,7 @@ const hrExtractSQL = `
 // created_at) -- payroll_details/payroll_runs juga tidak punya kolom
 // updated_at, cuma berubah lewat status DRAFT->POSTED yang tercermin di
 // payroll_runs.posted_at, lihat migrations/001_init.sql hr-service.
-func SyncHR(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, error) {
+func SyncHR(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
 	watermark, err := dest.GetWatermark(ctx, hrSourceTable)
 	if err != nil {
 		return 0, fmt.Errorf("get hr watermark: %w", err)
@@ -71,6 +73,9 @@ func SyncHR(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, er
 	syncedAt := time.Now()
 	if err := dest.InsertHRPayrollDetails(ctx, out, syncedAt); err != nil {
 		return 0, fmt.Errorf("load hr rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, hrSourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", hrSourceTable, err)
 	}
 	if err := dest.SetWatermark(ctx, hrSourceTable, maxWatermark); err != nil {
 		return 0, fmt.Errorf("advance hr watermark: %w", err)

@@ -47,7 +47,7 @@ func TestSyncPurchasing_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	lineID, supplierCode := mustSeedPurchaseOrderWithLine(t, companyID)
 
-	n, err := SyncPurchasing(context.Background(), sourcePool, chClient)
+	n, err := SyncPurchasing(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncPurchasing: %v", err)
 	}

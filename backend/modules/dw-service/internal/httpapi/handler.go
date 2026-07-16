@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 	"github.com/enterprise-digital-platform/dw-service/internal/etl"
 	"github.com/enterprise-digital-platform/dw-service/internal/sourcedb"
 )
@@ -13,10 +14,11 @@ import (
 type Handler struct {
 	sources *sourcedb.Pools
 	dest    *ch.Client
+	lake    *datalake.Client
 }
 
-func NewHandler(sources *sourcedb.Pools, dest *ch.Client) *Handler {
-	return &Handler{sources: sources, dest: dest}
+func NewHandler(sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) *Handler {
+	return &Handler{sources: sources, dest: dest, lake: lake}
 }
 
 func (h *Handler) Register(mux *http.ServeMux) {
@@ -40,59 +42,62 @@ type syncResult struct {
 // cmd/server maupun endpoint POST /sync untuk trigger manual (tombol "Sync
 // Now" di frontend, dan untuk verifikasi tanpa perlu menunggu ticker).
 // Satu fact yang gagal tidak menghentikan fact lainnya -- errornya
-// dilaporkan per-fact di hasil, bukan bikin seluruh sync gagal total.
-func RunSync(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client) []syncResult {
+// dilaporkan per-fact di hasil, bukan bikin seluruh sync gagal total. lake
+// boleh nil (data lake tidak tersedia/tidak dikonfigurasi) -- tiap SyncX
+// menangani itu sebagai no-op, ClickHouse tetap jadi destinasi curated yang
+// wajib ada.
+func RunSync(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) []syncResult {
 	results := make([]syncResult, 0, 9)
 
-	if n, err := etl.SyncFinance(ctx, sources.Finance, dest); err != nil {
+	if n, err := etl.SyncFinance(ctx, sources.Finance, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "finance_journal_lines", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "finance_journal_lines", Rows: n})
 	}
 
-	if n, err := etl.SyncSales(ctx, sources.Sales, dest); err != nil {
+	if n, err := etl.SyncSales(ctx, sources.Sales, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "sales_order_lines", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "sales_order_lines", Rows: n})
 	}
 
-	if n, err := etl.SyncInventory(ctx, sources.Warehouse, dest); err != nil {
+	if n, err := etl.SyncInventory(ctx, sources.Warehouse, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "inventory_movements", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "inventory_movements", Rows: n})
 	}
 
-	if n, err := etl.SyncHR(ctx, sources.HR, dest); err != nil {
+	if n, err := etl.SyncHR(ctx, sources.HR, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "hr_payroll_details", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "hr_payroll_details", Rows: n})
 	}
 
-	if n, err := etl.SyncPurchasing(ctx, sources.Purchasing, dest); err != nil {
+	if n, err := etl.SyncPurchasing(ctx, sources.Purchasing, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "purchasing_order_lines", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "purchasing_order_lines", Rows: n})
 	}
 
-	if n, err := etl.SyncProduction(ctx, sources.Production, dest); err != nil {
+	if n, err := etl.SyncProduction(ctx, sources.Production, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "production_work_orders", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "production_work_orders", Rows: n})
 	}
 
-	if n, err := etl.SyncQC(ctx, sources.QC, dest); err != nil {
+	if n, err := etl.SyncQC(ctx, sources.QC, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "qc_inspections", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "qc_inspections", Rows: n})
 	}
 
-	if n, err := etl.SyncAsset(ctx, sources.Asset, dest); err != nil {
+	if n, err := etl.SyncAsset(ctx, sources.Asset, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "asset_maintenance", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "asset_maintenance", Rows: n})
 	}
 
-	if n, err := etl.SyncIoT(ctx, sources.IoT, dest); err != nil {
+	if n, err := etl.SyncIoT(ctx, sources.IoT, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "iot_readings", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "iot_readings", Rows: n})
@@ -106,7 +111,7 @@ func (h *Handler) sync(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "ClickHouse tidak tersedia")
 		return
 	}
-	results := RunSync(r.Context(), h.sources, h.dest)
+	results := RunSync(r.Context(), h.sources, h.dest, h.lake)
 	writeJSON(w, http.StatusOK, results)
 }
 

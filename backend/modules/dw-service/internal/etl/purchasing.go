@@ -3,11 +3,13 @@ package etl
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 )
 
 const purchasingSourceTable = "purchasing_order_lines"
@@ -30,7 +32,7 @@ const purchasingExtractSQL = `
 // berubah (mis. CONFIRMED -> RECEIVED), SEMUA baris line PO itu ikut
 // ter-extract ulang, dan ReplacingMergeTree di tujuan meng-upsert baris
 // yang sama, bukan duplikat.
-func SyncPurchasing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, error) {
+func SyncPurchasing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
 	watermark, err := dest.GetWatermark(ctx, purchasingSourceTable)
 	if err != nil {
 		return 0, fmt.Errorf("get purchasing watermark: %w", err)
@@ -69,6 +71,9 @@ func SyncPurchasing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) 
 	syncedAt := time.Now()
 	if err := dest.InsertPurchasingOrderLines(ctx, out, syncedAt); err != nil {
 		return 0, fmt.Errorf("load purchasing rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, purchasingSourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", purchasingSourceTable, err)
 	}
 	if err := dest.SetWatermark(ctx, purchasingSourceTable, maxWatermark); err != nil {
 		return 0, fmt.Errorf("advance purchasing watermark: %w", err)

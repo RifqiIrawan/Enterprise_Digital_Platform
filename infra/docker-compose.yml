@@ -60,7 +60,10 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9002:9000"   # API
+      # API port remapped from the "obvious" 9002 -- that clashed with an
+      # unrelated project's container on this dev machine
+      # (smart-parking-mosquitto), see infra/README.md.
+      - "9004:9000"   # API
       - "9003:9001"   # Console
     volumes:
       - minio_data:/data
@@ -416,10 +419,18 @@ services:
       CLICKHOUSE_USER: default
       CLICKHOUSE_PASSWORD: clickhouse
       CLICKHOUSE_DATABASE: dw
+      # Container-to-container port for MinIO's S3 API is its native 9000 --
+      # the 9004 host remap above (minio service) is only for connections
+      # from outside Docker, same reasoning as CLICKHOUSE_ADDR above.
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: dw-lake
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - clickhouse
+      - minio
     ports:
       - "8095:8095"
     networks:

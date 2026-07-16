@@ -3,11 +3,13 @@ package etl
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 )
 
 const inventorySourceTable = "inventory_movements"
@@ -29,7 +31,7 @@ const inventoryExtractSQL = `
 // migrations/001_init.sql warehouse-service, tidak ada kolom updated_at
 // sama sekali di tabel itu), jadi ini watermark paling sederhana dari
 // ketiga fact yang ada.
-func SyncInventory(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, error) {
+func SyncInventory(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
 	watermark, err := dest.GetWatermark(ctx, inventorySourceTable)
 	if err != nil {
 		return 0, fmt.Errorf("get inventory watermark: %w", err)
@@ -69,6 +71,9 @@ func SyncInventory(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (
 	syncedAt := time.Now()
 	if err := dest.InsertInventoryMovements(ctx, out, syncedAt); err != nil {
 		return 0, fmt.Errorf("load inventory rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, inventorySourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", inventorySourceTable, err)
 	}
 	if err := dest.SetWatermark(ctx, inventorySourceTable, maxWatermark); err != nil {
 		return 0, fmt.Errorf("advance inventory watermark: %w", err)

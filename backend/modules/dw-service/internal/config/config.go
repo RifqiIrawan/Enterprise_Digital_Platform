@@ -20,6 +20,11 @@ type Config struct {
 	ClickHouseUser        string
 	ClickHousePassword    string
 	ClickHouseDatabase    string
+	MinIOEndpoint         string
+	MinIOAccessKey        string
+	MinIOSecretKey        string
+	MinIOBucket           string
+	MinIOUseSSL           bool
 	SyncEnabled           bool
 	SyncIntervalSeconds   int
 }
@@ -40,6 +45,11 @@ func Load() *Config {
 		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", "clickhouse"),
 		ClickHouseDatabase:    getEnv("CLICKHOUSE_DATABASE", "dw"),
+		MinIOEndpoint:         getEnv("MINIO_ENDPOINT", "localhost:9004"),
+		MinIOAccessKey:        getEnv("MINIO_ACCESS_KEY", "minioadmin"),
+		MinIOSecretKey:        getEnv("MINIO_SECRET_KEY", "minioadmin"),
+		MinIOBucket:           getEnv("MINIO_BUCKET", "dw-lake"),
+		MinIOUseSSL:           getEnv("MINIO_USE_SSL", "false") == "true",
 		SyncEnabled:           getEnv("DW_SYNC_ENABLED", "true") == "true",
 		SyncIntervalSeconds:   getEnvInt("DW_SYNC_INTERVAL_SECONDS", 300),
 	}

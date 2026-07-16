@@ -3,11 +3,13 @@ package etl
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 )
 
 const salesSourceTable = "sales_order_lines"
@@ -29,7 +31,7 @@ const salesExtractSQL = `
 // FULFILLED), updated_at parent-nya ikut berubah dan SEMUA baris line order
 // itu ikut ter-extract ulang -- benar secara desain (ReplacingMergeTree di
 // tujuan akan meng-upsert baris yang sama, bukan duplikat).
-func SyncSales(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, error) {
+func SyncSales(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
 	watermark, err := dest.GetWatermark(ctx, salesSourceTable)
 	if err != nil {
 		return 0, fmt.Errorf("get sales watermark: %w", err)
@@ -68,6 +70,9 @@ func SyncSales(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int,
 	syncedAt := time.Now()
 	if err := dest.InsertSalesOrderLines(ctx, out, syncedAt); err != nil {
 		return 0, fmt.Errorf("load sales rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, salesSourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", salesSourceTable, err)
 	}
 	if err := dest.SetWatermark(ctx, salesSourceTable, maxWatermark); err != nil {
 		return 0, fmt.Errorf("advance sales watermark: %w", err)

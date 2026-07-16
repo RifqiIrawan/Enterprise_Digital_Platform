@@ -47,7 +47,7 @@ func TestSyncSales_ExtractsAndLoads(t *testing.T) {
 	companyID := uuid.New()
 	lineID, customerCode := mustSeedSalesOrderWithLine(t, companyID)
 
-	n, err := SyncSales(context.Background(), sourcePool, chClient)
+	n, err := SyncSales(context.Background(), sourcePool, chClient, nil)
 	if err != nil {
 		t.Fatalf("SyncSales: %v", err)
 	}

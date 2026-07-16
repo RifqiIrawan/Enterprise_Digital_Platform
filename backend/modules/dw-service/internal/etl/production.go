@@ -3,11 +3,13 @@ package etl
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 )
 
 const productionSourceTable = "production_work_orders"
@@ -30,7 +32,7 @@ const productionExtractSQL = `
 // jadi dw-service pun sengaja tidak memaksa join lintas source pool untuk
 // satu extract SQL. Watermark pakai updated_at (ada di work_orders, tidak
 // seperti finance/hr yang tidak punya kolom itu).
-func SyncProduction(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) (int, error) {
+func SyncProduction(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
 	watermark, err := dest.GetWatermark(ctx, productionSourceTable)
 	if err != nil {
 		return 0, fmt.Errorf("get production watermark: %w", err)
@@ -69,6 +71,9 @@ func SyncProduction(ctx context.Context, source *pgxpool.Pool, dest *ch.Client) 
 	syncedAt := time.Now()
 	if err := dest.InsertProductionWorkOrders(ctx, out, syncedAt); err != nil {
 		return 0, fmt.Errorf("load production rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, productionSourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", productionSourceTable, err)
 	}
 	if err := dest.SetWatermark(ctx, productionSourceTable, maxWatermark); err != nil {
 		return 0, fmt.Errorf("advance production watermark: %w", err)
