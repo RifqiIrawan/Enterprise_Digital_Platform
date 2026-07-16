@@ -56,6 +56,9 @@ images:
   - name: REPLACE_ME_REGISTRY/ai-bi-service
     newName: infra-ai-bi-service
     newTag: latest
+  - name: REPLACE_ME_REGISTRY/dw-service
+    newName: infra-dw-service
+    newTag: latest
   - name: REPLACE_ME_REGISTRY/frontend
     newName: infra-frontend
     newTag: latest
@@ -140,6 +143,15 @@ configMapGenerator:
     literals:
       - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/asset_service?sslmode=disable
       - KAFKA_BROKERS=host.docker.internal:9092
+  - name: dw-service-config
+    behavior: merge
+    literals:
+      - FINANCE_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
+      - SALES_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
+      - WAREHOUSE_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/warehouse_service?sslmode=disable
+      - CLICKHOUSE_ADDR=host.docker.internal:9101
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=clickhouse
 
 # Dev-only, obviously not a real secret. Never reuse this value anywhere
 # past a local cluster on this machine.

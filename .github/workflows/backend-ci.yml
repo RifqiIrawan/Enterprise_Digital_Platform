@@ -31,6 +31,19 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # Only used by modules/dw-service's tests (internal/etl), which SKIP
+      # (exit 0, not fail) if this is unreachable -- see
+      # internal/etl/testmain_test.go. Every other matrix leg simply ignores
+      # this service. Port 9101 (native protocol) matches the host remap in
+      # infra/docker-compose.yml and dw-service's own CLICKHOUSE_ADDR default.
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.3
+        env:
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: clickhouse
+        ports:
+          - 9101:9000
+          - 8123:8123
 
     strategy:
       fail-fast: false
@@ -50,6 +63,7 @@ jobs:
           - modules/qc-service
           - modules/asset-service
           - modules/ai-bi-service
+          - modules/dw-service
 
     steps:
       - uses: actions/checkout@v4
@@ -86,5 +100,8 @@ jobs:
         # postgres) and creating their own {service}_test database.
         # ai-bi-service and the Fase 1 services (auth/company/rbac/audit/
         # api-gateway) don't touch Postgres in tests (or have none yet) --
-        # `go test ./...` is a no-op pass for those.
+        # `go test ./...` is a no-op pass for those. dw-service is the odd
+        # one out: it needs BOTH Postgres (localhost:5432, same as the 8
+        # Fase 2 modules) AND the clickhouse service above (localhost:9101)
+        # for its internal/etl tests -- see testmain_test.go.
         run: go test ./... -v

@@ -1,8 +1,9 @@
 # Kubernetes Base Manifests
 
 Plain Kustomize base (no Helm) — one `Deployment` + `Service` per service
-(15 files: 14 Go services + frontend), one `Ingress` for external access, and
-one `configMapGenerator` per Go service in `kustomization.yaml` for non-secret
+(16 files: 15 Go services + frontend; iot-service isn't here yet, see
+NEXT_SESSION.md), one `Ingress` for external access, and one
+`configMapGenerator` per Go service in `kustomization.yaml` for non-secret
 config. Not meant to be applied directly — always go through an overlay
 (`../overlays/{dev,staging,prod}/`), which supplies the namespace, the
 environment-specific values for `REPLACE_ME_*` placeholders, and the

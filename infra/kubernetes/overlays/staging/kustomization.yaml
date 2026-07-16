@@ -44,6 +44,8 @@ replicas:
     count: 2
   - name: ai-bi-service
     count: 2
+  - name: dw-service
+    count: 2
   - name: frontend
     count: 2
 

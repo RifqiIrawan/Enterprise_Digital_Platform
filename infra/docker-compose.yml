@@ -109,7 +109,8 @@ services:
       - edp-network
 
   # ---------------------------------------------------------------------
-  # App services (all 14 Go services + frontend). Optional: infra above can
+  # App services (all 15 Go services + frontend -- iot-service isn't listed
+  # here yet, see NEXT_SESSION.md). Optional: infra above can
   # run alone for `go run ./cmd/server` local dev; these let the whole
   # stack run as containers with `docker compose up -d`. Postgres stays
   # native (see infra/README.md), so every service below reaches it via the
@@ -374,6 +375,32 @@ services:
     networks:
       - edp-network
 
+  dw-service:
+    build:
+      context: ../backend/modules/dw-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8095"
+      FINANCE_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
+      SALES_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
+      WAREHOUSE_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/warehouse_service?sslmode=disable
+      # Native protocol port inside the container network is ClickHouse's
+      # default 9000 -- the 9101 host remap in the clickhouse service above
+      # only applies to connections from outside Docker (e.g. `go run` on
+      # the host), not container-to-container traffic on edp-network.
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_DATABASE: dw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - clickhouse
+    ports:
+      - "8095:8095"
+    networks:
+      - edp-network
+
   api-gateway:
     build:
       context: ../backend/services/api-gateway
@@ -393,6 +420,7 @@ services:
       QC_SERVICE_URL: http://qc-service:8091
       ASSET_SERVICE_URL: http://asset-service:8092
       AI_BI_SERVICE_URL: http://ai-bi-service:8093
+      DW_SERVICE_URL: http://dw-service:8095
       JWT_SECRET: ${JWT_SECRET:-change-me}
       CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
     depends_on:
@@ -409,6 +437,7 @@ services:
       - qc-service
       - asset-service
       - ai-bi-service
+      - dw-service
     ports:
       - "8079:8079"
     networks:
