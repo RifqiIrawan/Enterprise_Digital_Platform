@@ -48,6 +48,8 @@ replicas:
     count: 3
   - name: dw-service
     count: 3
+  - name: iot-service
+    count: 3
   - name: frontend
     count: 3
 

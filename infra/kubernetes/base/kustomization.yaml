@@ -17,6 +17,7 @@ resources:
   - asset-service.yaml
   - ai-bi-service.yaml
   - dw-service.yaml
+  - iot-service.yaml
   - frontend.yaml
   - ingress.yaml
 
@@ -85,6 +86,7 @@ configMapGenerator:
       - ASSET_SERVICE_URL=http://asset-service:8092
       - AI_BI_SERVICE_URL=http://ai-bi-service:8093
       - DW_SERVICE_URL=http://dw-service:8095
+      - IOT_SERVICE_URL=http://iot-service:8094
       - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
 
   - name: finance-service-config
@@ -170,3 +172,12 @@ configMapGenerator:
       - CLICKHOUSE_DATABASE=dw
       - DW_SYNC_ENABLED=true
       - DW_SYNC_INTERVAL_SECONDS=300
+
+  - name: iot-service-config
+    literals:
+      - PORT=8094
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_IOT
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - MQTT_BROKER_URL=REPLACE_ME_MQTT_BROKER_URL
+      - IOT_SIMULATOR_ENABLED=false
+      - IOT_SIMULATOR_INTERVAL_SECONDS=15

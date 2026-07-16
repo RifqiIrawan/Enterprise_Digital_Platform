@@ -64,6 +64,7 @@ jobs:
           - modules/asset-service
           - modules/ai-bi-service
           - modules/dw-service
+          - modules/iot-service
 
     steps:
       - uses: actions/checkout@v4
@@ -94,14 +95,17 @@ jobs:
       - name: Test
         working-directory: backend/${{ matrix.service }}
         # Services with Postgres-backed integration tests (the 8 Fase 2
-        # modules other than ai-bi-service) connect to the service
-        # container above via localhost:5432, matching each TestMain's
-        # default admin URL (postgres://platform:platform@localhost:5432/
-        # postgres) and creating their own {service}_test database.
-        # ai-bi-service and the Fase 1 services (auth/company/rbac/audit/
-        # api-gateway) don't touch Postgres in tests (or have none yet) --
-        # `go test ./...` is a no-op pass for those. dw-service is the odd
-        # one out: it needs BOTH Postgres (localhost:5432, same as the 8
-        # Fase 2 modules) AND the clickhouse service above (localhost:9101)
-        # for its internal/etl tests -- see testmain_test.go.
+        # modules plus iot-service, all other than ai-bi-service) connect to
+        # the service container above via localhost:5432, matching each
+        # TestMain's default admin URL (postgres://platform:platform@
+        # localhost:5432/postgres) and creating their own {service}_test
+        # database. ai-bi-service and the Fase 1 services (auth/company/
+        # rbac/audit/api-gateway) don't touch Postgres in tests (or have
+        # none yet) -- `go test ./...` is a no-op pass for those. dw-service
+        # is the odd one out: it needs BOTH Postgres (localhost:5432, same
+        # as the other modules) AND the clickhouse service above
+        # (localhost:9101) for its internal/etl tests -- see
+        # testmain_test.go. iot-service's MQTT/simulator code isn't touched
+        # by its tests at all (only internal/httpapi + internal/ingest,
+        # both pure Postgres), so no mosquitto service is needed here.
         run: go test ./... -v

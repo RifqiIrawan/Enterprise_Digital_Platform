@@ -59,6 +59,9 @@ images:
   - name: REPLACE_ME_REGISTRY/dw-service
     newName: infra-dw-service
     newTag: latest
+  - name: REPLACE_ME_REGISTRY/iot-service
+    newName: infra-iot-service
+    newTag: latest
   - name: REPLACE_ME_REGISTRY/frontend
     newName: infra-frontend
     newTag: latest
@@ -152,6 +155,16 @@ configMapGenerator:
       - CLICKHOUSE_ADDR=host.docker.internal:9101
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=clickhouse
+  - name: iot-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/iot_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+      - MQTT_BROKER_URL=tcp://host.docker.internal:1883
+      # Simulator generates fake device readings -- fine for dev/demo,
+      # deliberately off by default in base (real staging/prod deployments
+      # would have actual IoT devices publishing, not a synthetic feed).
+      - IOT_SIMULATOR_ENABLED=true
 
 # Dev-only, obviously not a real secret. Never reuse this value anywhere
 # past a local cluster on this machine.

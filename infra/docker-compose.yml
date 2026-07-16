@@ -109,8 +109,7 @@ services:
       - edp-network
 
   # ---------------------------------------------------------------------
-  # App services (all 15 Go services + frontend -- iot-service isn't listed
-  # here yet, see NEXT_SESSION.md). Optional: infra above can
+  # App services (all 16 Go services + frontend). Optional: infra above can
   # run alone for `go run ./cmd/server` local dev; these let the whole
   # stack run as containers with `docker compose up -d`. Postgres stays
   # native (see infra/README.md), so every service below reaches it via the
@@ -375,6 +374,25 @@ services:
     networks:
       - edp-network
 
+  iot-service:
+    build:
+      context: ../backend/modules/iot-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8094"
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/iot_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      MQTT_BROKER_URL: tcp://mosquitto:1883
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+      - mosquitto
+    ports:
+      - "8094:8094"
+    networks:
+      - edp-network
+
   dw-service:
     build:
       context: ../backend/modules/dw-service
@@ -421,6 +439,7 @@ services:
       ASSET_SERVICE_URL: http://asset-service:8092
       AI_BI_SERVICE_URL: http://ai-bi-service:8093
       DW_SERVICE_URL: http://dw-service:8095
+      IOT_SERVICE_URL: http://iot-service:8094
       JWT_SECRET: ${JWT_SECRET:-change-me}
       CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
     depends_on:
@@ -438,6 +457,7 @@ services:
       - asset-service
       - ai-bi-service
       - dw-service
+      - iot-service
     ports:
       - "8079:8079"
     networks:
