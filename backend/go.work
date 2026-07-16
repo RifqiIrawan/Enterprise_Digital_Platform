@@ -16,4 +16,5 @@ use (
 	./modules/asset-service
 	./modules/ai-bi-service
 	./modules/iot-service
+	./modules/dw-service
 )

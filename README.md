@@ -27,7 +27,7 @@ Enterprise_Digital_Platform/
 │   ├── modules/                       # modul bisnis (Fase 2) + IoT Simulator (Fase 6)
 │   │   ├── finance-service/  hr-service/  sales-service/  purchasing-service/
 │   │   ├── warehouse-service/  production-service/  qc-service/  asset-service/
-│   │   └── ai-bi-service/  iot-service/
+│   │   └── ai-bi-service/  iot-service/  dw-service/
 │   └── go.work                        # Go workspace, menyatukan seluruh service Go
 ├── frontend/                          # seluruh kode client (FE)
 │   └── web/                           # React 18 + Bootstrap 5 (Vite)
@@ -81,9 +81,11 @@ harus jalan native seperti langkah 1 di atas.
 | Auditor | Read Only |
 | AI Analyst | AI & BI |
 | IoT | IoT Simulator |
+| Data Warehouse | Data Warehouse |
 
 ## Roadmap
 - **Fase 1 ✅ selesai**: `backend/services/{api-gateway,auth-service,company-service,rbac-service,audit-service}` — login JWT, CRUD company/branch/department, role & permission management, audit trail via Kafka, semua sudah fungsional (bukan skeleton lagi).
 - **Fase 2 ✅ selesai**: seluruh 9 modul bisnis di `backend/modules/` — Finance, HR, Sales, Purchasing, Warehouse, Production, QC, Asset, dan AI & BI (Dashboards, Forecasting, Anomaly Detection), semuanya fungsional & diverifikasi end-to-end. Production-readiness (Dockerfile, docker-compose, K8s manifests, environment config staging/prod, CI/CD GitHub Actions) juga sudah selesai. Lihat [`NEXT_SESSION.md`](./NEXT_SESSION.md) untuk status detail & panduan lanjutan.
 - **Fase 6 (IoT Simulator) — 🚧 sebagian**: `backend/modules/iot-service` — device simulator (Temperature/Humidity/Vibration/RFID/GPS/Barcode) publish ke broker MQTT sungguhan (Mosquitto, `infra/mosquitto/`), di-ingest ke Postgres, alert ambang batas otomatis untuk device numerik, diverifikasi end-to-end lewat pipeline MQTT nyata. **Belum dikerjakan**: Dockerfile/K8s manifest/env config staging-prod/entry CI untuk iot-service (production-readiness khusus modul ini, ditunda sengaja — lihat catatan di `NEXT_SESSION.md`).
-- **Fase 3, 4, 5, 7, 8, 9, 10, 11, 12** (data warehouse/lake, big data pipeline, HRIS lanjutan, asset lanjutan, data engineering, monitoring lanjutan, DevOps lanjutan sesuai penomoran roadmap asli): belum dikerjakan — lihat `Enterprise_Digital_Platform_Documentation/Enterprise_Data_Center_Simulator_Roadmap.md`.
+- **Fase 7/8 (Data Warehouse) — 🚧 sebagian**: `backend/modules/dw-service` — ETL batch (bukan event-driven) yang menarik langsung dari database Postgres finance_service/sales_service/warehouse_service, load ke 3 fact table ClickHouse denormalized (`fact_finance_journal_lines`, `fact_sales_order_lines`, `fact_inventory_movements`) via `ReplacingMergeTree` (idempotent, incremental lewat watermark), diverifikasi end-to-end terhadap data dev nyata. **Belum dikerjakan**: 7 modul bisnis sisanya (HR, Purchasing, Production, QC, Asset, IoT, dan modul Fase 1) belum ada fact table-nya, juga data lake/MinIO dan production-readiness khusus dw-service — lihat catatan di `NEXT_SESSION.md`.
+- **Fase 3, 4, 5, 9, 10, 11, 12** (data lake/MinIO, big data lanjutan, HRIS lanjutan, asset lanjutan, monitoring lanjutan, DevOps lanjutan sesuai penomoran roadmap asli): belum dikerjakan — lihat `Enterprise_Digital_Platform_Documentation/Enterprise_Data_Center_Simulator_Roadmap.md`.

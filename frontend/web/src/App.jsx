@@ -38,6 +38,7 @@ import AnomalyDetectionPage from './pages/aibi/AnomalyDetectionPage.jsx'
 import DevicesPage from './pages/iot/DevicesPage.jsx'
 import ReadingsPage from './pages/iot/ReadingsPage.jsx'
 import AlertsPage from './pages/iot/AlertsPage.jsx'
+import SyncStatusPage from './pages/dw/SyncStatusPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -95,6 +96,7 @@ function App() {
         <Route path="/iot/devices" element={<DevicesPage />} />
         <Route path="/iot/readings" element={<ReadingsPage />} />
         <Route path="/iot/alerts" element={<AlertsPage />} />
+        <Route path="/dw/sync-status" element={<SyncStatusPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

@@ -16,6 +16,15 @@ volumes:
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:24.3
+    environment:
+      # Tanpa ini, image resmi ClickHouse MEMATIKAN akses network sama
+      # sekali untuk user "default" ("neither CLICKHOUSE_USER nor
+      # CLICKHOUSE_PASSWORD is set, disabling network access for user
+      # 'default'") -- bukan cuma butuh password, tapi benar-benar reject
+      # semua koneksi TCP/HTTP. Password dev-only jelas palsu, sama pola
+      # dengan MinIO (minioadmin/minioadmin) di atas.
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse
     ports:
       - "8123:8123"   # HTTP interface
       - "9101:9000"   # native protocol (remapped to avoid clashing with MinIO 9000 on host)
