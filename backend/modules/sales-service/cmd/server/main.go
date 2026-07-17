@@ -9,13 +9,16 @@ import (
 	"github.com/enterprise-digital-platform/sales-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/sales-service/internal/financeclient"
 	"github.com/enterprise-digital-platform/sales-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/sales-service/internal/logging"
 	"github.com/enterprise-digital-platform/sales-service/internal/metrics"
+	"github.com/enterprise-digital-platform/sales-service/internal/requestid"
 	"github.com/enterprise-digital-platform/sales-service/internal/store"
 	"github.com/enterprise-digital-platform/sales-service/internal/warehouseclient"
 	"github.com/enterprise-digital-platform/sales-service/migrations"
 )
 
 func main() {
+	logging.Init("sales-service")
 	cfg := config.Load()
 	ctx := context.Background()
 
@@ -40,8 +43,11 @@ func main() {
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
+	var topHandler http.Handler = metrics.Middleware(mux)
+	topHandler = requestid.Middleware(topHandler)
+
 	log.Printf("sales-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, topHandler); err != nil {
 		log.Fatal(err)
 	}
 }

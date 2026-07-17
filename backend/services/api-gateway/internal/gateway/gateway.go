@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 
 	"github.com/enterprise-digital-platform/api-gateway/internal/config"
 	"github.com/enterprise-digital-platform/api-gateway/internal/metrics"
@@ -19,6 +20,13 @@ var publicRoutes = map[string]bool{
 	"POST /api/auth/login":   true,
 	"POST /api/auth/refresh": true,
 }
+
+// requestIDHeader ties one request's log lines together across the gateway
+// and whichever service it gets proxied to (see internal/requestid in every
+// other service) -- generated here if the caller didn't already send one,
+// then forwarded on the outbound proxied request and echoed back to the
+// caller for their own correlation.
+const requestIDHeader = "X-Request-Id"
 
 type route struct {
 	prefix string // mis. "/api/auth"
@@ -62,7 +70,23 @@ func New(cfg *config.Config) http.Handler {
 		http.NotFound(w, r)
 	})
 
-	return withCORS(cfg.CORSAllowedOrigin, metrics.Middleware(mux))
+	return withCORS(cfg.CORSAllowedOrigin, withRequestID(metrics.Middleware(mux)))
+}
+
+func withRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get(requestIDHeader)
+		if id == "" {
+			id = uuid.NewString()
+		}
+		// Mutating r.Header here means handleRoute's later
+		// rt.proxy.ServeHTTP(w, r) call forwards the same header downstream
+		// automatically -- ReverseProxy clones r into the outbound request.
+		r.Header.Set(requestIDHeader, id)
+		w.Header().Set(requestIDHeader, id)
+		log.Printf("request_id=%s method=%s path=%s", id, r.Method, r.URL.Path)
+		next.ServeHTTP(w, r)
+	})
 }
 
 func newProxy(target, stripPrefix string) *httputil.ReverseProxy {

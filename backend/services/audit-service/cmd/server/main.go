@@ -8,12 +8,15 @@ import (
 	"github.com/enterprise-digital-platform/audit-service/internal/config"
 	"github.com/enterprise-digital-platform/audit-service/internal/consumer"
 	"github.com/enterprise-digital-platform/audit-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/audit-service/internal/logging"
 	"github.com/enterprise-digital-platform/audit-service/internal/metrics"
+	"github.com/enterprise-digital-platform/audit-service/internal/requestid"
 	"github.com/enterprise-digital-platform/audit-service/internal/store"
 	"github.com/enterprise-digital-platform/audit-service/migrations"
 )
 
 func main() {
+	logging.Init("audit-service")
 	cfg := config.Load()
 	ctx := context.Background()
 
@@ -36,8 +39,11 @@ func main() {
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
+	var topHandler http.Handler = metrics.Middleware(mux)
+	topHandler = requestid.Middleware(topHandler)
+
 	log.Printf("audit-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, topHandler); err != nil {
 		log.Fatal(err)
 	}
 }

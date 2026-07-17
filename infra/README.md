@@ -53,20 +53,53 @@ Service yang naik:
 | Kafka UI | 8099 | Dashboard untuk inspeksi topic/consumer (host 8090 dipakai production-service) |
 | Mosquitto | 1883 | Broker MQTT untuk IoT Simulator (`backend/modules/iot-service`) — simulator publish, iot-service subscribe untuk ingest. Config di `infra/mosquitto/mosquitto.conf` (anonymous access, dev-only) |
 | Prometheus | 9090 | Scrape `/metrics` dari seluruh 16 service Go tiap 15 detik, lihat `infra/prometheus/prometheus.yml`. Target di-scrape lewat `host.docker.internal:<port>` — jalan sama baiknya untuk service yang jalan native (`go run`), sebagai container di compose ini, maupun sebagai pod K8s yang di-`kubectl port-forward` ke port host yang sama |
-| Grafana | 3001 (login dev-only `admin`/`admin`) | Dashboard "EDP - Services Overview" ter-provision otomatis (request rate, error rate, p95 latency, goroutines, memory per service) — datasource Prometheus sudah ter-wire, tidak perlu setup manual. Host port BUKAN 3000 (default Grafana) karena bentrok dengan `frontend` di compose ini |
+| Grafana | 3001 (login dev-only `admin`/`admin`) | Dashboard "EDP - Services Overview" ter-provision otomatis (request rate, error rate, p95 latency, goroutines, memory per service) — datasource Prometheus + Loki sudah ter-wire, tidak perlu setup manual. Host port BUKAN 3000 (default Grafana) karena bentrok dengan `frontend` di compose ini |
+| Loki | 3100 | Log storage, lihat `infra/loki/loki-config.yml` (single-binary, filesystem-backed, retensi 7 hari, dev-only) |
+| Promtail | — (tidak ada host port, cuma internal) | Ship log dari SEMUA container di Docker daemon ini ke Loki lewat Docker service discovery (`infra/promtail/promtail-config.yml`, akses `/var/run/docker.sock` read-only) — **tidak** menangkap log service yang jalan native lewat `go run` (lihat catatan di bawah) |
 
 Matikan semua: `./scripts/dev-down.ps1`
 
-**Observability — baru metrics, belum logs/traces**: Prometheus + Grafana di
-atas menutup pilar pertama (metrics) dari roadmap "Observability & DevOps".
-Setiap service mengekspos `/metrics` (request count + duration histogram,
-dilabeli per route pattern seperti `GET /accounts/{id}` bukan URL mentah,
-supaya label tidak meledak karena UUID) lewat `internal/metrics` yang
-di-copy ke tiap service — pola yang sama dengan `internal/eventbus`/
-`internal/store`. Centralized logging (ELK/Loki) dan distributed tracing
-(Jaeger) sengaja belum dikerjakan — menyusul sebagai pass terpisah kalau
-dibutuhkan, mengikuti pola "satu pilar sekaligus" yang sama seperti
-pengerjaan Data Warehouse bertahap sebelumnya.
+**Observability — metrics + logs SELESAI, belum traces**: Prometheus/Grafana
+(metrics) dan Loki/Promtail (logs) di atas menutup dua pilar pertama dari
+roadmap "Observability & DevOps". Setiap service mengekspos `/metrics`
+(request count + duration histogram, dilabeli per route pattern seperti
+`GET /accounts/{id}` bukan URL mentah, supaya label tidak meledak karena
+UUID) lewat `internal/metrics` yang di-copy ke tiap service — pola yang sama
+dengan `internal/eventbus`/`internal/store`.
+
+Logging: seluruh 16 service memakai `internal/logging` (juga di-copy per
+service) yang me-redirect writer package stdlib `log` supaya tiap
+`log.Printf`/`log.Fatalf` (isi pesan TIDAK diubah, tetap prosa bebas seperti
+sebelumnya) otomatis jadi satu baris JSON (`time`, `level`, `service`,
+`msg`) alih-alih format teks polos `2009/11/10 23:00:00 pesan` bawaan.
+**Keterbatasan yang disengaja**: semua baris berlevel `"INFO"` — writer-nya
+tidak bisa membedakan `log.Printf` dari `log.Fatalf` (keduanya lewat jalur
+stdlib yang sama), leveled logging asli butuh setiap call site ditulis ulang
+pakai logger terstruktur (di luar scope sesi ini). `api-gateway`
+men-generate/meneruskan header `X-Request-Id` (baru jika belum ada dari
+caller) ke service yang di-proxy, dan tiap service (lewat
+`internal/requestid`, pola middleware yang sama seperti `internal/metrics`)
+mencatat satu baris access-log per request ditandai ID itu — cukup untuk
+korelasi "request mana menyentuh service mana, kapan" lewat Loki/Grafana.
+**Ini TIDAK** menembus ke setiap `log.Printf` individual di dalam handler
+(itu butuh context di-thread ke semua call site, sama seperti alasan level
+di atas) atau ke pemanggilan HTTP internal service-ke-service lain
+(`financeclient`/`warehouseclient`) — request ID cuma menempel di hop
+gateway→service pertama.
+
+**Keterbatasan Promtail**: Docker service discovery cuma melihat container
+— log dari service yang dijalankan native lewat `go run` (workflow dev
+utama project ini, lihat `NEXT_SESSION.md`) tetap cuma tampil di terminal
+masing-masing, tidak terkirim ke Loki. Log terpusat baru kelihatan kalau
+service dijalankan lewat `docker compose up -d --build`. Lihat log lewat
+Grafana **Explore** (bukan dashboard statis — cocok untuk query ad hoc),
+pilih datasource "Loki", contoh query `{container=~".+"}` atau
+`{container=~".+"} |= "request_id=<id>"` untuk korelasi satu request lintas
+service.
+
+Distributed tracing (Jaeger) sengaja belum dikerjakan — menyusul sebagai
+pass terpisah kalau dibutuhkan, mengikuti pola "satu pilar sekaligus" yang
+sama seperti pengerjaan Data Warehouse bertahap sebelumnya.
 
 Prometheus/Grafana sengaja **cuma ada di `docker-compose.yml`**, tidak
 di-deploy sebagai Pod K8s tersendiri — sama seperti Kafka/Redis/ClickHouse/

@@ -10,14 +10,17 @@ import (
 	"github.com/enterprise-digital-platform/iot-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/iot-service/internal/httpapi"
 	"github.com/enterprise-digital-platform/iot-service/internal/ingest"
+	"github.com/enterprise-digital-platform/iot-service/internal/logging"
 	"github.com/enterprise-digital-platform/iot-service/internal/metrics"
 	"github.com/enterprise-digital-platform/iot-service/internal/mqttclient"
+	"github.com/enterprise-digital-platform/iot-service/internal/requestid"
 	"github.com/enterprise-digital-platform/iot-service/internal/simulator"
 	"github.com/enterprise-digital-platform/iot-service/internal/store"
 	"github.com/enterprise-digital-platform/iot-service/migrations"
 )
 
 func main() {
+	logging.Init("iot-service")
 	cfg := config.Load()
 	ctx := context.Background()
 
@@ -72,8 +75,11 @@ func main() {
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
+	var topHandler http.Handler = metrics.Middleware(mux)
+	topHandler = requestid.Middleware(topHandler)
+
 	log.Printf("iot-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, topHandler); err != nil {
 		log.Fatal(err)
 	}
 }

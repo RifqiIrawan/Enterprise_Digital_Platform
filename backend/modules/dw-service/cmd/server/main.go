@@ -10,11 +10,14 @@ import (
 	"github.com/enterprise-digital-platform/dw-service/internal/config"
 	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 	"github.com/enterprise-digital-platform/dw-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/dw-service/internal/logging"
 	"github.com/enterprise-digital-platform/dw-service/internal/metrics"
+	"github.com/enterprise-digital-platform/dw-service/internal/requestid"
 	"github.com/enterprise-digital-platform/dw-service/internal/sourcedb"
 )
 
 func main() {
+	logging.Init("dw-service")
 	cfg := config.Load()
 	ctx := context.Background()
 
@@ -64,8 +67,11 @@ func main() {
 		go runTicker(ctx, sources, dest, lake, time.Duration(cfg.SyncIntervalSeconds)*time.Second)
 	}
 
+	var topHandler http.Handler = metrics.Middleware(mux)
+	topHandler = requestid.Middleware(topHandler)
+
 	log.Printf("dw-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, topHandler); err != nil {
 		log.Fatal(err)
 	}
 }

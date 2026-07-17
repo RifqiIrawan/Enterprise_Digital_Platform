@@ -9,12 +9,15 @@ import (
 	"github.com/enterprise-digital-platform/auth-service/internal/config"
 	"github.com/enterprise-digital-platform/auth-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/auth-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/auth-service/internal/logging"
 	"github.com/enterprise-digital-platform/auth-service/internal/metrics"
+	"github.com/enterprise-digital-platform/auth-service/internal/requestid"
 	"github.com/enterprise-digital-platform/auth-service/internal/store"
 	"github.com/enterprise-digital-platform/auth-service/migrations"
 )
 
 func main() {
+	logging.Init("auth-service")
 	cfg := config.Load()
 	ctx := context.Background()
 
@@ -45,8 +48,11 @@ func main() {
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
+	var topHandler http.Handler = metrics.Middleware(mux)
+	topHandler = requestid.Middleware(topHandler)
+
 	log.Printf("auth-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, topHandler); err != nil {
 		log.Fatal(err)
 	}
 }

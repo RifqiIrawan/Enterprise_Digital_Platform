@@ -8,6 +8,7 @@ volumes:
   kafka_data:
   prometheus_data:
   grafana_data:
+  loki_data:
 
 # Postgres runs natively on this machine (Windows service "postgresql-x64-18",
 # port 5432) instead of via Docker -- see infra/README.md. A `platform` role
@@ -146,6 +147,34 @@ services:
       - "3001:3000"   # host 3000 already taken by frontend below
     depends_on:
       - prometheus
+    networks:
+      - edp-network
+
+  loki:
+    # Log storage. Docker-compose only, same reasoning as prometheus/grafana
+    # above -- infra tools stay out of infra/kubernetes in this repo.
+    image: grafana/loki:2.9.10
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    networks:
+      - edp-network
+
+  promtail:
+    # Ships logs from every container on this Docker daemon to Loki, via
+    # Docker service discovery over the mounted socket -- picks up ALL
+    # containers (app services + infra tools), not just the 16 Go services.
+    # Deliberate limitation: only sees CONTAINER logs. Services run natively
+    # via `go run` (this repo's primary dev workflow) are not shipped
+    # anywhere by this -- see infra/README.md.
+    image: grafana/promtail:2.9.10
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
     networks:
       - edp-network
 

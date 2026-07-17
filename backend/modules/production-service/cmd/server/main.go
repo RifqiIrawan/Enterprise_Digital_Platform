@@ -8,13 +8,16 @@ import (
 	"github.com/enterprise-digital-platform/production-service/internal/config"
 	"github.com/enterprise-digital-platform/production-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/production-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/production-service/internal/logging"
 	"github.com/enterprise-digital-platform/production-service/internal/metrics"
+	"github.com/enterprise-digital-platform/production-service/internal/requestid"
 	"github.com/enterprise-digital-platform/production-service/internal/store"
 	"github.com/enterprise-digital-platform/production-service/internal/warehouseclient"
 	"github.com/enterprise-digital-platform/production-service/migrations"
 )
 
 func main() {
+	logging.Init("production-service")
 	cfg := config.Load()
 	ctx := context.Background()
 
@@ -38,8 +41,11 @@ func main() {
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
+	var topHandler http.Handler = metrics.Middleware(mux)
+	topHandler = requestid.Middleware(topHandler)
+
 	log.Printf("production-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, topHandler); err != nil {
 		log.Fatal(err)
 	}
 }

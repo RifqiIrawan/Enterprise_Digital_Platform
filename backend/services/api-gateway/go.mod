@@ -4,6 +4,8 @@ go 1.23.0
 
 require github.com/golang-jwt/jwt/v5 v5.3.1
 
+require github.com/google/uuid v1.6.0 // indirect
+
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
