@@ -6,6 +6,8 @@ volumes:
   clickhouse_data:
   minio_data:
   kafka_data:
+  prometheus_data:
+  grafana_data:
 
 # Postgres runs natively on this machine (Windows service "postgresql-x64-18",
 # port 5432) instead of via Docker -- see infra/README.md. A `platform` role
@@ -108,6 +110,42 @@ services:
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     ports:
       - "8099:8080"   # host 8090 clashes with production-service (backend/modules/production-service)
+    networks:
+      - edp-network
+
+  prometheus:
+    # Scrapes /metrics from all 16 Go services via host.docker.internal at
+    # their host-mapped ports -- this works uniformly whether those services
+    # are running as native `go run` processes, as the app-service containers
+    # below, or as K8s dev-overlay pods reached through `kubectl
+    # port-forward` (see infra/kubernetes/base/*.yaml annotations), since all
+    # three runtime modes end up bound to the same host ports. Kept in
+    # docker-compose only (not deployed into infra/kubernetes) to match this
+    # repo's existing convention of not duplicating infra tools into the
+    # cluster -- see infra/kubernetes/overlays/dev/kustomization.yaml.
+    image: prom/prometheus:v2.55.1
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "9090:9090"
+    networks:
+      - edp-network
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      # Dev-only, same pattern as MinIO/ClickHouse default credentials above.
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"   # host 3000 already taken by frontend below
+    depends_on:
+      - prometheus
     networks:
       - edp-network
 

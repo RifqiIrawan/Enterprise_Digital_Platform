@@ -10,6 +10,7 @@ import (
 
 	"github.com/enterprise-digital-platform/hr-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/hr-service/internal/financeclient"
+	"github.com/enterprise-digital-platform/hr-service/internal/metrics"
 )
 
 type Handler struct {
@@ -24,6 +25,7 @@ func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher, finance *finance
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	mux.HandleFunc("GET /employees", h.listEmployees)
 	mux.HandleFunc("POST /employees", h.createEmployee)

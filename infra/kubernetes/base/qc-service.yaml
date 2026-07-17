@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: qc-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8091"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: qc-service

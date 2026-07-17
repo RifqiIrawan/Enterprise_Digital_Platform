@@ -10,6 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/enterprise-digital-platform/api-gateway/internal/config"
+	"github.com/enterprise-digital-platform/api-gateway/internal/metrics"
 )
 
 // publicRoutes tidak memerlukan Authorization header (login & refresh token
@@ -49,6 +50,7 @@ func New(cfg *config.Config) http.Handler {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok","service":"api-gateway"}`))
 	})
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		for _, rt := range routes {
@@ -60,7 +62,7 @@ func New(cfg *config.Config) http.Handler {
 		http.NotFound(w, r)
 	})
 
-	return withCORS(cfg.CORSAllowedOrigin, mux)
+	return withCORS(cfg.CORSAllowedOrigin, metrics.Middleware(mux))
 }
 
 func newProxy(target, stripPrefix string) *httputil.ReverseProxy {

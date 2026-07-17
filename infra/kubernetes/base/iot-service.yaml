@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: iot-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8094"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: iot-service

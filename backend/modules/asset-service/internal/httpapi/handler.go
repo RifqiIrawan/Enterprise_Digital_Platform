@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/enterprise-digital-platform/asset-service/internal/eventbus"
+	"github.com/enterprise-digital-platform/asset-service/internal/metrics"
 )
 
 type Handler struct {
@@ -22,6 +23,7 @@ func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher) *Handler {
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	mux.HandleFunc("GET /assets", h.listAssets)
 	mux.HandleFunc("POST /assets", h.createAsset)

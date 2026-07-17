@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: hr-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8086"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: hr-service

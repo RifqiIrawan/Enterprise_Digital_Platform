@@ -15,6 +15,7 @@ import (
 
 	"github.com/enterprise-digital-platform/auth-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/auth-service/internal/jwtutil"
+	"github.com/enterprise-digital-platform/auth-service/internal/metrics"
 	"github.com/enterprise-digital-platform/auth-service/internal/model"
 )
 
@@ -32,6 +33,7 @@ func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher, jwtSecret string
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("POST /login", h.login)
 	mux.HandleFunc("POST /refresh", h.refresh)
 	mux.HandleFunc("POST /logout", h.logout)

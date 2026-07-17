@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: warehouse-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8089"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: warehouse-service

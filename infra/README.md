@@ -52,8 +52,31 @@ Service yang naik:
 | Kafka | 9092 (host/native clients), internal listener `kafka:29092` (container clients, lihat di bawah) | Event streaming (KRaft mode, tanpa Zookeeper) |
 | Kafka UI | 8099 | Dashboard untuk inspeksi topic/consumer (host 8090 dipakai production-service) |
 | Mosquitto | 1883 | Broker MQTT untuk IoT Simulator (`backend/modules/iot-service`) — simulator publish, iot-service subscribe untuk ingest. Config di `infra/mosquitto/mosquitto.conf` (anonymous access, dev-only) |
+| Prometheus | 9090 | Scrape `/metrics` dari seluruh 16 service Go tiap 15 detik, lihat `infra/prometheus/prometheus.yml`. Target di-scrape lewat `host.docker.internal:<port>` — jalan sama baiknya untuk service yang jalan native (`go run`), sebagai container di compose ini, maupun sebagai pod K8s yang di-`kubectl port-forward` ke port host yang sama |
+| Grafana | 3001 (login dev-only `admin`/`admin`) | Dashboard "EDP - Services Overview" ter-provision otomatis (request rate, error rate, p95 latency, goroutines, memory per service) — datasource Prometheus sudah ter-wire, tidak perlu setup manual. Host port BUKAN 3000 (default Grafana) karena bentrok dengan `frontend` di compose ini |
 
 Matikan semua: `./scripts/dev-down.ps1`
+
+**Observability — baru metrics, belum logs/traces**: Prometheus + Grafana di
+atas menutup pilar pertama (metrics) dari roadmap "Observability & DevOps".
+Setiap service mengekspos `/metrics` (request count + duration histogram,
+dilabeli per route pattern seperti `GET /accounts/{id}` bukan URL mentah,
+supaya label tidak meledak karena UUID) lewat `internal/metrics` yang
+di-copy ke tiap service — pola yang sama dengan `internal/eventbus`/
+`internal/store`. Centralized logging (ELK/Loki) dan distributed tracing
+(Jaeger) sengaja belum dikerjakan — menyusul sebagai pass terpisah kalau
+dibutuhkan, mengikuti pola "satu pilar sekaligus" yang sama seperti
+pengerjaan Data Warehouse bertahap sebelumnya.
+
+Prometheus/Grafana sengaja **cuma ada di `docker-compose.yml`**, tidak
+di-deploy sebagai Pod K8s tersendiri — sama seperti Kafka/Redis/ClickHouse/
+MinIO/Mosquitto (lihat komentar di `kubernetes/overlays/dev/kustomization.yaml`),
+instance docker-compose yang sama sudah bisa scrape service yang jalan
+sebagai Pod K8s lewat `kubectl port-forward` ke port host yang sama, jadi
+tidak perlu menduplikasi infra ini ke dalam cluster. Deployment K8s untuk
+ke-16 service hanya diberi annotation `prometheus.io/scrape`/`port`/`path`
+(lihat `kubernetes/base/*.yaml`) sebagai dokumentasi intent, untuk dipakai
+kalau nanti ada Prometheus Operator/service-discovery di-cluster.
 
 ## Full app stack di Docker (opsional, di atas infra)
 

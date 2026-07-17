@@ -9,6 +9,7 @@ import (
 	"github.com/enterprise-digital-platform/purchasing-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/purchasing-service/internal/financeclient"
 	"github.com/enterprise-digital-platform/purchasing-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/purchasing-service/internal/metrics"
 	"github.com/enterprise-digital-platform/purchasing-service/internal/store"
 	"github.com/enterprise-digital-platform/purchasing-service/internal/warehouseclient"
 	"github.com/enterprise-digital-platform/purchasing-service/migrations"
@@ -40,7 +41,7 @@ func main() {
 	handler.Register(mux)
 
 	log.Printf("purchasing-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
 		log.Fatal(err)
 	}
 }

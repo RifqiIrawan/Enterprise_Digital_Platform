@@ -8,6 +8,7 @@ import (
 	"github.com/enterprise-digital-platform/production-service/internal/config"
 	"github.com/enterprise-digital-platform/production-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/production-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/production-service/internal/metrics"
 	"github.com/enterprise-digital-platform/production-service/internal/store"
 	"github.com/enterprise-digital-platform/production-service/internal/warehouseclient"
 	"github.com/enterprise-digital-platform/production-service/migrations"
@@ -38,7 +39,7 @@ func main() {
 	handler.Register(mux)
 
 	log.Printf("production-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
 		log.Fatal(err)
 	}
 }

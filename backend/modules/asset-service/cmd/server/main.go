@@ -8,6 +8,7 @@ import (
 	"github.com/enterprise-digital-platform/asset-service/internal/config"
 	"github.com/enterprise-digital-platform/asset-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/asset-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/asset-service/internal/metrics"
 	"github.com/enterprise-digital-platform/asset-service/internal/store"
 	"github.com/enterprise-digital-platform/asset-service/migrations"
 )
@@ -35,7 +36,7 @@ func main() {
 	handler.Register(mux)
 
 	log.Printf("asset-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
 		log.Fatal(err)
 	}
 }

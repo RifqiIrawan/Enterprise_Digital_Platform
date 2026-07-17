@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/enterprise-digital-platform/audit-service/internal/metrics"
 	"github.com/enterprise-digital-platform/audit-service/internal/model"
 )
 
@@ -22,6 +23,7 @@ func NewHandler(pool *pgxpool.Pool) *Handler {
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /audit-logs", h.listAuditLogs)
 }
 

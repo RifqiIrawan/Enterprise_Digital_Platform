@@ -10,6 +10,7 @@ import (
 
 	"github.com/enterprise-digital-platform/sales-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/sales-service/internal/financeclient"
+	"github.com/enterprise-digital-platform/sales-service/internal/metrics"
 	"github.com/enterprise-digital-platform/sales-service/internal/warehouseclient"
 )
 
@@ -26,6 +27,7 @@ func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher, finance *finance
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	mux.HandleFunc("GET /customers", h.listCustomers)
 	mux.HandleFunc("POST /customers", h.createCustomer)

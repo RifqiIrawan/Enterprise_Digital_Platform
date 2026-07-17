@@ -8,6 +8,7 @@ import (
 	"github.com/enterprise-digital-platform/audit-service/internal/config"
 	"github.com/enterprise-digital-platform/audit-service/internal/consumer"
 	"github.com/enterprise-digital-platform/audit-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/audit-service/internal/metrics"
 	"github.com/enterprise-digital-platform/audit-service/internal/store"
 	"github.com/enterprise-digital-platform/audit-service/migrations"
 )
@@ -36,7 +37,7 @@ func main() {
 	handler.Register(mux)
 
 	log.Printf("audit-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
 		log.Fatal(err)
 	}
 }

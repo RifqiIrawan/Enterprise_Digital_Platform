@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: sales-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8087"
+        prometheus.io/path: "/metrics"
     spec:
       containers:
         - name: sales-service

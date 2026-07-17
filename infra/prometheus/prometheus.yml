@@ -1,0 +1,44 @@
+# Scrape targets reach services via host.docker.internal at their
+# host-mapped port -- works uniformly whether a service is running as a
+# native `go run` process, an app-service container in this same
+# docker-compose, or a K8s dev-overlay pod reached through `kubectl
+# port-forward` to the same host port (see infra/README.md).
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: edp-services
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:8079"]
+        labels: { service: api-gateway }
+      - targets: ["host.docker.internal:8081"]
+        labels: { service: auth-service }
+      - targets: ["host.docker.internal:8082"]
+        labels: { service: company-service }
+      - targets: ["host.docker.internal:8083"]
+        labels: { service: rbac-service }
+      - targets: ["host.docker.internal:8084"]
+        labels: { service: audit-service }
+      - targets: ["host.docker.internal:8085"]
+        labels: { service: finance-service }
+      - targets: ["host.docker.internal:8086"]
+        labels: { service: hr-service }
+      - targets: ["host.docker.internal:8087"]
+        labels: { service: sales-service }
+      - targets: ["host.docker.internal:8088"]
+        labels: { service: purchasing-service }
+      - targets: ["host.docker.internal:8089"]
+        labels: { service: warehouse-service }
+      - targets: ["host.docker.internal:8090"]
+        labels: { service: production-service }
+      - targets: ["host.docker.internal:8091"]
+        labels: { service: qc-service }
+      - targets: ["host.docker.internal:8092"]
+        labels: { service: asset-service }
+      - targets: ["host.docker.internal:8093"]
+        labels: { service: ai-bi-service }
+      - targets: ["host.docker.internal:8094"]
+        labels: { service: iot-service }
+      - targets: ["host.docker.internal:8095"]
+        labels: { service: dw-service }

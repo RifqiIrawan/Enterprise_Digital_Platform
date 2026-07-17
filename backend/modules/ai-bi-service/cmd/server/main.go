@@ -6,6 +6,7 @@ import (
 
 	"github.com/enterprise-digital-platform/ai-bi-service/internal/config"
 	"github.com/enterprise-digital-platform/ai-bi-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/ai-bi-service/internal/metrics"
 )
 
 func main() {
@@ -17,7 +18,7 @@ func main() {
 	handler.Register(mux)
 
 	log.Printf("ai-bi-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
 		log.Fatal(err)
 	}
 }

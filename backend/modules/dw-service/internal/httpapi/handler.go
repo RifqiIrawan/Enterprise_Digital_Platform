@@ -8,6 +8,7 @@ import (
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
 	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 	"github.com/enterprise-digital-platform/dw-service/internal/etl"
+	"github.com/enterprise-digital-platform/dw-service/internal/metrics"
 	"github.com/enterprise-digital-platform/dw-service/internal/sourcedb"
 )
 
@@ -23,6 +24,7 @@ func NewHandler(sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client)
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("POST /sync", h.sync)
 	mux.HandleFunc("GET /sync/status", h.syncStatus)
 }

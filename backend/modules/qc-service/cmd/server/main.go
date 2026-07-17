@@ -8,6 +8,7 @@ import (
 	"github.com/enterprise-digital-platform/qc-service/internal/config"
 	"github.com/enterprise-digital-platform/qc-service/internal/eventbus"
 	"github.com/enterprise-digital-platform/qc-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/qc-service/internal/metrics"
 	"github.com/enterprise-digital-platform/qc-service/internal/store"
 	"github.com/enterprise-digital-platform/qc-service/migrations"
 )
@@ -35,7 +36,7 @@ func main() {
 	handler.Register(mux)
 
 	log.Printf("qc-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
 		log.Fatal(err)
 	}
 }

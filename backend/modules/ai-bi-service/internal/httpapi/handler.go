@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/enterprise-digital-platform/ai-bi-service/internal/config"
+	"github.com/enterprise-digital-platform/ai-bi-service/internal/metrics"
 )
 
 type Handler struct {
@@ -19,6 +20,7 @@ func NewHandler(cfg *config.Config) *Handler {
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("GET /dashboards/summary", h.dashboardSummary)
 	mux.HandleFunc("GET /forecasting/summary", h.forecastingSummary)
 	mux.HandleFunc("GET /anomaly-detection/scan", h.anomalyScan)

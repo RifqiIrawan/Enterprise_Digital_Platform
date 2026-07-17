@@ -10,6 +10,7 @@ import (
 	"github.com/enterprise-digital-platform/dw-service/internal/config"
 	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 	"github.com/enterprise-digital-platform/dw-service/internal/httpapi"
+	"github.com/enterprise-digital-platform/dw-service/internal/metrics"
 	"github.com/enterprise-digital-platform/dw-service/internal/sourcedb"
 )
 
@@ -64,7 +65,7 @@ func main() {
 	}
 
 	log.Printf("dw-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, mux); err != nil {
+	if err := http.ListenAndServe(":"+cfg.Port, metrics.Middleware(mux)); err != nil {
 		log.Fatal(err)
 	}
 }

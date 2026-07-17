@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/enterprise-digital-platform/production-service/internal/eventbus"
+	"github.com/enterprise-digital-platform/production-service/internal/metrics"
 	"github.com/enterprise-digital-platform/production-service/internal/warehouseclient"
 )
 
@@ -24,6 +25,7 @@ func NewHandler(pool *pgxpool.Pool, events *eventbus.Publisher, warehouse *wareh
 
 func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("GET /metrics", metrics.Handler())
 
 	mux.HandleFunc("GET /boms", h.listBOMs)
 	mux.HandleFunc("POST /boms", h.createBOM)
