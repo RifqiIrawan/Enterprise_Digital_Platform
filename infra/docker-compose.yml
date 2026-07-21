@@ -162,6 +162,24 @@ services:
     networks:
       - edp-network
 
+  jaeger:
+    # OTLP collector + trace storage + UI, all in one container -- receives
+    # spans from every service's internal/tracing package (OTLP_ENDPOINT env
+    # var below for the app-service containers; native `go run` processes
+    # use the default "localhost:4318" and reach this via the host port
+    # mapping). In-memory storage only (fine for local dev, traces don't
+    # survive a restart) -- same "docker-compose only, not in
+    # infra/kubernetes" convention as prometheus/grafana/loki above.
+    image: jaegertracing/all-in-one:1.65.0
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"   # UI
+      - "4318:4318"     # OTLP/HTTP receiver (native `go run` processes hit this)
+      - "4317:4317"     # OTLP/gRPC receiver (unused by this repo's otlptracehttp exporter, exposed for completeness)
+    networks:
+      - edp-network
+
   promtail:
     # Ships logs from every container on this Docker daemon to Loki, via
     # Docker service discovery over the mounted socket -- picks up ALL
@@ -194,6 +212,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8081"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/auth_service?sslmode=disable
       REDIS_URL: redis:6379
       KAFKA_BROKERS: kafka:29092
@@ -214,6 +233,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8082"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/company_service?sslmode=disable
       REDIS_URL: redis:6379
       KAFKA_BROKERS: kafka:29092
@@ -233,6 +253,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8083"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/rbac_service?sslmode=disable
       REDIS_URL: redis:6379
       KAFKA_BROKERS: kafka:29092
@@ -252,6 +273,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8084"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/audit_service?sslmode=disable
       CLICKHOUSE_URL: http://clickhouse:8123
       KAFKA_BROKERS: kafka:29092
@@ -272,6 +294,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8085"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
     extra_hosts:
@@ -289,6 +312,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8086"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/hr_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
       FINANCE_SERVICE_URL: http://finance-service:8085
@@ -308,6 +332,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8087"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
       FINANCE_SERVICE_URL: http://finance-service:8085
@@ -329,6 +354,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8088"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/purchasing_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
       FINANCE_SERVICE_URL: http://finance-service:8085
@@ -350,6 +376,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8089"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/warehouse_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
     extra_hosts:
@@ -367,6 +394,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8090"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/production_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
       WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
@@ -386,6 +414,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8091"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/qc_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
     extra_hosts:
@@ -403,6 +432,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8092"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/asset_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
     extra_hosts:
@@ -420,6 +450,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8093"
+      OTLP_ENDPOINT: jaeger:4318
       SALES_SERVICE_URL: http://sales-service:8087
       PURCHASING_SERVICE_URL: http://purchasing-service:8088
       FINANCE_SERVICE_URL: http://finance-service:8085
@@ -450,6 +481,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8094"
+      OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/iot_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
       MQTT_BROKER_URL: tcp://mosquitto:1883
@@ -469,6 +501,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8095"
+      OTLP_ENDPOINT: jaeger:4318
       FINANCE_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
       SALES_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
       WAREHOUSE_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/warehouse_service?sslmode=disable
@@ -514,6 +547,7 @@ services:
       dockerfile: deployments/Dockerfile
     environment:
       PORT: "8079"
+      OTLP_ENDPOINT: jaeger:4318
       AUTH_SERVICE_URL: http://auth-service:8081
       COMPANY_SERVICE_URL: http://company-service:8082
       RBAC_SERVICE_URL: http://rbac-service:8083

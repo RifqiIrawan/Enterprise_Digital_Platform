@@ -56,6 +56,7 @@ Service yang naik:
 | Grafana | 3001 (login dev-only `admin`/`admin`) | Dashboard "EDP - Services Overview" ter-provision otomatis (request rate, error rate, p95 latency, goroutines, memory per service) — datasource Prometheus + Loki sudah ter-wire, tidak perlu setup manual. Host port BUKAN 3000 (default Grafana) karena bentrok dengan `frontend` di compose ini |
 | Loki | 3100 | Log storage, lihat `infra/loki/loki-config.yml` (single-binary, filesystem-backed, retensi 7 hari, dev-only) |
 | Promtail | — (tidak ada host port, cuma internal) | Ship log dari SEMUA container di Docker daemon ini ke Loki lewat Docker service discovery (`infra/promtail/promtail-config.yml`, akses `/var/run/docker.sock` read-only) — **tidak** menangkap log service yang jalan native lewat `go run` (lihat catatan di bawah) |
+| Jaeger | 16686 (UI), 4318 (OTLP/HTTP), 4317 (OTLP/gRPC, tidak dipakai exporter repo ini) | Distributed tracing — menerima span dari `internal/tracing` tiap service (100%-sampled, in-memory storage, dev-only, tidak survive restart). Service container pakai `OTLP_ENDPOINT=jaeger:4318`; proses native (`go run`) pakai default `localhost:4318` lewat port host di atas. Datasource Grafana sudah ter-wire (`infra/grafana/provisioning/datasources/jaeger.yml`) |
 
 Matikan semua: `./scripts/dev-down.ps1`
 
