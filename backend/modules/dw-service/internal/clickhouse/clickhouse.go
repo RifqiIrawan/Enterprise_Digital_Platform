@@ -246,6 +246,48 @@ func (c *Client) CountRows(ctx context.Context, table string) (uint64, error) {
 	return n, nil
 }
 
+// MonthlyFinanceSummaryRow adalah satu baris hasil agregasi bulanan revenue
+// (kredit akun REVENUE) dan expense (debit akun EXPENSE) dari journal entry
+// yang sudah POSTED.
+type MonthlyFinanceSummaryRow struct {
+	Month   string
+	Revenue decimal.Decimal
+	Expense decimal.Decimal
+}
+
+// MonthlyFinanceSummary agregasi fact_finance_journal_lines per bulan untuk
+// satu company -- query analitik pertama yang benar-benar membaca dari
+// ClickHouse (bukan cuma CountRows untuk status sync). Pakai FINAL supaya
+// baris duplikat dari ReplacingMergeTree (dua jalur tulis: batch ETL 5 menit
+// + Kafka Streaming ETL, lihat internal/streaming) yang belum sempat
+// di-merge background tidak menghitung revenue/expense dobel.
+func (c *Client) MonthlyFinanceSummary(ctx context.Context, companyID uuid.UUID) ([]MonthlyFinanceSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(entry_date)) AS month,
+			sumIf(credit_amount, account_type = 'REVENUE') AS revenue,
+			sumIf(debit_amount, account_type = 'EXPENSE') AS expense
+		FROM fact_finance_journal_lines FINAL
+		WHERE company_id = ? AND entry_status = 'POSTED'
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query monthly finance summary: %w", err)
+	}
+	defer rows.Close()
+
+	var out []MonthlyFinanceSummaryRow
+	for rows.Next() {
+		var r MonthlyFinanceSummaryRow
+		if err := rows.Scan(&r.Month, &r.Revenue, &r.Expense); err != nil {
+			return nil, fmt.Errorf("scan monthly finance summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 type FinanceJournalLineRow struct {
 	LineID        uuid.UUID
 	JournalID     uuid.UUID
