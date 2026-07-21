@@ -9,9 +9,9 @@ import (
 	"github.com/segmentio/kafka-go"
 )
 
-// Topics yang dikonsumsi audit-service, sesuai konvensi di
-// infra/kafka/topics.md dan event yang dipublikasikan auth-service,
-// company-service, dan rbac-service.
+// Topics yang dikonsumsi audit-service, sesuai konvensi <domain>.<entity>.<action>
+// di infra/kafka/topics.md dan event yang benar-benar dipublikasikan tiap
+// service (lihat h.events.Publish("...") di masing-masing internal/httpapi).
 var Topics = []string{
 	"auth.user.registered",
 	"auth.user.logged_in",
@@ -25,6 +25,12 @@ var Topics = []string{
 	"rbac.role.permissions_updated",
 	"rbac.role.assigned",
 	"rbac.role.revoked",
+	"finance.account.created",
+	"finance.account.updated",
+	"finance.invoice.created",
+	"finance.invoice.posted",
+	"finance.journal.created",
+	"finance.journal.posted",
 	"hr.employee.created",
 	"hr.employee.updated",
 	"hr.attendance.created",
