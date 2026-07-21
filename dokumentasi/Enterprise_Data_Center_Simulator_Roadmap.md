@@ -16,6 +16,7 @@
 | **Fase 6** | IoT — iot-service: Device, MQTT pipeline, threshold alerts, IoT Simulator | ✅ Selesai |
 | **Fase 7** | Data Warehouse — dw-service: 9 fact tables (ClickHouse), Batch ETL, Kafka Streaming ETL | ✅ Selesai |
 | **Fase 8** | Data Lake — MinIO bronze layer (JSON Lines), dual-write dengan ClickHouse | ✅ Selesai |
+| **Fase 9** | Observability — Prometheus/Grafana (metrics), JSON logs + Loki/Promtail, OpenTelemetry + Jaeger (tracing) | ✅ Selesai |
 
 ---
 
@@ -50,6 +51,7 @@
 - **DW Batch ETL**: dw-service → 9 Postgres DB → ClickHouse + MinIO (setiap 5 menit)
 - **DW Streaming ETL**: Kafka (12 topics) → dw-service → ClickHouse + MinIO (<100ms)
 - **IoT Pipeline**: iot-service simulator → MQTT → Mosquitto → subscribe → Postgres + Kafka
+- **Observability**: 16 service → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger
 
 ### Frontend
 
@@ -63,7 +65,6 @@ Ini adalah platform yang sudah berfungsi penuh, bukan "belum selesai". Yang beri
 
 | Fitur | Deskripsi |
 |-------|-----------|
-| **Monitoring/Observability** | Prometheus metrics, Grafana dashboard, structured logging (JSON) |
 | **ClickHouse Materialized View** | Pre-aggregation untuk query analitik yang lebih cepat |
 | **Silver/Gold Data Lake** | Transformation layer di atas MinIO bronze (butuh Spark atau dbt) |
 | **Modul bisnis tambahan** | CRM, Ticketing, E-Commerce, dll |
