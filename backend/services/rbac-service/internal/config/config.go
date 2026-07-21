@@ -7,6 +7,7 @@ type Config struct {
 	DatabaseURL  string
 	RedisURL     string
 	KafkaBrokers string
+	OTLPEndpoint string
 }
 
 func Load() *Config {
@@ -15,6 +16,7 @@ func Load() *Config {
 		DatabaseURL:  getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/rbac_service?sslmode=disable"),
 		RedisURL:     getEnv("REDIS_URL", "localhost:6379"),
 		KafkaBrokers: getEnv("KAFKA_BROKERS", "localhost:9092"),
+		OTLPEndpoint: getEnv("OTLP_ENDPOINT", "localhost:4318"),
 	}
 }
 

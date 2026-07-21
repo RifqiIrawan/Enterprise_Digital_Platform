@@ -13,14 +13,20 @@ import (
 	"github.com/enterprise-digital-platform/sales-service/internal/metrics"
 	"github.com/enterprise-digital-platform/sales-service/internal/requestid"
 	"github.com/enterprise-digital-platform/sales-service/internal/store"
+	"github.com/enterprise-digital-platform/sales-service/internal/tracing"
 	"github.com/enterprise-digital-platform/sales-service/internal/warehouseclient"
 	"github.com/enterprise-digital-platform/sales-service/migrations"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 func main() {
 	logging.Init("sales-service")
 	cfg := config.Load()
 	ctx := context.Background()
+
+	shutdownTracing := tracing.Init(ctx, "sales-service", cfg.OTLPEndpoint)
+	defer shutdownTracing(context.Background())
 
 	pool, err := store.Connect(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -45,6 +51,7 @@ func main() {
 
 	var topHandler http.Handler = metrics.Middleware(mux)
 	topHandler = requestid.Middleware(topHandler)
+	topHandler = otelhttp.NewHandler(topHandler, "sales-service")
 
 	log.Printf("sales-service listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, topHandler); err != nil {

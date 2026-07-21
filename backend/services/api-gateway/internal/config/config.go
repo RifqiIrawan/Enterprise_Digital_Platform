@@ -25,6 +25,7 @@ type Config struct {
 	DWServiceURL         string
 	JWTSecret            string
 	CORSAllowedOrigin    string
+	OTLPEndpoint         string
 }
 
 func Load() *Config {
@@ -48,6 +49,7 @@ func Load() *Config {
 		DWServiceURL:         getEnv("DW_SERVICE_URL", "http://localhost:8095"),
 		JWTSecret:            getEnv("JWT_SECRET", "change-me"),
 		CORSAllowedOrigin:    getEnv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
+		OTLPEndpoint:         getEnv("OTLP_ENDPOINT", "localhost:4318"),
 	}
 	// api-gateway verifies incoming JWTs with this same secret (must match
 	// auth-service) -- see the matching guard/comment in

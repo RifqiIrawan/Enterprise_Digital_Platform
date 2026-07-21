@@ -12,6 +12,7 @@ type Config struct {
 	MQTTBrokerURL            string
 	SimulatorEnabled         bool
 	SimulatorIntervalSeconds int
+	OTLPEndpoint             string
 }
 
 func Load() *Config {
@@ -22,6 +23,7 @@ func Load() *Config {
 		MQTTBrokerURL:            getEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),
 		SimulatorEnabled:         getEnv("IOT_SIMULATOR_ENABLED", "true") == "true",
 		SimulatorIntervalSeconds: getEnvInt("IOT_SIMULATOR_INTERVAL_SECONDS", 15),
+		OTLPEndpoint:             getEnv("OTLP_ENDPOINT", "localhost:4318"),
 	}
 }
 

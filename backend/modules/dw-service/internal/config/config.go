@@ -27,6 +27,7 @@ type Config struct {
 	MinIOUseSSL           bool
 	SyncEnabled           bool
 	SyncIntervalSeconds   int
+	OTLPEndpoint          string
 }
 
 func Load() *Config {
@@ -52,6 +53,7 @@ func Load() *Config {
 		MinIOUseSSL:           getEnv("MINIO_USE_SSL", "false") == "true",
 		SyncEnabled:           getEnv("DW_SYNC_ENABLED", "true") == "true",
 		SyncIntervalSeconds:   getEnvInt("DW_SYNC_INTERVAL_SECONDS", 300),
+		OTLPEndpoint:          getEnv("OTLP_ENDPOINT", "localhost:4318"),
 	}
 }
 

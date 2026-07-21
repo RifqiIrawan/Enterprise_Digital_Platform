@@ -8,6 +8,7 @@ type Config struct {
 	ClickHouseURL string
 	KafkaBrokers  string
 	KafkaGroupID  string
+	OTLPEndpoint  string
 }
 
 func Load() *Config {
@@ -17,6 +18,7 @@ func Load() *Config {
 		ClickHouseURL: getEnv("CLICKHOUSE_URL", "http://localhost:8123"),
 		KafkaBrokers:  getEnv("KAFKA_BROKERS", "localhost:9092"),
 		KafkaGroupID:  getEnv("KAFKA_GROUP_ID", "audit-service"),
+		OTLPEndpoint:  getEnv("OTLP_ENDPOINT", "localhost:4318"),
 	}
 }
 

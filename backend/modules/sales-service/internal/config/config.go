@@ -8,6 +8,7 @@ type Config struct {
 	KafkaBrokers        string
 	FinanceServiceURL   string
 	WarehouseServiceURL string
+	OTLPEndpoint        string
 }
 
 func Load() *Config {
@@ -17,6 +18,7 @@ func Load() *Config {
 		KafkaBrokers:        getEnv("KAFKA_BROKERS", "localhost:9092"),
 		FinanceServiceURL:   getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),
 		WarehouseServiceURL: getEnv("WAREHOUSE_SERVICE_URL", "http://localhost:8089"),
+		OTLPEndpoint:        getEnv("OTLP_ENDPOINT", "localhost:4318"),
 	}
 }
 

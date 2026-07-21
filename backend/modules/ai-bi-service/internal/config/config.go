@@ -15,11 +15,13 @@ type Config struct {
 	QCServiceURL         string
 	HRServiceURL         string
 	AssetServiceURL      string
+	OTLPEndpoint         string
 }
 
 func Load() *Config {
 	return &Config{
 		Port:                 getEnv("PORT", "8093"),
+		OTLPEndpoint:         getEnv("OTLP_ENDPOINT", "localhost:4318"),
 		SalesServiceURL:      getEnv("SALES_SERVICE_URL", "http://localhost:8087"),
 		PurchasingServiceURL: getEnv("PURCHASING_SERVICE_URL", "http://localhost:8088"),
 		FinanceServiceURL:    getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),

@@ -14,6 +14,7 @@ type Config struct {
 	JWTSecret       string
 	AccessTokenTTL  string
 	RefreshTokenTTL string
+	OTLPEndpoint    string
 }
 
 func Load() *Config {
@@ -26,6 +27,7 @@ func Load() *Config {
 		JWTSecret:       getEnv("JWT_SECRET", "change-me"),
 		AccessTokenTTL:  getEnv("ACCESS_TOKEN_TTL", "15m"),
 		RefreshTokenTTL: getEnv("REFRESH_TOKEN_TTL", "168h"),
+		OTLPEndpoint:    getEnv("OTLP_ENDPOINT", "localhost:4318"),
 	}
 	// auth-service signs every access/refresh token with JWTSecret, so the
 	// "change-me" dev default reaching a real deployment is a full auth
