@@ -20,6 +20,9 @@ frontend/web/dist/
 infra/environments/**/*.env
 !infra/environments/**/*.env.example
 
+# Local machine-specific docker-compose port remaps, not meant to be shared
+infra/docker-compose.override.yml
+
 # Logs
 *.log
 
