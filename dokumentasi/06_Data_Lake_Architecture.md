@@ -1,261 +1,96 @@
 # 06 — Data Lake Architecture
-## Enterprise Data Center Simulator (EDCS)
+## Enterprise Digital Platform (EDP)
 
 ---
 
-## 🏛️ Overview
+## Overview
 
-EDCS Data Lake mengimplementasikan **Medallion Architecture** (Bronze → Silver → Gold) di atas **MinIO** (S3-compatible object storage) dengan **Delta Lake** sebagai format tabel terbuka yang mendukung ACID transactions, time travel, dan schema evolution.
+Data lake EDP adalah **bronze layer sederhana** di atas MinIO — raw dump dari setiap batch sync dan streaming event sebelum data masuk ke ClickHouse (curated). Tidak ada Silver/Gold layer, tidak ada Delta Lake, tidak ada Apache Spark.
 
 ---
 
-## 🥉🥈🥇 Medallion Architecture
+## Implementasi Aktual
+
+**Object Storage**: MinIO (`infra/docker-compose.yml`, port host 9004, container port 9000)  
+**Bucket**: `dw-lake`  
+**Format**: JSON Lines (`.jsonl`) — satu baris JSON per record  
+**Layer**: Bronze only (raw, no transformation)
+
+---
+
+## Struktur Path
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    BRONZE LAYER (Raw)                       │
-│  Format: Parquet / JSON / Avro (as-is dari source)         │
-│  Retention: 5 tahun                                         │
-│  Schema: Schema-on-read                                     │
-│  Processing: Tidak ada transformasi                         │
-│  Path: s3://edcs-lake/bronze/{domain}/{table}/{yyyy/mm/dd}  │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ (Spark ETL / dbt)
-┌──────────────────────────▼──────────────────────────────────┐
-│                    SILVER LAYER (Curated)                   │
-│  Format: Delta Lake                                         │
-│  Retention: 3 tahun                                         │
-│  Schema: Schema enforced                                    │
-│  Processing: Cleansed, deduplicated, standardized           │
-│  Path: s3://edcs-lake/silver/{domain}/{table}/              │
-└──────────────────────────┬──────────────────────────────────┘
-                           │ (Spark / dbt)
-┌──────────────────────────▼──────────────────────────────────┐
-│                    GOLD LAYER (Enriched)                    │
-│  Format: Delta Lake (partitioned, Z-ordered)                │
-│  Retention: 1 tahun (aktif), archive 5 tahun               │
-│  Schema: Business-ready                                     │
-│  Processing: Aggregated, joined, business logic applied     │
-│  Path: s3://edcs-lake/gold/{use_case}/                      │
-└─────────────────────────────────────────────────────────────┘
+dw-lake/
+└── {fact_name}/
+    └── {YYYY}/
+        └── {MM}/
+            └── {DD}/
+                └── {synced_at_unix_nano}.jsonl
+```
+
+Contoh:
+```
+dw-lake/finance_journal_lines/2026/07/21/1753084800000000000.jsonl
+dw-lake/sales_order_lines/2026/07/21/1753084800000000001.jsonl
 ```
 
 ---
 
-## 📁 Direktori Struktur Data Lake
+## Kapan Data Ditulis ke Lake
 
-```
-s3://edcs-lake/
-├── bronze/
-│   ├── erp/
-│   │   ├── master_data/
-│   │   ├── accounts/
-│   │   └── cost_centers/
-│   ├── hris/
-│   │   ├── employees/
-│   │   ├── attendance/
-│   │   └── payroll_runs/
-│   ├── crm/
-│   │   ├── contacts/
-│   │   ├── opportunities/
-│   │   └── tickets/
-│   ├── sales/
-│   │   └── orders/
-│   ├── wms/
-│   │   ├── stock_levels/
-│   │   └── stock_movements/
-│   ├── mes/
-│   │   ├── work_orders/
-│   │   └── quality_checks/
-│   ├── finance/
-│   │   ├── journal_entries/
-│   │   ├── ap_invoices/
-│   │   └── ar_invoices/
-│   ├── procurement/
-│   │   └── purchase_orders/
-│   ├── iot/
-│   │   ├── sensor_readings/    # Partisi per jam
-│   │   └── device_events/
-│   └── _metadata/
-│       └── ingestion_logs/
-│
-├── silver/
-│   ├── hris/
-│   │   ├── employees/          # Delta table
-│   │   └── attendance_daily/   # Delta table
-│   ├── sales/
-│   │   └── orders_enriched/
-│   ├── iot/
-│   │   └── sensor_readings_clean/
-│   └── finance/
-│       └── transactions_normalized/
-│
-├── gold/
-│   ├── sales_analytics/
-│   ├── hr_analytics/
-│   ├── operations_analytics/
-│   ├── finance_analytics/
-│   └── iot_analytics/
-│
-└── _system/
-    ├── checkpoints/            # Spark streaming checkpoints
-    ├── schemas/                # Schema registry backup
-    └── quarantine/             # Bad data records
-```
+**Dari batch ETL**: setelah `InsertXxx` ke ClickHouse sukses, `WriteJSONLines` dipanggil untuk semua baris batch.  
+**Dari streaming ETL**: setelah insert ClickHouse per-event sukses, `WriteJSONLines` untuk baris entity itu.
+
+**Penting**: lake write adalah **best-effort** — kegagalan MinIO tidak menggagalkan insert ClickHouse yang sudah berhasil. `lake *datalake.Client` boleh `nil` di seluruh codebase (nil = no-op).
 
 ---
 
-## 🔄 Data Ingestion Pipelines
+## Format JSON Lines
 
-### Batch Ingestion (CDC via Debezium → Kafka → Lake)
-```python
-# Spark job: bronze_ingestion.py
-
-from pyspark.sql import SparkSession
-from delta import configure_spark_with_delta_pip
-
-spark = (SparkSession.builder
-    .appName("EDCS-Bronze-Ingestion")
-    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
-    .config("spark.sql.catalog.spark_catalog",
-            "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    .getOrCreate())
-
-# Baca dari Kafka topic
-df = (spark.readStream
-    .format("kafka")
-    .option("kafka.bootstrap.servers", "kafka:9092")
-    .option("subscribe", "hris.employees")
-    .option("startingOffsets", "latest")
-    .load())
-
-# Parse Avro payload
-from pyspark.sql.avro.functions import from_avro
-schema_str = get_schema_from_registry("hris.employees")
-parsed = df.select(
-    from_avro("value", schema_str).alias("data"),
-    "timestamp", "partition", "offset"
-).select("data.*", "timestamp")
-
-# Write ke Bronze (append-only, dengan watermark)
-query = (parsed.writeStream
-    .format("delta")
-    .outputMode("append")
-    .option("checkpointLocation", "s3://edcs-lake/_system/checkpoints/hris_employees")
-    .option("path", "s3://edcs-lake/bronze/hris/employees/")
-    .partitionBy("_ingestion_date")
-    .trigger(processingTime="5 minutes")
-    .start())
+Field name menggunakan nama field Go (CamelCase, bukan snake_case):
+```json
+{"LineID":"uuid","JournalID":"uuid","CompanyID":"uuid","BranchID":null,"EntryNumber":"JE-001","EntryDate":"2026-07-21T00:00:00Z","DebitAmount":1000000,"CreditAmount":0,"PostedAt":"2026-07-21T10:00:00Z"}
+{"LineID":"uuid","JournalID":"uuid","CompanyID":"uuid","BranchID":null,"EntryNumber":"JE-001","EntryDate":"2026-07-21T00:00:00Z","DebitAmount":0,"CreditAmount":1000000,"PostedAt":"2026-07-21T10:00:00Z"}
 ```
 
-### Silver Layer Transformation
-```python
-# Spark job: silver_hris_employees.py
-from pyspark.sql import functions as F
-
-bronze_df = spark.read.format("delta") \
-    .load("s3://edcs-lake/bronze/hris/employees/")
-
-silver_df = (bronze_df
-    # Deduplication: ambil record terbaru per employee_id
-    .withColumn("row_num", F.row_number().over(
-        Window.partitionBy("employee_id")
-              .orderBy(F.desc("updated_at"))))
-    .filter(F.col("row_num") == 1)
-    # Standardisasi
-    .withColumn("full_name",
-        F.trim(F.concat_ws(" ", "first_name", "last_name")))
-    .withColumn("email", F.lower("email"))
-    .withColumn("hire_date", F.to_date("hire_date"))
-    # Hapus kolom teknis
-    .drop("row_num", "_kafka_offset", "_ingestion_ts")
-    # Tambah metadata silver
-    .withColumn("_silver_processed_at", F.current_timestamp())
-    .withColumn("_source", F.lit("hris"))
-)
-
-# Upsert ke Silver (MERGE untuk idempotency)
-from delta.tables import DeltaTable
-
-if DeltaTable.isDeltaTable(spark, "s3://edcs-lake/silver/hris/employees/"):
-    delta_table = DeltaTable.forPath(spark, "s3://edcs-lake/silver/hris/employees/")
-    delta_table.alias("silver").merge(
-        silver_df.alias("updates"),
-        "silver.employee_id = updates.employee_id"
-    ).whenMatchedUpdateAll() \
-     .whenNotMatchedInsertAll() \
-     .execute()
-else:
-    silver_df.write.format("delta") \
-        .mode("overwrite") \
-        .save("s3://edcs-lake/silver/hris/employees/")
-```
+CamelCase dipilih secara sadar — bronze layer untuk durability/reprocessability, bukan konsumsi langsung. Tidak worth effort nambah `json:""` tags ke ~120 field di 9 row struct.
 
 ---
 
-## 📊 Data Lake Catalog (Apache Atlas / OpenMetadata)
+## Package `internal/datalake`
 
-### Metadata yang Dicapture per Dataset
-```yaml
-dataset:
-  name: "silver.hris.employees"
-  description: "Cleansed employee master data dari HRIS"
-  owner: "data-engineering@edcs.internal"
-  domain: "HRIS"
-  layer: "silver"
-  format: "delta"
-  location: "s3://edcs-lake/silver/hris/employees/"
-  update_frequency: "every 15 minutes (streaming)"
-  row_count: 5200
-  size_gb: 0.8
-  schema:
-    - name: employee_id
-      type: uuid
-      description: "Primary key dari HRIS"
-      pii: false
-    - name: email
-      type: string
-      description: "Email karyawan"
-      pii: true
-      classification: "CONFIDENTIAL"
-  lineage:
-    upstream:
-      - "bronze.hris.employees (Debezium CDC)"
-    downstream:
-      - "gold.hr_analytics.headcount_daily"
-      - "data_warehouse.dim_employee"
-  quality_score: 98.5
-  last_updated: "2026-07-09T03:00:00Z"
+```go
+// Connect membuka koneksi MinIO + EnsureBucket (create-if-not-exists)
+func Connect(ctx, endpoint, accessKey, secretKey, bucket, useSSL) (*Client, error)
+
+// WriteJSONLines menerima slice bertipe apa pun (pakai reflection sekali di sini)
+// dan menulis ke MinIO sebagai JSON Lines file.
+// Nil client = no-op, tidak panic.
+func (c *Client) WriteJSONLines(ctx, fact string, rows any, syncedAt time.Time) error
+
+// ListKeys, Get — untuk verifikasi di test
 ```
+
+Satu-satunya pemakaian reflection di seluruh codebase — trade-off yang disengaja daripada 9 method identik per domain.
 
 ---
 
-## 🛡️ Data Governance
+## Environment Variables (dw-service)
 
-### Data Classification
-| Level | Contoh Data | Kontrol |
-|-------|-------------|---------|
-| **PUBLIC** | Product catalog, pricing | Akses terbuka |
-| **INTERNAL** | Sales metrics, inventory | Autentikasi |
-| **CONFIDENTIAL** | Gaji, data keuangan | Role-based access |
-| **RESTRICTED** | NIK, nomor rekening | Enkripsi + masking |
+| Var | Default | Keterangan |
+|-----|---------|------------|
+| `MINIO_ENDPOINT` | `localhost:9004` | Host:port MinIO API |
+| `MINIO_ACCESS_KEY` | `minioadmin` | Dev-only |
+| `MINIO_SECRET_KEY` | `minioadmin` | Dev-only |
+| `MINIO_BUCKET` | `dw-lake` | Nama bucket |
+| `MINIO_USE_SSL` | `false` | TLS untuk prod |
 
-### PII Masking Rules
-```python
-# Transformasi PII di Silver Layer
-pii_masking_rules = {
-    "nik": lambda col: F.concat(F.lit("****"), F.substring(col, 13, 4)),
-    "phone": lambda col: F.regexp_replace(col, r"(\d{4})(\d+)(\d{4})", r"\1****\3"),
-    "bank_account": lambda col: F.lit("***MASKED***"),
-    "email": lambda col: F.regexp_replace(col, r"(.{2})(.*)(@.*)", r"\1***\3"),
-}
-```
+---
 
-### Retention Policy
-| Layer | Domain | Retention |
-|-------|--------|-----------|
-| Bronze | IoT Sensor | 1 tahun |
-| Bronze | Business Events | 5 tahun |
-| Bronze | Finance | 7 tahun (regulasi) |
-| Silver | Semua | 3 tahun |
-| Gold | Semua | 1 tahun aktif |
+## Kenapa Hanya Bronze Layer
+
+- Scope awal: durability dan audit trail data mentah sebelum ClickHouse processing
+- Silver (cleansed) dan Gold (aggregated) bisa ditambahkan nanti kalau ada kebutuhan konkret
+- ClickHouse sudah berperan sebagai "gold layer" de facto untuk query analitik
+- Menambah Spark/Delta hanya untuk Silver→Gold transformation di skala ini tidak justified

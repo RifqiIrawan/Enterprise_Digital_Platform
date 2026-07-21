@@ -1,435 +1,220 @@
 # 14 — Kubernetes Deployment
-## Enterprise Data Center Simulator (EDCS)
+## Enterprise Digital Platform (EDP)
 
 ---
 
-## ☸️ Overview
+## Overview
 
-EDCS berjalan sepenuhnya di atas **Kubernetes (K8s)** — menggunakan **K3s** untuk lingkungan lokal/dev dan **full K8s** (EKS/GKE/AKS atau bare-metal via kubeadm) untuk staging dan production. Semua konfigurasi dikelola via **Helm Charts** dan di-deploy melalui **ArgoCD (GitOps)**.
+EDP menggunakan **Kustomize** (bukan Helm) untuk Kubernetes deployment. Manifest tersusun dalam base + 3 overlay (dev, staging, prod). Tidak ada ArgoCD, tidak ada KEDA, tidak ada Vault, tidak ada service mesh.
 
 ---
 
-## 🏗️ Cluster Architecture
+## Struktur Manifest
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                     KUBERNETES CLUSTER                           │
-│                                                                  │
-│  ┌─────────────────────────────────────────────────────────┐    │
-│  │                 CONTROL PLANE                           │    │
-│  │  API Server │ etcd │ Scheduler │ Controller Manager     │    │
-│  └─────────────────────────────────────────────────────────┘    │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
-│  │  Node Pool:  │  │  Node Pool:  │  │  Node Pool:  │          │
-│  │  System      │  │  Business    │  │  Data        │          │
-│  │  (3 nodes)   │  │  (5 nodes)   │  │  (4 nodes)   │          │
-│  │  4 CPU/8GB   │  │  8 CPU/16GB  │  │  16 CPU/64GB │          │
-│  └──────────────┘  └──────────────┘  └──────────────┘          │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │  Node Pool: GPU (2 nodes, optional — untuk ML Training)  │   │
-│  │  8 CPU / 64 GB RAM / 1x NVIDIA A10G                      │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────┘
+infra/kubernetes/
+├── base/
+│   ├── kustomization.yaml          # 14 service deployments + configmaps + ingress
+│   ├── api-gateway.yaml            # Deployment + Service per service
+│   ├── auth-service.yaml
+│   ├── ... (14 file yaml total)
+│   └── dw-service.yaml
+│
+└── overlays/
+    ├── dev/
+    │   ├── kustomization.yaml      # namespace=edp-dev, local images, host.docker.internal
+    │   └── patch-ingress-delete.yaml  # Hapus Ingress (Docker Desktop K8s tidak punya ingress controller)
+    ├── staging/
+    │   └── kustomization.yaml      # namespace=edp-staging, replicas=2
+    └── prod/
+        └── kustomization.yaml      # namespace=edp-prod, replicas=3
 ```
 
 ---
 
-## 📦 Namespace Strategy
+## Base Layer
 
-```yaml
-Namespaces:
-  edcs-system:        # Platform services (auth, gateway, monitoring)
-  edcs-business:      # Business microservices
-  edcs-data:          # Data platform (Kafka, Spark, Airflow)
-  edcs-iot:           # IoT services (MQTT broker, device sim)
-  edcs-ml:            # ML platform (MLflow, BentoML, JupyterHub)
-  edcs-observability: # Monitoring stack
-  edcs-devops:        # CI/CD tools (ArgoCD, Harbor)
-  edcs-storage:       # Stateful sets (PostgreSQL, Redis, MinIO)
-```
+**52 resources** (setelah render): 15 Deployment, 15 Service, 15 ConfigMap, 1 Ingress, 6 resource tambahan (namespace, dll).
 
----
-
-## 🔧 Helm Chart Structure (Per Service)
-
-```
-charts/
-└── hris-service/
-    ├── Chart.yaml
-    ├── values.yaml              # Default values
-    ├── values-staging.yaml      # Staging overrides
-    ├── values-production.yaml   # Production overrides
-    └── templates/
-        ├── deployment.yaml
-        ├── service.yaml
-        ├── ingress.yaml
-        ├── hpa.yaml             # Horizontal Pod Autoscaler
-        ├── pdb.yaml             # Pod Disruption Budget
-        ├── serviceaccount.yaml
-        ├── configmap.yaml
-        ├── secret.yaml          # References Vault
-        └── NOTES.txt
-```
-
-### Chart.yaml
-```yaml
-apiVersion: v2
-name: hris-service
-description: EDCS HRIS Microservice
-type: application
-version: 1.0.0
-appVersion: "1.2.3"
-dependencies:
-  - name: common
-    repository: oci://ghcr.io/edcs/charts
-    version: "1.x.x"
-```
-
-### values.yaml (Default)
-```yaml
-replicaCount: 2
-
-image:
-  repository: ghcr.io/edcs/hris-service
-  pullPolicy: IfNotPresent
-  tag: "latest"
-
-service:
-  type: ClusterIP
-  port: 3003
-
-ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/rate-limit: "100"
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-  hosts:
-    - host: api.edcs.internal
-      paths:
-        - path: /hris
-          pathType: Prefix
-  tls:
-    - secretName: edcs-tls
-      hosts:
-        - api.edcs.internal
-
-resources:
-  requests:
-    memory: "256Mi"
-    cpu: "250m"
-  limits:
-    memory: "512Mi"
-    cpu: "500m"
-
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 70
-  targetMemoryUtilizationPercentage: 80
-
-podDisruptionBudget:
-  enabled: true
-  minAvailable: 1
-
-livenessProbe:
-  httpGet:
-    path: /health
-    port: 3003
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  failureThreshold: 3
-
-readinessProbe:
-  httpGet:
-    path: /health/ready
-    port: 3003
-  initialDelaySeconds: 10
-  periodSeconds: 5
-
-env:
-  NODE_ENV: production
-  LOG_LEVEL: info
-  KAFKA_BROKERS: kafka-0.kafka.edcs-data:9092,kafka-1.kafka.edcs-data:9092
-
-envFromSecrets:
-  - name: hris-db-secret
-    key: DATABASE_URL
-  - name: redis-secret
-    key: REDIS_URL
-
-tolerations: []
-affinity:
-  podAntiAffinity:
-    preferredDuringSchedulingIgnoredDuringExecution:
-      - weight: 100
-        podAffinityTerm:
-          labelSelector:
-            matchExpressions:
-              - key: app
-                operator: In
-                values:
-                  - hris-service
-          topologyKey: kubernetes.io/hostname
-
-nodeSelector:
-  pool: business
-```
-
----
-
-## 🗄️ StatefulSet: PostgreSQL per Service
-
-```yaml
-# charts/postgres-hris/templates/statefulset.yaml
-apiVersion: apps/v1
-kind: StatefulSet
-metadata:
-  name: postgres-hris
-  namespace: edcs-storage
-spec:
-  serviceName: postgres-hris
-  replicas: 1  # Primary only (read replica opsional)
-  selector:
-    matchLabels:
-      app: postgres-hris
-  template:
-    spec:
-      containers:
-      - name: postgres
-        image: postgres:16
-        env:
-        - name: POSTGRES_DB
-          value: hris_db
-        - name: POSTGRES_USER
-          valueFrom:
-            secretKeyRef:
-              name: postgres-hris-secret
-              key: username
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: postgres-hris-secret
-              key: password
-        - name: PGDATA
-          value: /var/lib/postgresql/data/pgdata
-        resources:
-          requests:
-            memory: "512Mi"
-            cpu: "500m"
-          limits:
-            memory: "2Gi"
-            cpu: "2"
-        volumeMounts:
-        - name: postgres-storage
-          mountPath: /var/lib/postgresql/data
-  volumeClaimTemplates:
-  - metadata:
-      name: postgres-storage
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: fast-ssd
-      resources:
-        requests:
-          storage: 50Gi
-```
-
----
-
-## 📊 Kafka StatefulSet (KRaft Mode)
+### Template Deployment (semua service sama)
 
 ```yaml
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: kafka
-  namespace: edcs-data
+  name: finance-service
 spec:
-  serviceName: kafka
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
-      app: kafka
+      app: finance-service
   template:
     spec:
       containers:
-      - name: kafka
-        image: confluentinc/cp-kafka:7.5.0
-        env:
-        - name: KAFKA_NODE_ID
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.annotations['kafka.node-id']
-        - name: KAFKA_PROCESS_ROLES
-          value: "broker,controller"
-        - name: KAFKA_CONTROLLER_QUORUM_VOTERS
-          value: "0@kafka-0.kafka:9093,1@kafka-1.kafka:9093,2@kafka-2.kafka:9093"
-        - name: KAFKA_LISTENERS
-          value: "PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093"
-        - name: KAFKA_LOG_DIRS
-          value: /var/lib/kafka/data
+      - name: finance-service
+        image: REPLACE_ME_REGISTRY/finance-service:latest
+        ports:
+        - containerPort: 8085
+        envFrom:
+        - configMapRef:
+            name: finance-service-config
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8085
+          initialDelaySeconds: 10
+          periodSeconds: 30
         resources:
           requests:
-            memory: "2Gi"
-            cpu: "1"
+            cpu: 50m
+            memory: 64Mi
           limits:
-            memory: "4Gi"
-            cpu: "2"
-        volumeMounts:
-        - name: kafka-storage
-          mountPath: /var/lib/kafka/data
-  volumeClaimTemplates:
-  - metadata:
-      name: kafka-storage
-    spec:
-      accessModes: ["ReadWriteOnce"]
-      storageClassName: fast-ssd
-      resources:
-        requests:
-          storage: 100Gi
-```
-
+            cpu: 250m
+            memory: 256Mi
 ---
-
-## 🔐 Secrets Management (Vault + ESO)
-
-```yaml
-# External Secrets Operator — sync dari Vault ke K8s Secret
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: hris-db-secret
-  namespace: edcs-business
-spec:
-  refreshInterval: 1h
-  secretStoreRef:
-    name: vault-backend
-    kind: ClusterSecretStore
-  target:
-    name: hris-db-secret
-    creationPolicy: Owner
-  data:
-  - secretKey: DATABASE_URL
-    remoteRef:
-      key: edcs/hris
-      property: database_url
-  - secretKey: REDIS_URL
-    remoteRef:
-      key: edcs/shared
-      property: redis_url
-```
-
----
-
-## 📈 Horizontal Pod Autoscaler + KEDA
-
-```yaml
-# KEDA — Scale berdasarkan Kafka lag
-apiVersion: keda.sh/v1alpha1
-kind: ScaledObject
-metadata:
-  name: hris-consumer-scaler
-  namespace: edcs-business
-spec:
-  scaleTargetRef:
-    name: hris-service
-  minReplicaCount: 2
-  maxReplicaCount: 20
-  triggers:
-  - type: kafka
-    metadata:
-      bootstrapServers: kafka-0.kafka.edcs-data:9092
-      consumerGroup: hris-consumer
-      topic: hris.employee.created
-      lagThreshold: "100"        # Scale up jika lag > 100 pesan
-      offsetResetPolicy: latest
-  - type: prometheus
-    metadata:
-      serverAddress: http://prometheus.edcs-observability:9090
-      metricName: http_requests_per_second
-      threshold: "100"
-      query: sum(rate(http_requests_total{service="hris-service"}[1m]))
-```
-
----
-
-## 🌐 Ingress & Service Mesh
-
-```yaml
-# Kong Ingress Controller
-apiVersion: configuration.konghq.com/v1
-kind: KongPlugin
-metadata:
-  name: rate-limiting
-config:
-  minute: 100
-  hour: 5000
-  policy: local
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: edcs-api-gateway
-  annotations:
-    konghq.com/plugins: rate-limiting,jwt-auth,cors
-    konghq.com/strip-path: "true"
-spec:
-  ingressClassName: kong
-  rules:
-  - host: api.edcs.internal
-    http:
-      paths:
-      - path: /v1/hris
-        pathType: Prefix
-        backend:
-          service:
-            name: hris-service
-            port:
-              number: 3003
-      - path: /v1/crm
-        pathType: Prefix
-        backend:
-          service:
-            name: crm-service
-            port:
-              number: 3005
-```
-
----
-
-## ⚡ Resource Quotas per Namespace
-
-```yaml
 apiVersion: v1
-kind: ResourceQuota
+kind: Service
 metadata:
-  name: edcs-business-quota
-  namespace: edcs-business
+  name: finance-service
 spec:
-  hard:
-    requests.cpu: "20"
-    requests.memory: "40Gi"
-    limits.cpu: "40"
-    limits.memory: "80Gi"
-    pods: "100"
-    services: "30"
-    persistentvolumeclaims: "20"
+  selector:
+    app: finance-service
+  ports:
+  - port: 8085
+    targetPort: 8085
+```
+
+### ConfigMap per Service
+
+Setiap service punya `{service}-config` ConfigMap dengan semua env var dari `config.go`:
+
+```yaml
+configMapGenerator:
+- name: finance-service-config
+  literals:
+  - PORT=8085
+  - DATABASE_URL=REPLACE_ME_DATABASE_URL_FINANCE
+  - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+  - FINANCE_SERVICE_URL=http://finance-service:8085  # lintas-service pakai K8s DNS
+```
+
+**Penting**: `JWT_SECRET` **tidak ada** di base ConfigMap (bahkan sebagai placeholder). Pod `auth-service` dan `api-gateway` akan gagal start kalau overlay tidak menyediakan Secret-nya (fail-closed by design).
+
+### Ingress (di base, dihapus di overlay dev)
+
+```yaml
+spec:
+  rules:
+  - host: api.edp.local       # → api-gateway:8079
+  - host: edp.local           # → frontend:80
 ```
 
 ---
 
-## 🔄 Cluster Upgrade Strategy
+## Overlay Dev
 
-| Step | Action | Rollback |
-|------|--------|----------|
-| 1 | Snapshot etcd | — |
-| 2 | Drain node satu per satu | `kubectl uncordon` |
-| 3 | Upgrade control plane | Restore etcd snapshot |
-| 4 | Upgrade worker nodes (rolling) | `kubectl cordon` + drain |
-| 5 | Verify semua workloads healthy | — |
-| 6 | Run smoke tests | — |
+Untuk Docker Desktop Kubernetes (single-node, tidak ada ingress controller):
 
-**Frekuensi upgrade:** Mengikuti K8s N-2 support policy (max 2 minor version di belakang latest)
+```yaml
+namespace: edp-dev
+
+# Image dari docker compose build (bukan registry)
+images:
+- name: REPLACE_ME_REGISTRY/finance-service
+  newName: infra-finance-service
+  newTag: latest
+
+# Override ke host.docker.internal (Postgres + infra di luar Docker)
+configMapGenerator:
+- name: finance-service-config
+  behavior: merge
+  literals:
+  - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
+  - KAFKA_BROKERS=host.docker.internal:9092
+
+# Secret JWT (dev-only value)
+secretGenerator:
+- name: jwt-secret
+  literals:
+  - JWT_SECRET=dev-secret-change-me-in-prod
+
+# Hapus Ingress (tidak ada ingress controller di Docker Desktop)
+patches:
+- target:
+    kind: Ingress
+  patch: |-
+    - op: replace
+      path: /metadata/name
+      value: "$patch: delete"
+```
+
+---
+
+## Overlay Staging & Prod
+
+Minimal — cuma namespace dan replica count:
+
+```yaml
+# staging
+namespace: edp-staging
+patches:
+- target: {kind: Deployment}
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 2
+
+# prod
+namespace: edp-prod  
+patches:
+- target: {kind: Deployment}
+  patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 3
+```
+
+Yang belum ada di staging/prod: real ConfigMap values (butuh managed infra), Secrets dari secret manager, registry yang sesungguhnya, Ingress host yang valid.
+
+---
+
+## Deploy ke Docker Desktop
+
+```bash
+# Pastikan Kubernetes aktif di Docker Desktop
+kubectl cluster-info
+
+# Jalankan infra via docker-compose (Postgres native + Kafka/Redis/ClickHouse/MinIO via docker)
+cd infra && docker compose up -d
+
+# Apply K8s manifests
+kubectl apply -k infra/kubernetes/overlays/dev
+
+# Cek status
+kubectl get pods -n edp-dev
+# Semua harus 1/1 Running
+
+# Akses via port-forward (tidak ada Ingress di dev)
+kubectl port-forward -n edp-dev svc/api-gateway 8079:8079
+kubectl port-forward -n edp-dev svc/frontend 3000:80
+
+# Verifikasi
+curl http://localhost:8079/health
+curl http://localhost:3000
+
+# Teardown
+kubectl delete -k infra/kubernetes/overlays/dev
+docker compose down
+```
+
+---
+
+## dw-service di K8s — Catatan Khusus
+
+`dw-service` koneksi ke ClickHouse dari dalam pod K8s memakai port host-remap (`9101`), bukan native port container (`9000`):
+
+- **Dari go run (host)**: `CLICKHOUSE_ADDR=localhost:9101` (host port)
+- **Dari docker-compose**: `CLICKHOUSE_ADDR=clickhouse:9000` (container port dalam network)
+- **Dari pod K8s (dev overlay)**: `CLICKHOUSE_ADDR=host.docker.internal:9101` (host port via host gateway)
+
+Ini karena ClickHouse berjalan di docker-compose network, dan pod K8s mengaksesnya lewat `host.docker.internal`, sama seperti proses native di host.

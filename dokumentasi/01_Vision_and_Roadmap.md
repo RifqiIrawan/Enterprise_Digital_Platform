@@ -1,127 +1,51 @@
 # 01 — Vision & Roadmap
-## Enterprise Data Center Simulator (EDCS)
+## Enterprise Digital Platform (EDP)
 
 ---
 
-## 🎯 Visi
+## Visi
 
-Membangun **platform enterprise simulator** kelas dunia yang mereplikasi ekosistem data center nyata secara end-to-end — mulai dari proses bisnis operasional (ERP, HRIS, CRM, WMS, MES) hingga infrastruktur data modern (Data Lake, Data Warehouse, Big Data, IoT) dan lapisan kecerdasan (AI/ML), semua terintegrasi dalam satu platform yang dapat digunakan untuk **pembelajaran, simulasi, dan demonstrasi**.
+Membangun **platform enterprise end-to-end yang sepenuhnya berfungsi** — bukan simulator atau mockup — yang mereplikasi ekosistem sistem informasi bisnis nyata: mulai dari transaksi operasional harian (Finance, HR, Sales, Purchasing, Warehouse, Production, QC, Asset) hingga lapisan data (IoT, Data Warehouse, Data Lake) dan analitik (BI Dashboard, Forecasting, Anomaly Detection).
 
----
-
-## 🏆 Misi
-
-> "Memberikan pengalaman nyata ekosistem enterprise kepada setiap tim — dari developer, data engineer, data scientist, hingga business analyst — dalam satu lingkungan yang terkontrol, dapat diulang, dan mudah diobservasi."
+Platform ini dirancang untuk **pembelajaran mendalam dan demonstrasi** ekosistem enterprise dengan implementasi yang bisa dijalankan dan diverifikasi langsung — semua service benar-benar jalan, semua data benar-benar tersimpan, semua integrasi benar-benar dieksekusi.
 
 ---
 
-## 🌐 Cakupan Platform
+## Stack Teknologi Aktual
 
-| Domain | Modul | Deskripsi Singkat |
-|--------|-------|-------------------|
-| **ERP** | Enterprise Resource Planning | Backbone integrasi seluruh modul bisnis |
-| **HRIS** | Human Resource IS | Rekrutmen, payroll, absensi, performance |
-| **CRM** | Customer Relationship Mgmt | Lead, pipeline, support, marketing |
-| **WMS** | Warehouse Management | Inventory, picking, packing, shipping |
-| **MES** | Manufacturing Execution | Produksi, BOM, OEE, quality |
-| **Finance** | Financial Management | AP, AR, GL, fixed assets, tax |
-| **Procurement** | Pengadaan | PR, RFQ, PO, vendor management |
-| **Sales** | Sales Management | Order, pricing, commission, forecast |
-| **Asset Mgmt** | Manajemen Aset | Lifecycle, maintenance, depreciation |
-| **IoT** | Internet of Things | Device, sensor, real-time stream |
-| **AI/ML** | Artificial Intelligence | Prediction, automation, NLP |
-| **Big Data** | Pemrosesan Data Besar | Spark, distributed computing |
-| **Data Warehouse** | OLAP & Dimensional | Star schema, dbt, OLAP cubes |
-| **Data Lake** | Raw Data Storage | Medallion architecture, Delta Lake |
-| **Dashboard BI** | Business Intelligence | Self-service, embedded analytics |
-| **DevOps** | Platform Engineering | CI/CD, observability, security |
+| Layer | Teknologi |
+|-------|-----------|
+| **Backend** | Go 1.25 (semua 16 service) |
+| **Frontend** | React 18 + Vite |
+| **Database** | PostgreSQL 18 (1 DB per service) |
+| **Message Broker** | Apache Kafka (bitnamilegacy/kafka:3.7.1, KRaft mode) |
+| **Cache** | Redis 7 |
+| **MQTT** | Eclipse Mosquitto 2 |
+| **OLAP / Data Warehouse** | ClickHouse 24.3 |
+| **Object Storage / Data Lake** | MinIO |
+| **Container Orchestration** | Kubernetes + Kustomize |
+| **CI/CD** | GitHub Actions |
 
 ---
 
-## 📅 Roadmap Master (21 Bulan)
+## Modul yang Sudah Dibangun
 
-### Phase 0 — Foundation (Bulan 1)
-- [ ] Setup monorepo & arsitektur microservices
-- [ ] Auth service (Keycloak), RBAC/ABAC
-- [ ] API Gateway, Event Bus (Kafka)
-- [ ] CI/CD pipeline dasar
-- [ ] Infrastructure as Code (Terraform + Helm)
-
-### Phase 1 — Core Business Modules (Bulan 2–5)
-- [ ] ERP Core Engine + Master Data
-- [ ] HRIS (payroll, absensi, rekrutmen)
-- [ ] CRM (pipeline, ticketing, kampanye)
-- [ ] Sales Module
-
-### Phase 2 — Supply Chain & Operations (Bulan 5–9)
-- [ ] WMS (inbound, inventory, outbound)
-- [ ] MES (BOM, produksi, quality, OEE)
-- [ ] Asset Management (lifecycle, CMMS)
-
-### Phase 3 — Finance & Procurement (Bulan 8–11)
-- [ ] Finance (AP, AR, GL, FP&A)
-- [ ] Procurement (P2P full cycle)
-
-### Phase 4 — Data Platform (Bulan 11–16)
-- [ ] IoT Platform + Virtual Simulator
-- [ ] Data Lake (Medallion Architecture)
-- [ ] Data Warehouse (Kimball + dbt)
-- [ ] ETL/ELT Pipelines (Airflow)
-
-### Phase 5 — Intelligence (Bulan 15–19)
-- [ ] ML Platform (MLflow, Feature Store)
-- [ ] 8 Pre-built ML Use Cases
-- [ ] AI Features (chatbot, OCR, RAG)
-
-### Phase 6 — DevOps & Observability (Bulan 18–21)
-- [ ] Full CI/CD (ArgoCD, GitHub Actions)
-- [ ] Observability (Prometheus, ELK, Jaeger)
-- [ ] Chaos Engineering
-- [ ] Security (DevSecOps)
-
-### Phase 7 — BI & Analytics (Bulan 19–21)
-- [ ] 50+ Pre-built Dashboards
-- [ ] Executive C-Level Dashboard
-- [ ] Self-service BI
-- [ ] Embedded Analytics per modul
+| Fase | Modul | Status |
+|------|-------|--------|
+| **Fase 1 — Platform** | Auth, Company/Branch, RBAC, Audit Trail, API Gateway | ✅ Selesai |
+| **Fase 2 — Bisnis** | Finance (GL/Invoice), HR (Karyawan/Absensi/Payroll), Sales (Quotation/SO), Purchasing (PR/PO), Warehouse (Produk/Stok/Transfer/Opname), Production (BOM/Work Order), QC (Standar/Inspeksi), Asset (Aset/Maintenance) | ✅ Selesai |
+| **Fase 3 — Analitik** | AI-BI Service (Dashboard, Forecasting, Anomaly Detection) | ✅ Selesai |
+| **Fase 4 — Hardening** | Automated tests (251+ test, 1 bug produksi ditemukan), Branch-level filtering, Company/Branch switcher | ✅ Selesai |
+| **Fase 5 — Production-Readiness** | Dockerfile + docker-compose, K8s Kustomize manifests, Env config templates, GitHub Actions CI | ✅ Selesai |
+| **Fase 6 — IoT** | iot-service: Device registry, MQTT pipeline, threshold alerts, IoT Simulator | ✅ Selesai |
+| **Fase 7/8 — Data Layer** | dw-service: 9 fact tables (ClickHouse), Batch ETL + Kafka Streaming ETL, Data Lake (MinIO JSON Lines) | ✅ Selesai |
 
 ---
 
-## 📊 KPI Platform
+## Prinsip Desain
 
-| Metrik | Target |
-|--------|--------|
-| Jumlah modul terintegrasi | 16 modul |
-| Jumlah microservices | 40–60 services |
-| API endpoints terdokumentasi | 500+ |
-| Virtual IoT device simulasi | 1.000+ |
-| ML model deployed | 8 model |
-| Pre-built dashboard | 50+ |
-| Synthetic data volume | 10 GB+ |
-| Service uptime | 99.9% |
-| CI/CD deployment time | < 15 menit |
-
----
-
-## 👥 Target Pengguna
-
-| Persona | Kebutuhan |
-|---------|-----------|
-| **Data Engineer** | Pipeline, lake, warehouse, streaming |
-| **Data Scientist** | ML platform, feature store, model serving |
-| **Business Analyst** | BI dashboard, self-service analytics |
-| **Developer** | API, microservices, DevOps tools |
-| **Enterprise Architect** | Integration pattern, domain model |
-| **IT Manager** | Observability, security, compliance |
-
----
-
-## 🔑 Prinsip Desain
-
-1. **Domain-Driven Design** — Bounded context per modul bisnis
-2. **Event-Driven Architecture** — Kafka sebagai sistem saraf pusat
-3. **API-First** — Semua fitur dapat dikonsumsi via REST/GraphQL
-4. **Cloud-Native** — Container-first, berjalan di Kubernetes
-5. **Observable by Default** — Metrics, logs, traces terintegrasi
-6. **Security by Design** — Zero-trust, least privilege, audit trail
-7. **Data Mesh** — Setiap domain memiliki ownership data sendiri
+- **Benar-benar berfungsi, bukan mock** — setiap fitur diverifikasi end-to-end (curl/Playwright/unit test), bukan hanya ditulis
+- **Go polos** — tidak ada framework ORM/DI, cukup `net/http` + `pgx` + `kafka-go`; mudah dibaca dan dipahami
+- **Satu database per service** — tidak ada shared database; dw-service yang membaca langsung ke Postgres service lain adalah pengecualian eksplisit untuk analytical extraction (read-only)
+- **Best-effort untuk side-channel** — Kafka publish, MQTT, MinIO lake write semuanya tidak-blocking dan graceful degradation kalau infrastruktur tidak tersedia; service tetap jalan tanpa mereka
+- **Verifikasi nyata** — setiap fitur baru diverifikasi dengan infrastruktur sungguhan yang jalan, bukan asumsi dari baca kode

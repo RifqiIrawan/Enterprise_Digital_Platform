@@ -1,213 +1,89 @@
 # 02 — Enterprise Architecture
-## Enterprise Data Center Simulator (EDCS)
+## Enterprise Digital Platform (EDP)
 
 ---
 
-## 🏛️ Architectural Style
+## Arsitektur Overview
 
-EDCS mengadopsi **Hybrid Architecture** yang menggabungkan:
-- **Microservices** untuk domain bisnis yang independen
-- **Event-Driven Architecture (EDA)** untuk komunikasi asinkron antar domain
-- **CQRS + Event Sourcing** untuk modul dengan audit trail ketat (Finance, Procurement)
-- **Data Mesh** untuk kepemilikan data per domain
-
----
-
-## 🗺️ Landscape Arsitektur
+EDP menggunakan **microservices berbasis Go** dengan komunikasi HTTP sinkron (lewat API Gateway) dan event asinkron (lewat Kafka). Tidak ada service mesh, tidak ada schema registry, tidak ada API versioning — arsitektur sengaja dibuat sesederhana mungkin sambil tetap production-grade.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        CLIENT LAYER                             │
-│  Web Portal │ Admin Portal │ Mobile App │ BI Dashboard          │
-└────────────────────────┬────────────────────────────────────────┘
-                         │ HTTPS / WebSocket
-┌────────────────────────▼────────────────────────────────────────┐
-│                      API GATEWAY (Kong)                         │
-│  Auth │ Rate Limiting │ Routing │ Load Balancing │ Caching      │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                   SERVICE MESH (Istio)                          │
-│  mTLS │ Traffic Management │ Circuit Breaker │ Observability    │
-└──┬──────┬──────┬──────┬──────┬──────┬──────┬──────┬────────────┘
-   │      │      │      │      │      │      │      │
- ERP   HRIS   CRM   WMS   MES  FIN   PROC  SALES  ASSET  IOT
-   │      │      │      │      │      │      │      │      │
-└─────────────────────────────────────────────────────────────────┐
-│                  EVENT BUS (Apache Kafka)                        │
-│  Topics per Domain │ Schema Registry │ Dead Letter Queue        │
-└─────────────────────────────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                    DATA PLATFORM                                │
-│  Data Lake │ Data Warehouse │ ML Platform │ BI Layer            │
-└─────────────────────────────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                 INFRASTRUCTURE LAYER                            │
-│  Kubernetes │ Docker │ Terraform │ Vault │ Service Discovery    │
-└─────────────────────────────────────────────────────────────────┘
-```
+┌─────────────────────────────────────────────────────────┐
+│                  BROWSER (React SPA)                    │
+│           http://localhost:3000 (Vite dev)             │
+└───────────────────────────┬─────────────────────────────┘
+                            │ HTTP
+┌───────────────────────────▼─────────────────────────────┐
+│              API GATEWAY (Go, port 8079)                │
+│  JWT validation │ Reverse proxy │ Route prefix mapping  │
+└──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──────────┘
+   │  │  │  │  │  │  │  │  │  │  │  │  │  │  │
+  Auth Comp RBAC Aud Fin HR  Sal Pur War Pro QC  Ast AI  IoT DW
+  8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092 8093 8094 8095
 
----
+┌─────────────────────────────────────────────────────────┐
+│              APACHE KAFKA (single broker)               │
+│  65+ topics: auth.*, company.*, finance.*, sales.*      │
+│  hr.*, purchasing.*, warehouse.*, production.*, qc.*    │
+│  asset.*, iot.*                                         │
+│  Consumer groups: audit-service, dw-service-streaming   │
+└─────────────────────────────────────────────────────────┘
 
-## 🏗️ Architectural Decisions Record (ADR)
+┌─────────────────────────────────────────────────────────┐
+│                POSTGRESQL 18 (native)                   │
+│  13 databases (1 per service yang butuh persistence)   │
+│  Role: platform / platform                              │
+└─────────────────────────────────────────────────────────┘
 
-### ADR-001: Microservices over Monolith
-**Status:** Accepted  
-**Context:** Platform mencakup 16+ domain bisnis yang dikembangkan secara paralel  
-**Decision:** Setiap domain menjadi microservice independen dengan database sendiri  
-**Consequences:** Complexity meningkat, namun scalability & team autonomy optimal
+┌──────────────────┐  ┌──────────────────┐  ┌────────────┐
+│   CLICKHOUSE     │  │     MINIO        │  │   REDIS    │
+│  (dw-service     │  │  (dw-service,    │  │ (api-gw,   │
+│   OLAP facts)    │  │   data lake)     │  │  auth)     │
+└──────────────────┘  └──────────────────┘  └────────────┘
 
-### ADR-002: Kafka sebagai Event Backbone
-**Status:** Accepted  
-**Context:** Butuh komunikasi asinkron yang reliable antar 40+ services  
-**Decision:** Apache Kafka sebagai event streaming platform  
-**Consequences:** Eventual consistency, perlu Schema Registry (Avro/Protobuf)
-
-### ADR-003: Kubernetes sebagai Runtime
-**Status:** Accepted  
-**Context:** Butuh orchestrasi container yang mature dan cloud-agnostic  
-**Decision:** K3s untuk lokal dev, full K8s untuk staging/prod  
-**Consequences:** Learning curve, namun portabilitas dan auto-healing terjamin
-
-### ADR-004: PostgreSQL sebagai Primary Database
-**Status:** Accepted  
-**Context:** Modul bisnis butuh ACID compliance dan relational model  
-**Decision:** PostgreSQL per service (database-per-service pattern)  
-**Consequences:** Lebih banyak instance DB, namun isolasi domain terjaga
-
-### ADR-005: Medallion Architecture untuk Data Lake
-**Status:** Accepted  
-**Context:** Data dari berbagai sumber perlu dikelola dengan kualitas bertingkat  
-**Decision:** Bronze → Silver → Gold layers dengan Delta Lake format  
-**Consequences:** Latency tambahan, namun data quality dan lineage terjaga
-
----
-
-## 🔌 Integration Patterns
-
-### 1. Synchronous (REST/gRPC)
-Digunakan untuk: query real-time, user-facing operations
-```
-Service A ──REST──► Service B
-          ◄─────────
-```
-
-### 2. Asynchronous (Event-Driven)
-Digunakan untuk: proses bisnis yang tidak membutuhkan respons segera
-```
-Service A ──publish──► Kafka Topic ──consume──► Service B, C, D
-```
-
-### 3. Saga Pattern (untuk long-running transactions)
-Digunakan untuk: P2P cycle, Order-to-Cash
-```
-Orchestrator ──► Service A ──► Service B ──► Service C
-              ◄── (compensating transactions jika gagal)
-```
-
-### 4. CQRS
-Digunakan untuk: Finance, Audit, Reporting
-```
-Write Model (Command) ──► Event Store ──► Read Model (Query)
+┌──────────────────────────────────────────────────────────┐
+│               MOSQUITTO (MQTT broker)                    │
+│  iot-service simulator → publish → subscribe → ingest   │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🔒 Security Architecture
+## Pola Komunikasi
 
-### Zero Trust Model
-- **Never trust, always verify** — setiap request diautentikasi
-- **Least privilege** — akses minimal yang dibutuhkan
-- **Assume breach** — logging & monitoring menyeluruh
+### HTTP Sinkron (service-to-service)
+Dipakai untuk operasi yang butuh hasil langsung:
+- `hr-service` → `finance-service`: posting payroll ke GL
+- `sales-service` → `finance-service`: posting invoice AR
+- `sales-service` → `warehouse-service`: batch stock movement
+- `purchasing-service` → `finance-service`: posting invoice AP
+- `purchasing-service` → `warehouse-service`: stock in dari PO
+- `production-service` → `warehouse-service`: konsumsi komponen + stock hasil produksi
+- `ai-bi-service` → semua 8 service: agregasi data untuk dashboard
 
-### Auth Flow
-```
-User ──► API Gateway ──► Keycloak (OAuth2/OIDC) ──► JWT Token
-     ◄─── Token ◄───────────────────────────────────
-User ──► Service (dengan JWT) ──► Verify ──► Response
-```
+Semua panggilan service-to-service langsung (tidak lewat api-gateway), menggunakan env var `*_SERVICE_URL`.
 
-### Secrets Management
-- HashiCorp Vault untuk semua credentials
-- Kubernetes Secrets (encrypted at rest)
-- Auto-rotation credentials database
+### Event Asinkron (Kafka)
+Semua service bisnis publish audit event ke Kafka setelah operasi berhasil. Format: `{domain}.{entity}.{action}` (contoh: `sales.order.fulfilled`).
 
----
+**Consumers:**
+- `audit-service` — subscribe semua 65+ topic, simpan ke `audit_logs` (Postgres)
+- `dw-service` streaming consumer — subscribe 12 topic, trigger single-row re-query ke Postgres lalu insert ke ClickHouse
 
-## 📦 Deployment Architecture
-
-### Environment Strategy
-| Environment | Tujuan | Infra |
-|-------------|--------|-------|
-| Local Dev | Development individual | Docker Compose |
-| Integration | Testing integrasi | K3s (lokal) |
-| Staging | Pre-production | K8s cloud (kecil) |
-| Production | Live platform | K8s cloud (full) |
-
-### Service Topology per Namespace
-```
-namespace: edcs-core
-  ├── erp-service
-  ├── auth-service
-  ├── notification-service
-  └── api-gateway
-
-namespace: edcs-business
-  ├── hris-service
-  ├── crm-service
-  ├── wms-service
-  ├── mes-service
-  ├── finance-service
-  ├── procurement-service
-  └── sales-service
-
-namespace: edcs-data
-  ├── kafka-cluster
-  ├── data-lake-service
-  ├── warehouse-service
-  └── ml-platform
-
-namespace: edcs-iot
-  ├── mqtt-broker
-  ├── iot-gateway
-  └── device-simulator
-
-namespace: edcs-observability
-  ├── prometheus
-  ├── grafana
-  ├── elasticsearch
-  ├── kibana
-  └── jaeger
-```
+### MQTT (IoT only)
+`iot-service` simulator publish readings ke Mosquitto → service `ingest` handler subscribe dan simpan ke Postgres + publish 5 Kafka topics (`iot.*`).
 
 ---
 
-## 🗄️ Data Architecture Overview
+## Keputusan Arsitektur Kunci
 
-| Layer | Teknologi | Tujuan |
-|-------|-----------|--------|
-| Operational DB | PostgreSQL | OLTP per service |
-| Cache | Redis | Session, hot data |
-| Document Store | MongoDB | Unstructured data |
-| Message Queue | Kafka | Event streaming |
-| Object Storage | MinIO | File, binary |
-| Data Lake | Delta Lake / MinIO | Raw & curated data |
-| Data Warehouse | ClickHouse | OLAP analytics |
-| Vector DB | Qdrant | AI/ML embeddings |
-| Search | Elasticsearch | Full-text & semantic |
-
----
-
-## 📐 Non-Functional Requirements
-
-| NFR | Target | Mekanisme |
-|-----|--------|-----------|
-| Availability | 99.9% | Multi-replica, health check |
-| Latency (P95) | < 500ms | Caching, CDN, async |
-| Throughput | 10.000 req/s | Horizontal scaling |
-| Data Retention | 7 tahun | Tiered storage |
-| RTO (Recovery Time) | < 1 jam | DR runbook otomatis |
-| RPO (Recovery Point) | < 15 menit | Streaming replication |
-| Security | OWASP Top 10 | DevSecOps pipeline |
+| Keputusan | Pilihan | Alasan |
+|-----------|---------|--------|
+| Bahasa backend | Go (semua service) | Simplicity, performance, single binary |
+| HTTP routing | `net/http` stdlib (Go 1.22+) | Pattern routing built-in, tanpa framework |
+| DB driver | `pgx/v5` | Performa, type safety |
+| Kafka client | `segmentio/kafka-go` | Ringan, no Zookeeper dependency |
+| Auth | JWT custom (bukan Keycloak) | Tidak overengineering untuk skala ini |
+| API Gateway | Custom Go (bukan Kong) | Kontrol penuh, tidak ada black box |
+| K8s config | Kustomize (bukan Helm) | Cukup untuk project ini, YAML transparan |
+| BI/Analytics | Go service aggregation + linear regression | Tidak butuh Python/MLflow untuk use case ini |

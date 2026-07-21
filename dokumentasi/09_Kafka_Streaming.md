@@ -1,258 +1,187 @@
 # 09 — Kafka Streaming
-## Enterprise Data Center Simulator (EDCS)
+## Enterprise Digital Platform (EDP)
 
 ---
 
-## 📡 Overview
+## Overview
 
-Apache Kafka berfungsi sebagai **sistem saraf pusat** EDCS — semua domain event mengalir melalui Kafka, memungkinkan decoupling total antar microservice dan menjadi fondasi untuk real-time analytics, audit trail, dan event sourcing.
+Apache Kafka dipakai sebagai **event bus** untuk audit trail dan near-realtime data warehousing. Semua service bisnis publish event setelah operasi selesai; dua consumer group membaca event ini untuk tujuan berbeda.
+
+**Setup**: Single broker (bukan multi-broker cluster), KRaft mode (tidak butuh Zookeeper), tanpa Schema Registry, tanpa Kafka Connect.
 
 ---
 
-## 🏗️ Kafka Cluster Topology
+## Infrastruktur
 
-```
-┌──────────────────────────────────────────────────────────┐
-│                  KAFKA CLUSTER (KRaft)                   │
-│                                                          │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐              │
-│  │ Broker 0 │  │ Broker 1 │  │ Broker 2 │              │
-│  │(Controller)│ │          │  │          │              │
-│  │ Port 9092│  │ Port 9092│  │ Port 9092│              │
-│  └──────────┘  └──────────┘  └──────────┘              │
-│                                                          │
-│  ┌────────────────────────────────────────┐             │
-│  │         Schema Registry                │             │
-│  │         Port 8081                      │             │
-│  └────────────────────────────────────────┘             │
-│                                                          │
-│  ┌────────────────────────────────────────┐             │
-│  │         Kafka Connect                  │             │
-│  │         Port 8083 (REST API)           │             │
-│  └────────────────────────────────────────┘             │
-│                                                          │
-│  ┌────────────────────────────────────────┐             │
-│  │         Kafka UI (Provectus)           │             │
-│  │         Port 8080                      │             │
-│  └────────────────────────────────────────┘             │
-└──────────────────────────────────────────────────────────┘
+```yaml
+# infra/docker-compose.yml
+kafka:
+  image: bitnamilegacy/kafka:3.7.1
+  environment:
+    KAFKA_CFG_NODE_ID: 0
+    KAFKA_CFG_PROCESS_ROLES: controller,broker
+    # PLAINTEXT: untuk koneksi dari host (go run), port 9092
+    # INTERNAL: untuk koneksi container-to-container, port 29092
+    KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,INTERNAL://:29092,CONTROLLER://:9093
+    KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,INTERNAL://kafka:29092
 ```
 
+| Listener | Port | Dipakai oleh |
+|----------|------|-------------|
+| PLAINTEXT | 9092 | `go run` di host, test lokal |
+| INTERNAL | 29092 | Container ke container (docker-compose, K8s) |
+
+**Default di service config**: `KAFKA_BROKERS=localhost:9092`  
+**Di docker-compose**: `KAFKA_BROKERS=kafka:29092`  
+**Di K8s dev overlay**: `KAFKA_BROKERS=host.docker.internal:9092`
+
 ---
 
-## 📋 Topic Registry (Lengkap)
+## Kafka UI
 
-### Domain: ERP
-| Topic | Partitions | Replication | Retention | Producer | Schema |
-|-------|-----------|-------------|-----------|----------|--------|
-| `erp.master-data.product.updated` | 6 | 3 | 30d | erp-core | Avro |
-| `erp.master-data.customer.updated` | 6 | 3 | 30d | erp-core | Avro |
-| `erp.master-data.vendor.updated` | 6 | 3 | 30d | erp-core | Avro |
+```
+http://localhost:8099  (port 8099, bukan 8090 — diganti untuk menghindari konflik dengan production-service)
+```
 
-### Domain: HRIS
-| Topic | Partitions | Replication | Retention | Producer |
-|-------|-----------|-------------|-----------|----------|
-| `hris.employee.created` | 6 | 3 | 90d | hris |
-| `hris.employee.updated` | 6 | 3 | 90d | hris |
-| `hris.employee.terminated` | 3 | 3 | 365d | hris |
-| `hris.attendance.logged` | 12 | 3 | 30d | hris |
-| `hris.leave.approved` | 3 | 3 | 90d | hris |
-| `hris.payroll.processed` | 3 | 3 | 365d | payroll |
-| `hris.payroll.disbursed` | 3 | 3 | 365d | payroll |
+---
 
-### Domain: CRM & Sales
-| Topic | Partitions | Replication | Retention |
-|-------|-----------|-------------|-----------|
-| `crm.lead.created` | 6 | 3 | 60d |
-| `crm.lead.converted` | 6 | 3 | 180d |
-| `crm.opportunity.stage-changed` | 6 | 3 | 90d |
-| `crm.ticket.created` | 6 | 3 | 60d |
-| `crm.ticket.resolved` | 6 | 3 | 60d |
-| `sales.order.created` | 12 | 3 | 90d |
-| `sales.order.confirmed` | 12 | 3 | 90d |
-| `sales.order.cancelled` | 6 | 3 | 90d |
-| `sales.invoice.generated` | 6 | 3 | 365d |
+## Format Event
 
-### Domain: WMS & MES
-| Topic | Partitions | Replication | Retention |
-|-------|-----------|-------------|-----------|
-| `wms.stock.receipt` | 12 | 3 | 90d |
-| `wms.stock.issue` | 12 | 3 | 90d |
-| `wms.stock.below-reorder` | 6 | 3 | 30d |
-| `wms.shipment.dispatched` | 12 | 3 | 90d |
-| `mes.workorder.started` | 6 | 3 | 60d |
-| `mes.workorder.completed` | 6 | 3 | 60d |
-| `mes.quality.passed` | 6 | 3 | 60d |
-| `mes.quality.failed` | 6 | 3 | 180d |
-| `mes.machine.downtime` | 6 | 3 | 90d |
+Semua service bisnis menggunakan format yang sama (didefinisikan lokal di setiap service, tidak ada shared package):
 
-### Domain: Finance & Procurement
-| Topic | Partitions | Replication | Retention |
-|-------|-----------|-------------|-----------|
-| `finance.journal.posted` | 6 | 3 | 365d |
-| `finance.payment.processed` | 6 | 3 | 365d |
-| `finance.budget.exceeded` | 3 | 3 | 90d |
-| `procurement.pr.approved` | 6 | 3 | 90d |
-| `procurement.po.created` | 6 | 3 | 90d |
-| `procurement.po.approved` | 6 | 3 | 90d |
-| `procurement.gr.completed` | 6 | 3 | 90d |
+```go
+type auditEvent struct {
+    EventID       string    `json:"event_id"`       // UUID v4
+    EventType     string    `json:"event_type"`      // "sales.order.fulfilled"
+    SourceService string    `json:"source_service"`  // "sales-service"
+    OccurredAt    time.Time `json:"occurred_at"`
+    ActorUserID   *string   `json:"actor_user_id,omitempty"`
+    CompanyID     *string   `json:"company_id,omitempty"`
+    Action        string    `json:"action"`          // "create", "update", "delete"
+    EntityType    string    `json:"entity_type"`     // "sales_order"
+    EntityID      string    `json:"entity_id"`       // UUID entity yang diubah
+    Payload       any       `json:"payload,omitempty"` // full struct entity
+}
+```
 
-### Domain: IoT
-| Topic | Partitions | Replication | Retention |
-|-------|-----------|-------------|-----------|
-| `iot.sensor.reading` | 24 | 3 | 7d |
-| `iot.sensor.anomaly` | 12 | 3 | 30d |
-| `iot.device.connected` | 6 | 3 | 30d |
-| `iot.device.alert` | 12 | 3 | 30d |
-| `iot.device.firmware-updated` | 3 | 3 | 60d |
+---
+
+## Daftar Topics (65 Topics)
 
 ### Platform
-| Topic | Partitions | Replication | Retention |
-|-------|-----------|-------------|-----------|
-| `platform.notification.send` | 6 | 3 | 7d |
-| `platform.audit.event` | 12 | 3 | 365d |
-| `{any-topic}.DLQ` | 3 | 3 | 30d |
+```
+auth.user.registered          auth.user.logged_in
+company.company.created       company.company.updated
+company.branch.created        company.department.created
+rbac.role.created             rbac.role.updated         rbac.role.deleted
+rbac.role.permissions_updated rbac.role.assigned        rbac.role.revoked
+```
+
+### Finance
+```
+finance.journal.created       finance.journal.posted
+finance.invoice.created       finance.invoice.posted
+```
+
+### HR
+```
+hr.employee.created    hr.employee.updated
+hr.attendance.created  hr.attendance.updated
+hr.payroll.processed   hr.payroll.posted
+```
+
+### Sales
+```
+sales.customer.created    sales.customer.updated
+sales.quotation.created   sales.quotation.sent
+sales.quotation.accepted  sales.quotation.rejected  sales.quotation.converted
+sales.order.created       sales.order.confirmed
+sales.order.fulfilled     sales.order.invoiced
+```
+
+### Purchasing
+```
+purchasing.supplier.created     purchasing.supplier.updated
+purchasing.requisition.created  purchasing.requisition.submitted
+purchasing.requisition.approved purchasing.requisition.rejected purchasing.requisition.converted
+purchasing.order.created        purchasing.order.confirmed
+purchasing.order.received       purchasing.order.invoiced
+```
+
+### Warehouse
+```
+warehouse.product.created   warehouse.product.updated
+warehouse.warehouse.created warehouse.warehouse.updated
+warehouse.stock.moved       warehouse.stock.batch_moved
+warehouse.transfer.created  warehouse.transfer.confirmed
+warehouse.opname.created    warehouse.opname.posted
+```
+
+### Production, QC, Asset, IoT
+```
+production.bom.created         production.bom.updated
+production.work_order.created  production.work_order.started  production.work_order.completed
+qc.standard.created  qc.standard.updated  qc.inspection.created
+asset.asset.created  asset.asset.updated
+asset.maintenance.scheduled  asset.maintenance.completed  asset.maintenance.cancelled
+iot.device.registered  iot.device.updated
+iot.alert.triggered    iot.alert.acknowledged  iot.alert.resolved
+```
+
+**Tidak ada** `iot.reading.*` — readings adalah telemetri frekuensi tinggi, langsung ke Postgres via MQTT, tidak lewat Kafka.
 
 ---
 
-## 🏗️ Event Schema Standard
+## Consumer Groups
 
-### Base Event Structure (Avro)
-```json
-{
-  "type": "record",
-  "name": "BaseEvent",
-  "namespace": "com.edcs",
-  "fields": [
-    {"name": "event_id",       "type": "string",  "doc": "UUID v4"},
-    {"name": "event_type",     "type": "string",  "doc": "SNAKE_CASE nama event"},
-    {"name": "event_version",  "type": "string",  "default": "1.0"},
-    {"name": "occurred_at",    "type": "long",    "logicalType": "timestamp-millis"},
-    {"name": "source_service", "type": "string"},
-    {"name": "correlation_id", "type": ["null","string"], "default": null},
-    {"name": "causation_id",   "type": ["null","string"], "default": null},
-    {"name": "tenant_id",      "type": ["null","string"], "default": null},
-    {"name": "payload",        "type": "string",  "doc": "JSON string payload"}
-  ]
+### `audit-service` — Subscribe semua 65 topics
+
+**Package**: `backend/services/audit-service/internal/consumer/`
+
+Pattern: 1 goroutine per topic, masing-masing dengan `kafka.Reader` yang **dibuat ulang** (bukan retry ReadMessage pada reader yang sama) — ini memastikan recovery kalau topic belum ada saat reader pertama kali start.
+
+```go
+// Setiap consumer goroutine:
+for {
+    reader := kafka.NewReader(config)       // fresh Reader setiap iterasi
+    drainReader(ctx, reader, topic, handler) // baca sampai error
+    reader.Close()
+    time.Sleep(delay)  // exponential backoff 3s→30s
 }
 ```
 
-### Contoh Domain Event
-```json
-// hris.employee.created
-{
-  "event_id": "550e8400-e29b-41d4-a716-446655440000",
-  "event_type": "EMPLOYEE_CREATED",
-  "event_version": "1.0",
-  "occurred_at": 1720512000000,
-  "source_service": "hris-service",
-  "correlation_id": "req-abc-123",
-  "causation_id": null,
-  "tenant_id": "edcs-demo",
-  "payload": "{\"employee_id\":\"...\",\"employee_code\":\"EMP001\",\"full_name\":\"John Doe\"}"
-}
-```
+Handler: `func(topic string, value []byte)` → parse JSON → insert ke `audit_logs` (Postgres).
+
+### `dw-service-streaming` — Subscribe 12 topics
+
+**Package**: `backend/modules/dw-service/internal/streaming/`
+
+Pattern identik dengan audit-service consumer. Handler: parse `entity_id` → query Postgres (1 baris, JOIN) → insert ClickHouse + lake.
 
 ---
 
-## ⚡ Kafka Streams: Real-time Processing
+## Publish Pattern (di setiap service)
 
-### 1. Stock Level Aggregator
-```java
-// Realtime aggregasi stock level per product
-StreamsBuilder builder = new StreamsBuilder();
-
-KStream<String, StockMovementEvent> movements = builder
-    .stream("wms.stock.movement", Consumed.with(Serdes.String(), stockMovementSerde));
-
-KTable<String, StockSummary> stockLevels = movements
-    .groupByKey()
-    .aggregate(
-        StockSummary::new,
-        (productId, event, summary) -> {
-            if (event.getType() == RECEIPT) {
-                summary.addQty(event.getQuantity());
-            } else if (event.getType() == ISSUE) {
-                summary.subtractQty(event.getQuantity());
-            }
-            return summary;
-        },
-        Materialized.<String, StockSummary, KeyValueStore<Bytes, byte[]>>
-            as("stock-levels-store")
-            .withValueSerde(stockSummarySerde)
-    );
-
-// Output ke topic baru
-stockLevels.toStream().to("wms.stock.current-levels");
-```
-
-### 2. Real-time Sales Aggregator
-```java
-KStream<String, SalesOrderEvent> orders = builder
-    .stream("sales.order.confirmed");
-
-KTable<Windowed<String>, Double> hourlySales = orders
-    .selectKey((k, v) -> v.getProductCategory())
-    .groupByKey()
-    .windowedBy(TimeWindows.ofSizeWithNoGrace(Duration.ofHours(1)))
-    .aggregate(
-        () -> 0.0,
-        (key, event, total) -> total + event.getTotalAmount(),
-        Materialized.as("hourly-sales-store")
-    );
-
-hourlySales.toStream()
-    .map((k, v) -> KeyValue.pair(k.key(),
-        new SalesAggregate(k.key(), k.window().startTime(), v)))
-    .to("sales.analytics.hourly-aggregates");
-```
-
----
-
-## 🛡️ Error Handling & DLQ Pattern
-
-```java
-// Producer dengan retry & DLQ
-@Bean
-public KafkaTemplate<String, Object> kafkaTemplate() {
-    Map<String, Object> props = new HashMap<>();
-    props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafkaBrokers);
-    props.put(ProducerConfig.RETRIES_CONFIG, 3);
-    props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, 1000);
-    props.put(ProducerConfig.ACKS_CONFIG, "all");
-    props.put(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG, true);
-    return new KafkaTemplate<>(new DefaultKafkaProducerFactory<>(props));
-}
-
-// Consumer dengan DLQ
-@KafkaListener(topics = "sales.order.created")
-public void processOrder(SalesOrderEvent event, Acknowledgment ack) {
-    try {
-        orderService.process(event);
-        ack.acknowledge();
-    } catch (RetryableException e) {
-        // Akan di-retry oleh Spring Retry
-        throw e;
-    } catch (Exception e) {
-        // Non-retryable: kirim ke DLQ
-        kafkaTemplate.send("sales.order.created.DLQ",
-            event.getEventId(), event);
-        log.error("Sent to DLQ: {}", event.getEventId(), e);
-        ack.acknowledge();
+```go
+// internal/eventbus/eventbus.go — nil-safe, best-effort, non-blocking
+func (p *Publisher) Publish(topic string, payload any) {
+    if p == nil {
+        return  // Kafka tidak tersedia → silently skip
     }
+    go func() {  // non-blocking
+        data, _ := json.Marshal(payload)
+        p.writer.WriteMessages(ctx, kafka.Message{
+            Topic: topic,
+            Value: data,
+        })
+    }()
 }
 ```
 
+Kegagalan publish tidak menggagalkan operasi bisnis — Kafka adalah side-channel untuk audit trail dan DW, bukan bagian dari alur transaksional utama.
+
 ---
 
-## 📊 Kafka Monitoring (JMX Metrics)
+## Known Issue: Topic Auto-Creation
 
-| Metric | Alert Threshold |
-|--------|----------------|
-| Consumer lag (business topics) | > 10.000 messages |
-| Consumer lag (IoT topics) | > 100.000 messages |
-| Broker disk usage | > 80% |
-| Under-replicated partitions | > 0 |
-| Producer error rate | > 1% |
-| Kafka Connect task status | != RUNNING |
-| Schema Registry errors | > 0/menit |
+Bitnami Kafka default mengaktifkan `auto.create.topics.enable`. Kalau consumer start **sebelum** topic pernah ada, Kafka auto-create topic kosong dan reader join consumer group — tapi bisa masuk state korup. **Fix**: consumer menggunakan recreate-Reader-on-error pattern (bukan retry ReadMessage yang sama). Detail di commit `c925b0f`.
