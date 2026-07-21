@@ -14,6 +14,7 @@ import (
 	"github.com/enterprise-digital-platform/dw-service/internal/metrics"
 	"github.com/enterprise-digital-platform/dw-service/internal/requestid"
 	"github.com/enterprise-digital-platform/dw-service/internal/sourcedb"
+	"github.com/enterprise-digital-platform/dw-service/internal/streaming"
 	"github.com/enterprise-digital-platform/dw-service/internal/tracing"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -71,6 +72,10 @@ func main() {
 
 	if cfg.SyncEnabled && dest != nil {
 		go runTicker(ctx, sources, dest, lake, time.Duration(cfg.SyncIntervalSeconds)*time.Second)
+	}
+
+	if cfg.StreamingEnabled {
+		streaming.Start(ctx, cfg.KafkaBrokers, cfg.KafkaGroupID, sources, dest, lake)
 	}
 
 	var topHandler http.Handler = metrics.Middleware(mux)

@@ -182,6 +182,9 @@ configMapGenerator:
       - MINIO_BUCKET=dw-lake
       - DW_SYNC_ENABLED=true
       - DW_SYNC_INTERVAL_SECONDS=300
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - KAFKA_GROUP_ID=dw-service-streaming
+      - DW_STREAMING_ENABLED=true
 
   - name: iot-service-config
     literals:

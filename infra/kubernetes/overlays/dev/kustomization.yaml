@@ -165,6 +165,7 @@ configMapGenerator:
       - MINIO_ENDPOINT=host.docker.internal:9004
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
+      - KAFKA_BROKERS=host.docker.internal:9092
   - name: iot-service-config
     behavior: merge
     literals:

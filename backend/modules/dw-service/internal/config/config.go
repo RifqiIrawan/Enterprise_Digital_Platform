@@ -28,6 +28,11 @@ type Config struct {
 	SyncEnabled           bool
 	SyncIntervalSeconds   int
 	OTLPEndpoint          string
+	// Kafka Streaming ETL — melengkapi batch ETL, best-effort (disabled =
+	// streaming consumer tidak dijalankan, batch tetap jalan normal).
+	KafkaBrokers     string
+	KafkaGroupID     string
+	StreamingEnabled bool
 }
 
 func Load() *Config {
@@ -54,6 +59,9 @@ func Load() *Config {
 		SyncEnabled:           getEnv("DW_SYNC_ENABLED", "true") == "true",
 		SyncIntervalSeconds:   getEnvInt("DW_SYNC_INTERVAL_SECONDS", 300),
 		OTLPEndpoint:          getEnv("OTLP_ENDPOINT", "localhost:4318"),
+		KafkaBrokers:          getEnv("KAFKA_BROKERS", "localhost:9092"),
+		KafkaGroupID:          getEnv("KAFKA_GROUP_ID", "dw-service-streaming"),
+		StreamingEnabled:      getEnv("DW_STREAMING_ENABLED", "true") == "true",
 	}
 }
 

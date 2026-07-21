@@ -493,11 +493,16 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
       MINIO_BUCKET: dw-lake
+      # Kafka Streaming ETL — consumer group terpisah dari audit-service
+      # supaya offset tracking tidak saling bentrok.
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_GROUP_ID: dw-service-streaming
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - clickhouse
       - minio
+      - kafka
     ports:
       - "8095:8095"
     networks:
