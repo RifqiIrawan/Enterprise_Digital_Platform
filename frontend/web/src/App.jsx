@@ -39,6 +39,11 @@ import DevicesPage from './pages/iot/DevicesPage.jsx'
 import ReadingsPage from './pages/iot/ReadingsPage.jsx'
 import AlertsPage from './pages/iot/AlertsPage.jsx'
 import SyncStatusPage from './pages/dw/SyncStatusPage.jsx'
+import LeadsPage from './pages/crm/LeadsPage.jsx'
+import AccountsPage from './pages/crm/AccountsPage.jsx'
+import ContactsPage from './pages/crm/ContactsPage.jsx'
+import OpportunitiesPage from './pages/crm/OpportunitiesPage.jsx'
+import ActivitiesPage from './pages/crm/ActivitiesPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -97,6 +102,11 @@ function App() {
         <Route path="/iot/readings" element={<ReadingsPage />} />
         <Route path="/iot/alerts" element={<AlertsPage />} />
         <Route path="/dw/sync-status" element={<SyncStatusPage />} />
+        <Route path="/crm/leads" element={<LeadsPage />} />
+        <Route path="/crm/accounts" element={<AccountsPage />} />
+        <Route path="/crm/contacts" element={<ContactsPage />} />
+        <Route path="/crm/opportunities" element={<OpportunitiesPage />} />
+        <Route path="/crm/activities" element={<ActivitiesPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

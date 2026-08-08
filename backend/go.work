@@ -17,4 +17,5 @@ use (
 	./modules/ai-bi-service
 	./modules/iot-service
 	./modules/dw-service
+	./modules/crm-service
 )

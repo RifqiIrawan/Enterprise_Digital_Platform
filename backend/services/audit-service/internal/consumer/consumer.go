@@ -87,6 +87,20 @@ var Topics = []string{
 	"iot.alert.triggered",
 	"iot.alert.acknowledged",
 	"iot.alert.resolved",
+	"crm.lead.created",
+	"crm.lead.updated",
+	"crm.lead.converted",
+	"crm.account.created",
+	"crm.account.updated",
+	"crm.contact.created",
+	"crm.contact.updated",
+	"crm.opportunity.created",
+	"crm.opportunity.updated",
+	"crm.opportunity.stage_changed",
+	"crm.opportunity.won",
+	"crm.opportunity.lost",
+	"crm.activity.created",
+	"crm.activity.updated",
 }
 
 const (
