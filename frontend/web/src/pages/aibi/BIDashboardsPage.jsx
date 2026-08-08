@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import RevenueExpenseBarChart from './RevenueExpenseBarChart.jsx'
 
 function formatMoney(n) {
   return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(n ?? 0)
@@ -62,6 +63,8 @@ function BIDashboardsPage() {
   const [summary, setSummary] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [monthlyFinance, setMonthlyFinance] = useState(null)
+  const [monthlyFinanceError, setMonthlyFinanceError] = useState('')
 
   function loadSummary(cid) {
     setLoading(true)
@@ -72,12 +75,25 @@ function BIDashboardsPage() {
       .finally(() => setLoading(false))
   }
 
+  // Chart ini sumbernya dw-service (ClickHouse), bukan ai-bi-service seperti
+  // stat tile lain di atas -- loading/error dipisah sendiri supaya dw-service
+  // yang down tidak ikut menggagalkan bagian dashboard lain (pola toleransi
+  // kegagalan sebagian yang sama dengan `summary.errors` di atas).
+  function loadMonthlyFinance(cid) {
+    setMonthlyFinanceError('')
+    apiClient
+      .get('/api/dw/analytics/finance-monthly-summary', { params: { company_id: cid } })
+      .then(({ data }) => setMonthlyFinance(data.map((d) => ({ ...d, revenue: Number(d.revenue), expense: Number(d.expense) }))))
+      .catch(() => setMonthlyFinanceError('Gagal memuat ringkasan finance bulanan. Pastikan dw-service aktif.'))
+  }
+
   useEffect(() => {
     if (!companyId) {
       setLoading(false)
       return
     }
     loadSummary(companyId)
+    loadMonthlyFinance(companyId)
   }, [companyId])
 
   return (
@@ -148,6 +164,19 @@ function BIDashboardsPage() {
             </div>
             <div className="col-md-4">
               <StatusBreakdown title="Work Order per Status" byStatus={summary.production.by_status} colorMap={PRODUCTION_STATUS_COLOR} />
+            </div>
+          </div>
+
+          <div className="row g-3">
+            <div className="col-12">
+              <div className="card p-3">
+                <h6 className="mb-3">Revenue vs Expense per Bulan (dari Data Warehouse)</h6>
+                {monthlyFinanceError && <div className="alert alert-warning py-2 small mb-0">{monthlyFinanceError}</div>}
+                {!monthlyFinanceError && monthlyFinance == null && <div className="text-secondary small">Memuat...</div>}
+                {!monthlyFinanceError && monthlyFinance != null && (
+                  <RevenueExpenseBarChart data={monthlyFinance} formatValue={(v) => `Rp ${formatMoney(v)}`} />
+                )}
+              </div>
             </div>
           </div>
 

@@ -250,9 +250,9 @@ func (c *Client) CountRows(ctx context.Context, table string) (uint64, error) {
 // (kredit akun REVENUE) dan expense (debit akun EXPENSE) dari journal entry
 // yang sudah POSTED.
 type MonthlyFinanceSummaryRow struct {
-	Month   string
-	Revenue decimal.Decimal
-	Expense decimal.Decimal
+	Month   string          `json:"month"`
+	Revenue decimal.Decimal `json:"revenue"`
+	Expense decimal.Decimal `json:"expense"`
 }
 
 // MonthlyFinanceSummary agregasi fact_finance_journal_lines per bulan untuk
@@ -277,7 +277,7 @@ func (c *Client) MonthlyFinanceSummary(ctx context.Context, companyID uuid.UUID)
 	}
 	defer rows.Close()
 
-	var out []MonthlyFinanceSummaryRow
+	out := []MonthlyFinanceSummaryRow{}
 	for rows.Next() {
 		var r MonthlyFinanceSummaryRow
 		if err := rows.Scan(&r.Month, &r.Revenue, &r.Expense); err != nil {
