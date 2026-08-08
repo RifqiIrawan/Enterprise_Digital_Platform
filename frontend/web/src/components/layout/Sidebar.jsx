@@ -34,7 +34,7 @@ function Sidebar({ collapsed, onNavigate, moduleTree, menuError }) {
         <Logo />
       </div>
 
-      <nav className="flex-grow-1 overflow-auto">
+      <nav className="flex-grow-1 overflow-y-auto overflow-x-hidden">
         <div className="mb-3">
           <div className="edp-nav-section-label px-2 mb-1">Utama</div>
           <ul className="nav nav-pills flex-column gap-1">

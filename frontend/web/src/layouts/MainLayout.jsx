@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import Sidebar from '../components/layout/Sidebar.jsx'
 import Topbar from '../components/layout/Topbar.jsx'
+import Footer from '../components/layout/Footer.jsx'
 import apiClient from '../services/apiClient.js'
 import { getCurrentUser } from '../utils/auth.js'
 import { CompanyProvider } from '../store/CompanyContext.jsx'
@@ -52,6 +53,7 @@ function MainLayout() {
           <main className="edp-content flex-grow-1 p-3 p-md-4">
             <Outlet />
           </main>
+          <Footer />
         </div>
       </div>
     </CompanyProvider>

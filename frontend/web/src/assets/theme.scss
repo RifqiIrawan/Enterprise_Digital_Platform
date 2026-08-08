@@ -118,6 +118,17 @@ h6 {
   color: $body-color;
   border-right: 1px solid var(--edp-border);
   transition: margin-left 0.2s ease;
+  // Dipin ke viewport supaya tingginya TERBATAS (bukan ikut memanjang
+  // sesuai isi menu) -- tanpa ini `nav.overflow-auto` di dalamnya tidak
+  // pernah kepepet untuk scroll sendiri, jadi seluruh HALAMAN yang scroll
+  // (logo & footer menu ikut hilang ke atas) kalau daftar menu lebih
+  // panjang dari viewport. Sticky (bukan fixed) supaya tetap flex item
+  // biasa dalam .edp-shell di desktop; breakpoint mobile di bawah override
+  // ke fixed untuk perilaku drawer.
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .edp-sidebar.is-collapsed {
@@ -236,6 +247,11 @@ h6 {
 .edp-content {
   background: transparent;
   min-height: calc(100vh - 64px);
+}
+
+.edp-footer {
+  border-top: 1px solid var(--edp-border);
+  background: rgba(255, 255, 255, 0.4);
 }
 
 .edp-avatar {
