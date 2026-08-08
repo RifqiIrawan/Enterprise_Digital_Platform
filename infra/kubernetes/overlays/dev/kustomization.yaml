@@ -62,6 +62,9 @@ images:
   - name: REPLACE_ME_REGISTRY/iot-service
     newName: infra-iot-service
     newTag: latest
+  - name: REPLACE_ME_REGISTRY/crm-service
+    newName: infra-crm-service
+    newTag: latest
   - name: REPLACE_ME_REGISTRY/frontend
     newName: infra-frontend
     newTag: latest
@@ -176,6 +179,11 @@ configMapGenerator:
       # deliberately off by default in base (real staging/prod deployments
       # would have actual IoT devices publishing, not a synthetic feed).
       - IOT_SIMULATOR_ENABLED=true
+  - name: crm-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/crm_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
 
 # Dev-only, obviously not a real secret. Never reuse this value anywhere
 # past a local cluster on this machine.

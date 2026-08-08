@@ -82,6 +82,7 @@ jobs:
           - modules/ai-bi-service
           - modules/dw-service
           - modules/iot-service
+          - modules/crm-service
 
     steps:
       - uses: actions/checkout@v4

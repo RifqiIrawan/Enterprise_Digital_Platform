@@ -48,6 +48,8 @@ replicas:
     count: 2
   - name: iot-service
     count: 2
+  - name: crm-service
+    count: 2
   - name: frontend
     count: 2
 

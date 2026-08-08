@@ -42,3 +42,5 @@ scrape_configs:
         labels: { service: iot-service }
       - targets: ["host.docker.internal:8095"]
         labels: { service: dw-service }
+      - targets: ["host.docker.internal:8096"]
+        labels: { service: crm-service }

@@ -57,7 +57,6 @@ Frontend: `frontend/web/src/pages/crm/{LeadsPage,AccountsPage,ContactsPage,Oppor
 
 ## Belum ada / batasan yang disengaja
 
-- **Production-readiness belum dikerjakan** (Dockerfile, docker-compose service block, K8s manifest, entry CI, env template staging/prod) -- sengaja ditunda ke sesi terpisah, mengikuti pola dua-tahap yang sama seperti 9 modul Fase 2 (bangun modul dulu, production-readiness belakangan).
 - **Belum ada fact table dw-service** untuk CRM -- tidak ada bukti kebutuhan BI/reporting terhadap data CRM saat modul ini dibangun; pola replikasi (agg table + backfill count-gated, lihat `dw-service`'s `finance-monthly-summary`) tersedia kalau ternyata dibutuhkan nanti.
 - Nomor lead/opportunity/account (saat konversi) digenerate via `COUNT(*)+1` per company per periode (`nextSequence`, disalin dari sales-service) -- cukup untuk dev/demo, bukan production-grade di bawah concurrency tinggi (sama batasan yang sudah didokumentasikan di `finance-service/README.md`).
 - Tidak ada integrasi otomatis ke Sales module saat Opportunity `WON` (mis. auto-create Sales Quotation) -- keputusan sengaja supaya scope tetap CRM standalone di fase ini, bukan oversight.

@@ -18,6 +18,7 @@ resources:
   - ai-bi-service.yaml
   - dw-service.yaml
   - iot-service.yaml
+  - crm-service.yaml
   - frontend.yaml
   - ingress.yaml
 
@@ -87,6 +88,7 @@ configMapGenerator:
       - AI_BI_SERVICE_URL=http://ai-bi-service:8093
       - DW_SERVICE_URL=http://dw-service:8095
       - IOT_SERVICE_URL=http://iot-service:8094
+      - CRM_SERVICE_URL=http://crm-service:8096
       - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
 
   - name: finance-service-config
@@ -194,3 +196,9 @@ configMapGenerator:
       - MQTT_BROKER_URL=REPLACE_ME_MQTT_BROKER_URL
       - IOT_SIMULATOR_ENABLED=false
       - IOT_SIMULATOR_INTERVAL_SECONDS=15
+
+  - name: crm-service-config
+    literals:
+      - PORT=8096
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_CRM
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
