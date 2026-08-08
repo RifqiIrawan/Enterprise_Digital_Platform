@@ -68,7 +68,7 @@ Ini adalah platform yang sudah berfungsi penuh, bukan "belum selesai". Yang beri
 | **ClickHouse Materialized View** | Pre-aggregation untuk query analitik yang lebih cepat |
 | **Silver/Gold Data Lake** | Transformation layer di atas MinIO bronze (butuh Spark atau dbt) |
 | **Modul bisnis tambahan** | CRM, Ticketing, E-Commerce, dll |
-| **Frontend charts di BI** | Visualisasi data dari ClickHouse fact tables |
+| **Frontend charts di BI** | ✅ Chart pertama (Revenue vs Expense per bulan, dari `dw-service`) sudah ada di BI Dashboards sejak 2026-08-08 — chart tambahan lain (stock levels, sales trend, dst) masih bisa dikerjakan kalau ada kebutuhan |
 | **Production deployment** | Real cloud infra (managed Postgres, Kafka cluster, K8s managed) |
 
 ---
