@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ticketing-service
+  labels:
+    app: ticketing-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ticketing-service
+  template:
+    metadata:
+      labels:
+        app: ticketing-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8097"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: ticketing-service
+          image: REPLACE_ME_REGISTRY/ticketing-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8097
+          envFrom:
+            - configMapRef:
+                name: ticketing-service-config
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8097
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8097
+            initialDelaySeconds: 5
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ticketing-service
+  labels:
+    app: ticketing-service
+spec:
+  selector:
+    app: ticketing-service
+  ports:
+    - port: 8097
+      targetPort: 8097

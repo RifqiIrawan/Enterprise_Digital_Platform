@@ -45,7 +45,6 @@ Frontend: `frontend/web/src/pages/ticketing/{TicketCategoriesPage,TicketsPage,Ti
 
 ## Belum ada / batasan yang disengaja
 
-- **Production-readiness belum dikerjakan** (Dockerfile, docker-compose service block, K8s manifest, entry CI, env template staging/prod, target Prometheus) — sengaja ditunda ke sesi terpisah, mengikuti pola dua-tahap yang sama seperti CRM dan 9 modul Fase 2 lainnya (bangun modul dulu, production-readiness belakangan).
 - **Belum ada fact table dw-service** untuk Ticketing — tidak ada bukti kebutuhan BI/reporting saat modul ini dibangun.
 - Nomor tiket digenerate via `COUNT(*)+1` per company per periode (`nextSequence`, disalin dari crm-service/sales-service) — cukup untuk dev/demo, bukan production-grade di bawah concurrency tinggi (batasan yang sama sudah didokumentasikan di `finance-service/README.md` dan `crm-service/README.md`).
 - Requester TIDAK di-link ke CRM Account/Contact (keputusan sengaja, lihat "Lingkup" di atas) — kalau ternyata dibutuhkan nanti, pola soft-link (nullable UUID tanpa FK/validasi lintas service, karena beda database) bisa ditambahkan sebagai kolom opsional tanpa migrasi breaking.

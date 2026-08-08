@@ -19,6 +19,7 @@ resources:
   - dw-service.yaml
   - iot-service.yaml
   - crm-service.yaml
+  - ticketing-service.yaml
   - frontend.yaml
   - ingress.yaml
 
@@ -89,6 +90,7 @@ configMapGenerator:
       - DW_SERVICE_URL=http://dw-service:8095
       - IOT_SERVICE_URL=http://iot-service:8094
       - CRM_SERVICE_URL=http://crm-service:8096
+      - TICKETING_SERVICE_URL=http://ticketing-service:8097
       - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
 
   - name: finance-service-config
@@ -201,4 +203,10 @@ configMapGenerator:
     literals:
       - PORT=8096
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_CRM
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+
+  - name: ticketing-service-config
+    literals:
+      - PORT=8097
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_TICKETING
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS

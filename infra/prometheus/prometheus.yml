@@ -44,3 +44,5 @@ scrape_configs:
         labels: { service: dw-service }
       - targets: ["host.docker.internal:8096"]
         labels: { service: crm-service }
+      - targets: ["host.docker.internal:8097"]
+        labels: { service: ticketing-service }

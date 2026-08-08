@@ -52,6 +52,8 @@ replicas:
     count: 3
   - name: crm-service
     count: 3
+  - name: ticketing-service
+    count: 3
   - name: frontend
     count: 3
 

@@ -65,6 +65,9 @@ images:
   - name: REPLACE_ME_REGISTRY/crm-service
     newName: infra-crm-service
     newTag: latest
+  - name: REPLACE_ME_REGISTRY/ticketing-service
+    newName: infra-ticketing-service
+    newTag: latest
   - name: REPLACE_ME_REGISTRY/frontend
     newName: infra-frontend
     newTag: latest
@@ -183,6 +186,11 @@ configMapGenerator:
     behavior: merge
     literals:
       - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/crm_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: ticketing-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/ticketing_service?sslmode=disable
       - KAFKA_BROKERS=host.docker.internal:9092
 
 # Dev-only, obviously not a real secret. Never reuse this value anywhere
