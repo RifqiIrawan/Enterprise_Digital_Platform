@@ -434,6 +434,55 @@ func (c *Client) MonthlyStockMovementSummary(ctx context.Context, companyID uuid
 	return out, rows.Err()
 }
 
+// MonthlySalesSummaryRow adalah satu baris hasil agregasi bulanan nilai
+// sales order (bukan revenue GL -- ini order value dari fact_sales_order_lines,
+// beda sumber dari MonthlyFinanceSummary yang baca fact_finance_journal_lines).
+type MonthlySalesSummaryRow struct {
+	Month      string          `json:"month"`
+	SalesValue decimal.Decimal `json:"sales_value"`
+}
+
+// MonthlySalesSummary agregasi fact_sales_order_lines per bulan untuk satu
+// company -- pola query IDENTIK dengan MonthlyStockMovementSummary: FINAL
+// langsung, BUKAN Materialized View, karena endpoint baru ini belum punya
+// bukti traffic yang butuh percepatan (pola bertahap yang sama, lihat
+// komentar MonthlyFinanceSummary/MonthlyStockMovementSummary di atas).
+// fact_sales_order_lines JUGA dual-write lewat batch ETL + Kafka Streaming
+// ETL (event order.fulfilled/order.invoiced, lihat internal/streaming),
+// jadi FINAL tetap wajib untuk korektnes.
+//
+// DRAFT dan CANCELLED SENGAJA dikecualikan -- baris DRAFT belum jadi
+// komitmen penjualan sungguhan (paralel dengan filter entry_status='POSTED'
+// di MonthlyFinanceSummary), dan CANCELLED sudah dibatalkan jadi bukan
+// penjualan yang benar-benar terjadi. CONFIRMED/FULFILLED/INVOICED
+// dihitung -- ketiganya order yang sudah committed, beda tahap fulfillment
+// tapi sama-sama "sales value" yang nyata.
+func (c *Client) MonthlySalesSummary(ctx context.Context, companyID uuid.UUID) ([]MonthlySalesSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(order_date)) AS month,
+			sum(amount) AS sales_value
+		FROM fact_sales_order_lines FINAL
+		WHERE company_id = ? AND order_status NOT IN ('DRAFT', 'CANCELLED')
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query monthly sales summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []MonthlySalesSummaryRow{}
+	for rows.Next() {
+		var r MonthlySalesSummaryRow
+		if err := rows.Scan(&r.Month, &r.SalesValue); err != nil {
+			return nil, fmt.Errorf("scan monthly sales summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 type FinanceJournalLineRow struct {
 	LineID        uuid.UUID
 	JournalID     uuid.UUID

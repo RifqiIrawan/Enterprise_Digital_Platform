@@ -42,14 +42,20 @@ function GroupedBarChart({ data, series, formatValue }) {
 
   return (
     <div className="position-relative">
-      <div className="d-flex gap-3 small text-secondary mb-1">
-        {series.map((s) => (
-          <span key={s.key} className="d-flex align-items-center gap-1">
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: s.color, display: 'inline-block' }} />
-            {s.label}
-          </span>
-        ))}
-      </div>
+      {/* Legend cuma berguna untuk membedakan identitas antar seri -- satu
+          seri sudah diberi nama lewat judul kartu di atas chart ini, jadi
+          legend jadi redundan (lihat dataviz skill: "a single series needs
+          no legend box"). */}
+      {series.length > 1 && (
+        <div className="d-flex gap-3 small text-secondary mb-1">
+          {series.map((s) => (
+            <span key={s.key} className="d-flex align-items-center gap-1">
+              <span style={{ width: 10, height: 10, borderRadius: 2, background: s.color, display: 'inline-block' }} />
+              {s.label}
+            </span>
+          ))}
+        </div>
+      )}
 
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
         {gridSteps.map((step) => (

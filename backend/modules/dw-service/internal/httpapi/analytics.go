@@ -41,3 +41,21 @@ func (h *Handler) stockMovementMonthlySummary(w http.ResponseWriter, r *http.Req
 	}
 	writeJSON(w, http.StatusOK, rows)
 }
+
+func (h *Handler) salesMonthlySummary(w http.ResponseWriter, r *http.Request) {
+	if h.dest == nil {
+		writeError(w, http.StatusServiceUnavailable, "ClickHouse tidak tersedia")
+		return
+	}
+	companyID, err := uuid.Parse(r.URL.Query().Get("company_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Parameter company_id wajib berupa UUID valid")
+		return
+	}
+	rows, err := h.dest.MonthlySalesSummary(r.Context(), companyID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memuat ringkasan sales: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}

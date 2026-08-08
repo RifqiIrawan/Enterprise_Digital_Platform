@@ -235,3 +235,83 @@ func TestMonthlyStockMovementSummary_NoDataReturnsEmpty(t *testing.T) {
 		t.Errorf("expected empty summary for company with no data, got %+v", summary)
 	}
 }
+
+// TestMonthlySalesSummary_AggregatesCommittedOrdersOnly menguji query
+// analitik ketiga di dw-service dengan pola yang sama: angka bersih yang
+// bisa dihitung tangan, DRAFT dan CANCELLED sengaja disertakan di dataset
+// untuk membuktikan keduanya benar-benar dikecualikan (bukan cuma diasumsikan
+// dari komentar kode).
+func TestMonthlySalesSummary_AggregatesCommittedOrdersOnly(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	orderDate := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	syncedAt := time.Now()
+
+	rows := []ch.SalesOrderLineRow{
+		// CONFIRMED, FULFILLED, INVOICED -- dihitung (total 100+200+300=600).
+		{
+			LineID: uuid.New(), SalesOrderID: uuid.New(), CompanyID: companyID,
+			SONumber: "SO-1", OrderDate: orderDate, OrderStatus: "CONFIRMED",
+			CustomerID: uuid.New(), CustomerCode: "CUST-1", CustomerName: "Customer 1",
+			ProductName: "Produk A", Quantity: 1, UnitPrice: 100, Amount: 100, UpdatedAt: orderDate,
+		},
+		{
+			LineID: uuid.New(), SalesOrderID: uuid.New(), CompanyID: companyID,
+			SONumber: "SO-2", OrderDate: orderDate, OrderStatus: "FULFILLED",
+			CustomerID: uuid.New(), CustomerCode: "CUST-1", CustomerName: "Customer 1",
+			ProductName: "Produk B", Quantity: 1, UnitPrice: 200, Amount: 200, UpdatedAt: orderDate,
+		},
+		{
+			LineID: uuid.New(), SalesOrderID: uuid.New(), CompanyID: companyID,
+			SONumber: "SO-3", OrderDate: orderDate, OrderStatus: "INVOICED",
+			CustomerID: uuid.New(), CustomerCode: "CUST-1", CustomerName: "Customer 1",
+			ProductName: "Produk C", Quantity: 1, UnitPrice: 300, Amount: 300, UpdatedAt: orderDate,
+		},
+		// DRAFT -- TIDAK dihitung (belum komitmen).
+		{
+			LineID: uuid.New(), SalesOrderID: uuid.New(), CompanyID: companyID,
+			SONumber: "SO-4", OrderDate: orderDate, OrderStatus: "DRAFT",
+			CustomerID: uuid.New(), CustomerCode: "CUST-1", CustomerName: "Customer 1",
+			ProductName: "Produk D", Quantity: 1, UnitPrice: 9999, Amount: 9999, UpdatedAt: orderDate,
+		},
+		// CANCELLED -- TIDAK dihitung (dibatalkan).
+		{
+			LineID: uuid.New(), SalesOrderID: uuid.New(), CompanyID: companyID,
+			SONumber: "SO-5", OrderDate: orderDate, OrderStatus: "CANCELLED",
+			CustomerID: uuid.New(), CustomerCode: "CUST-1", CustomerName: "Customer 1",
+			ProductName: "Produk E", Quantity: 1, UnitPrice: 8888, Amount: 8888, UpdatedAt: orderDate,
+		},
+	}
+
+	if err := chClient.InsertSalesOrderLines(ctx, rows, syncedAt); err != nil {
+		t.Fatalf("InsertSalesOrderLines: %v", err)
+	}
+
+	summary, err := chClient.MonthlySalesSummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("MonthlySalesSummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected exactly 1 month, got %d: %+v", len(summary), summary)
+	}
+	got := summary[0]
+	if got.Month != "2026-06-01" {
+		t.Errorf("month = %q, want 2026-06-01", got.Month)
+	}
+	if !got.SalesValue.Equal(mustDecimal(t, "600")) {
+		t.Errorf("sales_value = %s, want 600 (DRAFT and CANCELLED rows must be excluded)", got.SalesValue)
+	}
+}
+
+// TestMonthlySalesSummary_NoDataReturnsEmpty memverifikasi company tanpa
+// sales order sama sekali mengembalikan slice kosong, konsisten dengan
+// endpoint analitik lain.
+func TestMonthlySalesSummary_NoDataReturnsEmpty(t *testing.T) {
+	summary, err := chClient.MonthlySalesSummary(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("MonthlySalesSummary: %v", err)
+	}
+	if len(summary) != 0 {
+		t.Errorf("expected empty summary for company with no data, got %+v", summary)
+	}
+}
