@@ -17,12 +17,13 @@
 | **Fase 7** | Data Warehouse — dw-service: 9 fact tables (ClickHouse), Batch ETL, Kafka Streaming ETL | ✅ Selesai |
 | **Fase 8** | Data Lake — MinIO bronze layer (JSON Lines), dual-write dengan ClickHouse | ✅ Selesai |
 | **Fase 9** | Observability — Prometheus/Grafana (metrics), JSON logs + Loki/Promtail, OpenTelemetry + Jaeger (tracing) | ✅ Selesai |
+| **Fase 10** | CRM — crm-service: Leads, Accounts, Contacts, Opportunities, Activities, konversi Lead transaksional | ✅ Selesai (core module — production-readiness & fact table dw-service belum) |
 
 ---
 
 ## Apa yang Sudah Dibangun
 
-### 16 Service Go (berjalan sekaligus)
+### 17 Service Go (berjalan sekaligus)
 
 | Service | Port | DB | Fitur Utama |
 |---------|------|----|-------------|
@@ -42,6 +43,7 @@
 | ai-bi-service | 8093 | — | BI Dashboard, Forecasting, Anomaly |
 | iot-service | 8094 | iot_service | Device, MQTT, Alert, Simulator |
 | dw-service | 8095 | — | ETL → ClickHouse (9 facts) + MinIO |
+| crm-service | 8096 | crm_service | Leads, Accounts, Contacts, Opportunities, Activities |
 
 ### Integrasi Utama
 
@@ -51,11 +53,11 @@
 - **DW Batch ETL**: dw-service → 9 Postgres DB → ClickHouse + MinIO (setiap 5 menit)
 - **DW Streaming ETL**: Kafka (12 topics) → dw-service → ClickHouse + MinIO (<100ms)
 - **IoT Pipeline**: iot-service simulator → MQTT → Mosquitto → subscribe → Postgres + Kafka
-- **Observability**: 16 service → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger
+- **Observability**: 16 service Fase 1-9 → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) sudah punya kode metrics/tracing yang sama (boilerplate disalin dari asset-service), tapi PORT 8096-nya belum ditambahkan ke target list statis `infra/prometheus/prometheus.yml` — bagian dari production-readiness yang sengaja ditunda, lihat tabel "Apa yang Belum Ada"
 
 ### Frontend
 
-React SPA dengan 40+ halaman, RBAC-driven sidebar, multi-tenant company/branch switcher, DataTable (search + sort + pagination) di semua halaman list.
+React SPA dengan 45+ halaman, RBAC-driven sidebar, multi-tenant company/branch switcher, DataTable (search + sort + pagination) di semua halaman list.
 
 ---
 
@@ -67,7 +69,7 @@ Ini adalah platform yang sudah berfungsi penuh, bukan "belum selesai". Yang beri
 |-------|-----------|
 | **ClickHouse Materialized View** | ✅ MV pertama (`mv_finance_monthly_line_state`) sudah ada sejak 2026-08-08, backing `finance-monthly-summary` — MV tambahan untuk fact table lain masih bisa dikerjakan kalau ada kebutuhan |
 | **Silver/Gold Data Lake** | Transformation layer di atas MinIO bronze (butuh Spark atau dbt) |
-| **Modul bisnis tambahan** | CRM, Ticketing, E-Commerce, dll |
+| **Modul bisnis tambahan** | ✅ CRM (Leads/Accounts/Contacts/Opportunities/Activities, termasuk konversi Lead→Account+Contact+Opportunity transaksional) sudah ada sejak 2026-08-08 sebagai module ke-17 — production-readiness (Dockerfile/K8s/CI/env) dan fact table dw-service SENGAJA belum dikerjakan. Ticketing/E-Commerce masih terbuka kalau ada kebutuhan lanjutan |
 | **Frontend charts di BI** | ✅ 3 chart per bulan dari `dw-service` (Revenue vs Expense, Stock In vs Out, Sales Value — komponen `GroupedBarChart` yang sama, generik untuk 1 atau N seri) sudah ada di BI Dashboards sejak 2026-08-08 — chart tambahan lain masih bisa dikerjakan kalau ada kebutuhan |
 | **Production deployment** | Real cloud infra (managed Postgres, Kafka cluster, K8s managed) |
 
