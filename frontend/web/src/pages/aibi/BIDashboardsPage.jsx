@@ -1,11 +1,29 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import { useCompany } from '../../store/CompanyContext.jsx'
-import RevenueExpenseBarChart from './RevenueExpenseBarChart.jsx'
+import GroupedBarChart from './GroupedBarChart.jsx'
 
 function formatMoney(n) {
   return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(n ?? 0)
 }
+
+function formatQty(n) {
+  return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n ?? 0)
+}
+
+// Kedua chart bulanan di halaman ini sama-sama dikotomi "masuk vs keluar" --
+// slot 1 (biru) selalu sisi masuk (Revenue, Stock In), slot 2 (oranye) selalu
+// sisi keluar (Expense, Stock Out). Urutan tetap ini SENGAJA dipakai ulang di
+// kedua chart (bukan warna baru per chart) supaya pembaca dashboard belajar
+// polanya sekali: biru = masuk, oranye = keluar, di seluruh halaman ini.
+const FINANCE_SERIES = [
+  { key: 'revenue', label: 'Revenue', color: 'var(--bs-primary)' },
+  { key: 'expense', label: 'Expense', color: 'var(--bs-orange)' },
+]
+const STOCK_SERIES = [
+  { key: 'stock_in', label: 'Stock In', color: 'var(--bs-primary)' },
+  { key: 'stock_out', label: 'Stock Out', color: 'var(--bs-orange)' },
+]
 
 function StatTile({ label, value, sub, className = '' }) {
   return (
@@ -65,6 +83,8 @@ function BIDashboardsPage() {
   const [error, setError] = useState('')
   const [monthlyFinance, setMonthlyFinance] = useState(null)
   const [monthlyFinanceError, setMonthlyFinanceError] = useState('')
+  const [monthlyStock, setMonthlyStock] = useState(null)
+  const [monthlyStockError, setMonthlyStockError] = useState('')
 
   function loadSummary(cid) {
     setLoading(true)
@@ -87,6 +107,16 @@ function BIDashboardsPage() {
       .catch(() => setMonthlyFinanceError('Gagal memuat ringkasan finance bulanan. Pastikan dw-service aktif.'))
   }
 
+  // Chart kedua dari dw-service, pola loading/error terpisah yang sama
+  // dengan loadMonthlyFinance di atas.
+  function loadMonthlyStock(cid) {
+    setMonthlyStockError('')
+    apiClient
+      .get('/api/dw/analytics/stock-movement-monthly-summary', { params: { company_id: cid } })
+      .then(({ data }) => setMonthlyStock(data.map((d) => ({ ...d, stock_in: Number(d.stock_in), stock_out: Number(d.stock_out) }))))
+      .catch(() => setMonthlyStockError('Gagal memuat ringkasan pergerakan stok bulanan. Pastikan dw-service aktif.'))
+  }
+
   useEffect(() => {
     if (!companyId) {
       setLoading(false)
@@ -94,6 +124,7 @@ function BIDashboardsPage() {
     }
     loadSummary(companyId)
     loadMonthlyFinance(companyId)
+    loadMonthlyStock(companyId)
   }, [companyId])
 
   return (
@@ -168,13 +199,23 @@ function BIDashboardsPage() {
           </div>
 
           <div className="row g-3">
-            <div className="col-12">
-              <div className="card p-3">
+            <div className="col-md-6">
+              <div className="card p-3 h-100">
                 <h6 className="mb-3">Revenue vs Expense per Bulan (dari Data Warehouse)</h6>
                 {monthlyFinanceError && <div className="alert alert-warning py-2 small mb-0">{monthlyFinanceError}</div>}
                 {!monthlyFinanceError && monthlyFinance == null && <div className="text-secondary small">Memuat...</div>}
                 {!monthlyFinanceError && monthlyFinance != null && (
-                  <RevenueExpenseBarChart data={monthlyFinance} formatValue={(v) => `Rp ${formatMoney(v)}`} />
+                  <GroupedBarChart data={monthlyFinance} series={FINANCE_SERIES} formatValue={(v) => `Rp ${formatMoney(v)}`} />
+                )}
+              </div>
+            </div>
+            <div className="col-md-6">
+              <div className="card p-3 h-100">
+                <h6 className="mb-3">Stok Masuk vs Keluar per Bulan (dari Data Warehouse)</h6>
+                {monthlyStockError && <div className="alert alert-warning py-2 small mb-0">{monthlyStockError}</div>}
+                {!monthlyStockError && monthlyStock == null && <div className="text-secondary small">Memuat...</div>}
+                {!monthlyStockError && monthlyStock != null && (
+                  <GroupedBarChart data={monthlyStock} series={STOCK_SERIES} formatValue={(v) => formatQty(v)} />
                 )}
               </div>
             </div>

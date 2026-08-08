@@ -167,3 +167,71 @@ func TestMonthlyFinanceSummary_DualWriteDoesNotDoubleCount(t *testing.T) {
 		t.Errorf("expense = %s, want 0", got.Expense)
 	}
 }
+
+// TestMonthlyStockMovementSummary_AggregatesInAndOut menguji query analitik
+// kedua di dw-service (setelah MonthlyFinanceSummary) dengan pola yang sama:
+// angka bersih yang bisa dihitung tangan, bukan cuma "ada hasil".
+func TestMonthlyStockMovementSummary_AggregatesInAndOut(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	movementDate := time.Date(2026, 6, 20, 0, 0, 0, 0, time.UTC)
+	syncedAt := time.Now()
+
+	rows := []ch.InventoryMovementRow{
+		// IN -- dihitung (2 baris, total 150).
+		{
+			MovementID: uuid.New(), CompanyID: companyID, WarehouseID: uuid.New(),
+			WarehouseCode: "WH1", WarehouseName: "Gudang Utama", ProductID: uuid.New(),
+			ProductSKU: "SKU-1", ProductName: "Produk 1", MovementType: "IN",
+			Quantity: 100, ReferenceType: "PURCHASE_ORDER", MovementDate: movementDate,
+		},
+		{
+			MovementID: uuid.New(), CompanyID: companyID, WarehouseID: uuid.New(),
+			WarehouseCode: "WH1", WarehouseName: "Gudang Utama", ProductID: uuid.New(),
+			ProductSKU: "SKU-2", ProductName: "Produk 2", MovementType: "IN",
+			Quantity: 50, ReferenceType: "STOCK_TRANSFER", MovementDate: movementDate,
+		},
+		// OUT -- dihitung (1 baris, total 30).
+		{
+			MovementID: uuid.New(), CompanyID: companyID, WarehouseID: uuid.New(),
+			WarehouseCode: "WH1", WarehouseName: "Gudang Utama", ProductID: uuid.New(),
+			ProductSKU: "SKU-1", ProductName: "Produk 1", MovementType: "OUT",
+			Quantity: 30, ReferenceType: "SALES_ORDER", MovementDate: movementDate,
+		},
+	}
+
+	if err := chClient.InsertInventoryMovements(ctx, rows, syncedAt); err != nil {
+		t.Fatalf("InsertInventoryMovements: %v", err)
+	}
+
+	summary, err := chClient.MonthlyStockMovementSummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("MonthlyStockMovementSummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected exactly 1 month, got %d: %+v", len(summary), summary)
+	}
+	got := summary[0]
+	if got.Month != "2026-06-01" {
+		t.Errorf("month = %q, want 2026-06-01", got.Month)
+	}
+	if !got.StockIn.Equal(mustDecimal(t, "150")) {
+		t.Errorf("stock_in = %s, want 150", got.StockIn)
+	}
+	if !got.StockOut.Equal(mustDecimal(t, "30")) {
+		t.Errorf("stock_out = %s, want 30", got.StockOut)
+	}
+}
+
+// TestMonthlyStockMovementSummary_NoDataReturnsEmpty memverifikasi company
+// tanpa pergerakan stok sama sekali mengembalikan slice kosong, bukan error
+// atau baris dengan nilai nol -- konsisten dengan MonthlyFinanceSummary.
+func TestMonthlyStockMovementSummary_NoDataReturnsEmpty(t *testing.T) {
+	summary, err := chClient.MonthlyStockMovementSummary(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("MonthlyStockMovementSummary: %v", err)
+	}
+	if len(summary) != 0 {
+		t.Errorf("expected empty summary for company with no data, got %+v", summary)
+	}
+}

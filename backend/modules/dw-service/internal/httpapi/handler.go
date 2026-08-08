@@ -28,6 +28,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /sync", h.sync)
 	mux.HandleFunc("GET /sync/status", h.syncStatus)
 	mux.HandleFunc("GET /analytics/finance-monthly-summary", h.financeMonthlySummary)
+	mux.HandleFunc("GET /analytics/stock-movement-monthly-summary", h.stockMovementMonthlySummary)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {

@@ -9,24 +9,22 @@ const PAD_BOTTOM = 28
 const BAR_MAX_THICKNESS = 24
 const BAR_GAP = 2
 
-// Grouped bar chart: dua seri (revenue, expense) per bulan, sumbu tunggal
-// (satuan sama, mata uang) -- warna kategorikal urutan tetap (slot 1 biru =
-// Revenue, slot 2 oranye = Expense, lihat dataviz skill palette.md), bukan
-// warna status (bg-success/bg-danger) supaya tidak dikira "baik/buruk".
-// Tooltip satu per grup bulan (bukan per bar) supaya kedua nilai selalu
-// terbaca bersamaan tanpa perlu hover dua kali.
-const SERIES = [
-  { key: 'revenue', label: 'Revenue', color: 'var(--bs-primary)' },
-  { key: 'expense', label: 'Expense', color: 'var(--bs-orange)' },
-]
-
-function RevenueExpenseBarChart({ data, formatValue }) {
+// Grouped bar chart generik: N seri per bulan, sumbu tunggal (dipakai untuk
+// data dengan satuan yang sama antar seri -- mata uang, atau kuantitas)
+// -- warna kategorikal urutan tetap yang di-pass lewat prop `series`, BUKAN
+// warna status (bg-success/bg-danger) supaya tidak dikira "baik/buruk" (lihat
+// dataviz skill palette.md). Tooltip satu per grup bulan (bukan per bar)
+// supaya semua nilai seri selalu terbaca bersamaan tanpa perlu hover
+// berkali-kali. Awalnya khusus Revenue/Expense (RevenueExpenseBarChart),
+// digeneralisasi supaya chart bulanan lain (mis. stock in/out) bisa pakai
+// komponen yang sama alih-alih duplikat ~140 baris SVG.
+function GroupedBarChart({ data, series, formatValue }) {
   const [hoverIndex, setHoverIndex] = useState(null)
 
   const maxValue = useMemo(() => {
-    const values = data.flatMap((d) => [d.revenue, d.expense])
+    const values = data.flatMap((d) => series.map((s) => d[s.key]))
     return Math.max(1, ...values)
-  }, [data])
+  }, [data, series])
 
   if (data.length === 0) {
     return <div className="text-secondary small">Belum ada data.</div>
@@ -35,7 +33,7 @@ function RevenueExpenseBarChart({ data, formatValue }) {
   const plotWidth = WIDTH - PAD_LEFT - PAD_RIGHT
   const plotHeight = HEIGHT - PAD_TOP - PAD_BOTTOM
   const groupWidth = plotWidth / data.length
-  const barThickness = Math.min(BAR_MAX_THICKNESS, (groupWidth - BAR_GAP * 3) / 2)
+  const barThickness = Math.min(BAR_MAX_THICKNESS, (groupWidth - BAR_GAP * (series.length + 1)) / series.length)
 
   const yForValue = (v) => PAD_TOP + plotHeight - (v / maxValue) * plotHeight
   const gridSteps = [0, 0.25, 0.5, 0.75, 1]
@@ -45,7 +43,7 @@ function RevenueExpenseBarChart({ data, formatValue }) {
   return (
     <div className="position-relative">
       <div className="d-flex gap-3 small text-secondary mb-1">
-        {SERIES.map((s) => (
+        {series.map((s) => (
           <span key={s.key} className="d-flex align-items-center gap-1">
             <span style={{ width: 10, height: 10, borderRadius: 2, background: s.color, display: 'inline-block' }} />
             {s.label}
@@ -71,11 +69,12 @@ function RevenueExpenseBarChart({ data, formatValue }) {
           const groupX = PAD_LEFT + i * groupWidth
           const groupCenter = groupX + groupWidth / 2
           const isHovered = i === hoverIndex
+          const groupSpan = series.length * (barThickness + BAR_GAP) - BAR_GAP
           return (
             <g key={d.month} opacity={hoverIndex != null && !isHovered ? 0.5 : 1}>
-              {SERIES.map((s, si) => {
+              {series.map((s, si) => {
                 const value = d[s.key]
-                const barX = groupCenter - barThickness - BAR_GAP / 2 + si * (barThickness + BAR_GAP)
+                const barX = groupCenter - groupSpan / 2 + si * (barThickness + BAR_GAP)
                 const barY = yForValue(value)
                 const barHeight = PAD_TOP + plotHeight - barY
                 return (
@@ -122,7 +121,7 @@ function RevenueExpenseBarChart({ data, formatValue }) {
           }}
         >
           <div className="fw-semibold mb-1">{hovered.month}</div>
-          {SERIES.map((s) => (
+          {series.map((s) => (
             <div key={s.key} className="d-flex align-items-center gap-1">
               <span style={{ width: 8, height: 2, background: s.color, display: 'inline-block' }} />
               <span className="text-secondary">{s.label}:</span> {formatValue(hovered[s.key])}
@@ -134,4 +133,4 @@ function RevenueExpenseBarChart({ data, formatValue }) {
   )
 }
 
-export default RevenueExpenseBarChart
+export default GroupedBarChart

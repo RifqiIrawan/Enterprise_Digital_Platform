@@ -381,6 +381,59 @@ func (c *Client) MonthlyFinanceSummary(ctx context.Context, companyID uuid.UUID)
 	return out, rows.Err()
 }
 
+// MonthlyStockMovementSummaryRow adalah satu baris hasil agregasi bulanan
+// stok masuk (movement_type IN) dan stok keluar (movement_type OUT) dari
+// fact_inventory_movements.
+type MonthlyStockMovementSummaryRow struct {
+	Month    string          `json:"month"`
+	StockIn  decimal.Decimal `json:"stock_in"`
+	StockOut decimal.Decimal `json:"stock_out"`
+}
+
+// MonthlyStockMovementSummary agregasi fact_inventory_movements per bulan
+// untuk satu company -- pola query SENGAJA identik dengan
+// MonthlyFinanceSummary versi AWAL (sebelum MV): FINAL langsung di sini,
+// BUKAN lewat Materialized View pre-agregasi. dw-service dual-write ke
+// fact_inventory_movements juga (batch ETL + Kafka Streaming ETL, sama
+// seperti fact_finance_journal_lines), jadi FINAL tetap WAJIB untuk
+// korektnes -- tapi belum ada bukti query ini butuh percepatan MV di bawah
+// beban nyata (endpoint baru, belum ada traffic sama sekali), jadi
+// mengikuti pola bertahap yang sama: query dulu, MV menyusul kalau
+// terbukti perlu (persis keputusan MonthlyFinanceSummary di sesi
+// sebelumnya, sebelum MV-nya dibangun).
+//
+// fact_inventory_movements TIDAK punya kolom status (beda dari
+// fact_finance_journal_lines yang punya entry_status DRAFT/POSTED) --
+// setiap baris di sini merepresentasikan pergerakan stok yang SUDAH
+// terjadi (PO RECEIVED, SO FULFILLED, stock transfer/opname), jadi tidak
+// ada filter status yang perlu diterapkan.
+func (c *Client) MonthlyStockMovementSummary(ctx context.Context, companyID uuid.UUID) ([]MonthlyStockMovementSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(movement_date)) AS month,
+			sumIf(quantity, movement_type = 'IN') AS stock_in,
+			sumIf(quantity, movement_type = 'OUT') AS stock_out
+		FROM fact_inventory_movements FINAL
+		WHERE company_id = ?
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query monthly stock movement summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []MonthlyStockMovementSummaryRow{}
+	for rows.Next() {
+		var r MonthlyStockMovementSummaryRow
+		if err := rows.Scan(&r.Month, &r.StockIn, &r.StockOut); err != nil {
+			return nil, fmt.Errorf("scan monthly stock movement summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 type FinanceJournalLineRow struct {
 	LineID        uuid.UUID
 	JournalID     uuid.UUID
