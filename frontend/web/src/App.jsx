@@ -44,6 +44,9 @@ import AccountsPage from './pages/crm/AccountsPage.jsx'
 import ContactsPage from './pages/crm/ContactsPage.jsx'
 import OpportunitiesPage from './pages/crm/OpportunitiesPage.jsx'
 import ActivitiesPage from './pages/crm/ActivitiesPage.jsx'
+import TicketCategoriesPage from './pages/ticketing/TicketCategoriesPage.jsx'
+import TicketsPage from './pages/ticketing/TicketsPage.jsx'
+import TicketCommentsPage from './pages/ticketing/TicketCommentsPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -107,6 +110,9 @@ function App() {
         <Route path="/crm/contacts" element={<ContactsPage />} />
         <Route path="/crm/opportunities" element={<OpportunitiesPage />} />
         <Route path="/crm/activities" element={<ActivitiesPage />} />
+        <Route path="/ticketing/categories" element={<TicketCategoriesPage />} />
+        <Route path="/ticketing/tickets" element={<TicketsPage />} />
+        <Route path="/ticketing/comments" element={<TicketCommentsPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

@@ -24,6 +24,7 @@ type Config struct {
 	IoTServiceURL        string
 	DWServiceURL         string
 	CRMServiceURL        string
+	TicketingServiceURL  string
 	JWTSecret            string
 	CORSAllowedOrigin    string
 	OTLPEndpoint         string
@@ -49,6 +50,7 @@ func Load() *Config {
 		IoTServiceURL:        getEnv("IOT_SERVICE_URL", "http://localhost:8094"),
 		DWServiceURL:         getEnv("DW_SERVICE_URL", "http://localhost:8095"),
 		CRMServiceURL:        getEnv("CRM_SERVICE_URL", "http://localhost:8096"),
+		TicketingServiceURL:  getEnv("TICKETING_SERVICE_URL", "http://localhost:8097"),
 		JWTSecret:            getEnv("JWT_SECRET", "change-me"),
 		CORSAllowedOrigin:    getEnv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 		OTLPEndpoint:         getEnv("OTLP_ENDPOINT", "localhost:4318"),

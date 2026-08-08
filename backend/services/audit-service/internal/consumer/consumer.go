@@ -101,6 +101,13 @@ var Topics = []string{
 	"crm.opportunity.lost",
 	"crm.activity.created",
 	"crm.activity.updated",
+	"ticketing.category.created",
+	"ticketing.category.updated",
+	"ticketing.ticket.created",
+	"ticketing.ticket.updated",
+	"ticketing.ticket.closed",
+	"ticketing.ticket.reopened",
+	"ticketing.comment.created",
 }
 
 const (

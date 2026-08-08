@@ -18,4 +18,5 @@ use (
 	./modules/iot-service
 	./modules/dw-service
 	./modules/crm-service
+	./modules/ticketing-service
 )

@@ -51,6 +51,7 @@ func New(cfg *config.Config) http.Handler {
 		{prefix: "/api/iot", proxy: newProxy(cfg.IoTServiceURL, "/api/iot")},
 		{prefix: "/api/dw", proxy: newProxy(cfg.DWServiceURL, "/api/dw")},
 		{prefix: "/api/crm", proxy: newProxy(cfg.CRMServiceURL, "/api/crm")},
+		{prefix: "/api/ticketing", proxy: newProxy(cfg.TicketingServiceURL, "/api/ticketing")},
 	}
 
 	mux := http.NewServeMux()
