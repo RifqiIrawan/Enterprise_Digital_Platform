@@ -65,7 +65,7 @@ Ini adalah platform yang sudah berfungsi penuh, bukan "belum selesai". Yang beri
 
 | Fitur | Deskripsi |
 |-------|-----------|
-| **ClickHouse Materialized View** | Pre-aggregation untuk query analitik yang lebih cepat |
+| **ClickHouse Materialized View** | ✅ MV pertama (`mv_finance_monthly_line_state`) sudah ada sejak 2026-08-08, backing `finance-monthly-summary` — MV tambahan untuk fact table lain masih bisa dikerjakan kalau ada kebutuhan |
 | **Silver/Gold Data Lake** | Transformation layer di atas MinIO bronze (butuh Spark atau dbt) |
 | **Modul bisnis tambahan** | CRM, Ticketing, E-Commerce, dll |
 | **Frontend charts di BI** | ✅ Chart pertama (Revenue vs Expense per bulan, dari `dw-service`) sudah ada di BI Dashboards sejak 2026-08-08 — chart tambahan lain (stock levels, sales trend, dst) masih bisa dikerjakan kalau ada kebutuhan |
