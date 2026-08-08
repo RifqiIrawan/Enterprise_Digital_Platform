@@ -18,7 +18,7 @@
 | **Fase 8** | Data Lake — MinIO bronze layer (JSON Lines), dual-write dengan ClickHouse | ✅ Selesai |
 | **Fase 9** | Observability — Prometheus/Grafana (metrics), JSON logs + Loki/Promtail, OpenTelemetry + Jaeger (tracing) | ✅ Selesai |
 | **Fase 10** | CRM — crm-service: Leads, Accounts, Contacts, Opportunities, Activities, konversi Lead transaksional | ✅ Selesai, termasuk production-readiness (Dockerfile/docker-compose/K8s/CI/env/Prometheus, 2026-08-09) — fact table dw-service belum |
-| **Fase 11** | Ticketing — ticketing-service: Ticket Categories, Tickets, Comments (helpdesk/customer support) | ✅ Core module selesai (2026-08-09) — production-readiness & fact table dw-service belum |
+| **Fase 11** | Ticketing — ticketing-service: Ticket Categories, Tickets, Comments (helpdesk/customer support) | ✅ Selesai, termasuk production-readiness (Dockerfile/docker-compose/K8s/CI/env/Prometheus, 2026-08-09) — fact table dw-service belum |
 
 ---
 
@@ -55,7 +55,7 @@
 - **DW Batch ETL**: dw-service → 9 Postgres DB → ClickHouse + MinIO (setiap 5 menit)
 - **DW Streaming ETL**: Kafka (12 topics) → dw-service → ClickHouse + MinIO (<100ms)
 - **IoT Pipeline**: iot-service simulator → MQTT → Mosquitto → subscribe → Postgres + Kafka
-- **Observability**: 17 service Fase 1-10 → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) port 8096 sudah ditambahkan ke target list statis `infra/prometheus/prometheus.yml` sejak production-readiness-nya (2026-08-09). ticketing-service (Fase 11) sudah punya kode metrics/tracing yang sama (boilerplate disalin dari crm-service) tapi PORT 8097-nya belum ditambahkan ke `infra/prometheus/prometheus.yml` — bagian dari production-readiness yang sengaja ditunda, lihat tabel "Apa yang Belum Ada"
+- **Observability**: 18 service Fase 1-11 → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) port 8096 dan ticketing-service (Fase 11) port 8097 sudah ditambahkan ke target list statis `infra/prometheus/prometheus.yml` sejak production-readiness masing-masing (2026-08-09)
 
 ### Frontend
 
@@ -71,7 +71,7 @@ Ini adalah platform yang sudah berfungsi penuh, bukan "belum selesai". Yang beri
 |-------|-----------|
 | **ClickHouse Materialized View** | ✅ MV pertama (`mv_finance_monthly_line_state`) sudah ada sejak 2026-08-08, backing `finance-monthly-summary` — MV tambahan untuk fact table lain masih bisa dikerjakan kalau ada kebutuhan |
 | **Silver/Gold Data Lake** | Transformation layer di atas MinIO bronze (butuh Spark atau dbt) |
-| **Modul bisnis tambahan** | ✅ CRM (Leads/Accounts/Contacts/Opportunities/Activities, termasuk konversi Lead→Account+Contact+Opportunity transaksional) sudah ada sejak 2026-08-08 sebagai module ke-17, production-readiness lengkap sejak 2026-08-09 — fact table dw-service SENGAJA belum dikerjakan. ✅ Ticketing (Ticket Categories/Tickets/Comments, alur status close/reopen) sudah ada sejak 2026-08-09 sebagai module ke-18 — core module saja, production-readiness & fact table dw-service SENGAJA belum dikerjakan (pola dua-tahap yang sama seperti CRM). E-Commerce masih terbuka kalau ada kebutuhan lanjutan |
+| **Modul bisnis tambahan** | ✅ CRM (Leads/Accounts/Contacts/Opportunities/Activities, termasuk konversi Lead→Account+Contact+Opportunity transaksional) sudah ada sejak 2026-08-08 sebagai module ke-17, production-readiness lengkap sejak 2026-08-09 — fact table dw-service SENGAJA belum dikerjakan. ✅ Ticketing (Ticket Categories/Tickets/Comments, alur status close/reopen) sudah ada sejak 2026-08-09 sebagai module ke-18, production-readiness lengkap sejak 2026-08-09 (hari yang sama) — fact table dw-service SENGAJA belum dikerjakan. E-Commerce masih terbuka kalau ada kebutuhan lanjutan |
 | **Frontend charts di BI** | ✅ 3 chart per bulan dari `dw-service` (Revenue vs Expense, Stock In vs Out, Sales Value — komponen `GroupedBarChart` yang sama, generik untuk 1 atau N seri) sudah ada di BI Dashboards sejak 2026-08-08 — chart tambahan lain masih bisa dikerjakan kalau ada kebutuhan |
 | **Production deployment** | Real cloud infra (managed Postgres, Kafka cluster, K8s managed) |
 
