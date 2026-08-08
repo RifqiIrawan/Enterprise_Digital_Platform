@@ -110,3 +110,60 @@ func TestMonthlyFinanceSummary_NoDataReturnsEmpty(t *testing.T) {
 		t.Errorf("expected empty summary for company with no data, got %+v", summary)
 	}
 }
+
+// TestMonthlyFinanceSummary_DualWriteDoesNotDoubleCount adalah test regresi
+// UNTUK Materialized View (mv_finance_monthly_line_state, lihat komentar
+// MonthlyFinanceSummary di clickhouse.go) -- dw-service dual-write ke
+// fact_finance_journal_lines lewat DUA jalur terpisah yang benar-benar
+// berjalan sebagai proses/waktu berbeda: batch ETL (internal/etl, tiap 5
+// menit) dan Kafka Streaming ETL (internal/streaming, event-triggered). Line
+// yang sama bisa masuk dua kali dengan synced_at berbeda. MV memproses
+// setiap event INSERT independen (bukan menunggu ReplacingMergeTree merge di
+// background) -- kalau desainnya SummingMergeTree/sum() naif per baris,
+// dual-write ini akan membuat revenue-nya terhitung DOBEL. Test ini meniru
+// itu secara eksplisit: DUA panggilan InsertFinanceJournalLines TERPISAH
+// (bukan satu panggilan dengan slice 2 baris -- itu akan diproses MV sebagai
+// SATU block dan ke-GROUP BY sebelum sempat jadi bug) untuk line_id yang
+// SAMA, synced_at kedua LEBIH BARU dari yang pertama.
+func TestMonthlyFinanceSummary_DualWriteDoesNotDoubleCount(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	lineID := uuid.New()
+	entryDate := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
+	firstSync := time.Now()
+	secondSync := firstSync.Add(5 * time.Second)
+
+	row := ch.FinanceJournalLineRow{
+		LineID: lineID, JournalID: uuid.New(), CompanyID: companyID,
+		EntryNumber: "JE-DUALWRITE", EntryDate: entryDate, Period: "2026-06",
+		ReferenceType: "MANUAL", EntryStatus: "POSTED",
+		AccountID: uuid.New(), AccountCode: "4000", AccountName: "Revenue",
+		AccountType: "REVENUE", DebitAmount: 0, CreditAmount: 500,
+	}
+
+	// Jalur 1: seolah batch ETL mensync line ini.
+	if err := chClient.InsertFinanceJournalLines(ctx, []ch.FinanceJournalLineRow{row}, firstSync); err != nil {
+		t.Fatalf("InsertFinanceJournalLines (batch): %v", err)
+	}
+	// Jalur 2: seolah streaming ETL mensync line yang SAMA lagi (mis. dipicu
+	// event finance.journal.posted yang tiba nyaris bersamaan), synced_at
+	// lebih baru -- INSERT terpisah, bukan bagian dari slice yang sama.
+	if err := chClient.InsertFinanceJournalLines(ctx, []ch.FinanceJournalLineRow{row}, secondSync); err != nil {
+		t.Fatalf("InsertFinanceJournalLines (streaming): %v", err)
+	}
+
+	summary, err := chClient.MonthlyFinanceSummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("MonthlyFinanceSummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected exactly 1 month, got %d: %+v", len(summary), summary)
+	}
+	got := summary[0]
+	if !got.Revenue.Equal(mustDecimal(t, "500")) {
+		t.Errorf("revenue = %s, want 500 (dual-write of the same line_id must NOT be double-counted to 1000)", got.Revenue)
+	}
+	if !got.Expense.Equal(mustDecimal(t, "0")) {
+		t.Errorf("expense = %s, want 0", got.Expense)
+	}
+}

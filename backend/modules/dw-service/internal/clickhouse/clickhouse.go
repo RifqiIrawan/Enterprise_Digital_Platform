@@ -170,6 +170,47 @@ PARTITION BY toYYYYMM(recorded_at) ORDER BY (company_id, reading_id);
 CREATE TABLE IF NOT EXISTS etl_sync_state (
     source_table String, last_synced_at DateTime
 ) ENGINE = ReplacingMergeTree(last_synced_at) ORDER BY source_table;
+
+-- agg_finance_monthly_line_state + mv_finance_monthly_line_state: Materialized
+-- View pertama di dw-service, backing MonthlyFinanceSummary (lihat bagian
+-- bawah file ini untuk kenapa desainnya BUKAN SummingMergeTree/
+-- AggregatingMergeTree sum-langsung yang lebih sederhana.
+CREATE TABLE IF NOT EXISTS agg_finance_monthly_line_state (
+    company_id UUID, month Date, line_id UUID,
+    revenue_state AggregateFunction(argMax, Decimal(18,2), DateTime),
+    expense_state AggregateFunction(argMax, Decimal(18,2), DateTime)
+) ENGINE = AggregatingMergeTree
+PARTITION BY toYYYYMM(month) ORDER BY (company_id, month, line_id);
+
+CREATE MATERIALIZED VIEW IF NOT EXISTS mv_finance_monthly_line_state
+TO agg_finance_monthly_line_state
+AS SELECT
+    company_id, toStartOfMonth(entry_date) AS month, line_id,
+    argMaxState(if(account_type = 'REVENUE', credit_amount, toDecimal64(0, 2)), synced_at) AS revenue_state,
+    argMaxState(if(account_type = 'EXPENSE', debit_amount, toDecimal64(0, 2)), synced_at) AS expense_state
+FROM fact_finance_journal_lines
+WHERE entry_status = 'POSTED'
+GROUP BY company_id, month, line_id;
+`
+
+// financeMonthlyStateBackfillSQL adalah query backfill SEKALI SAJA untuk
+// baris yang sudah ada di fact_finance_journal_lines SEBELUM MV ini dibuat --
+// ClickHouse MATERIALIZED VIEW hanya memproses baris yang di-INSERT SETELAH
+// MV dibuat, tidak backfill data historis secara otomatis (beda dari
+// `POPULATE`, yang TIDAK BISA dipakai bersama `TO <target table>` di versi
+// ClickHouse ini -- dikonfirmasi lewat percobaan langsung, error
+// "you can't declare both 'TO ...' and 'POPULATE'"). Query ini SENGAJA
+// identik dengan SELECT di definisi MV di atas -- keduanya harus tetap
+// sinkron kalau salah satu diubah.
+const financeMonthlyStateBackfillSQL = `
+INSERT INTO agg_finance_monthly_line_state
+SELECT
+    company_id, toStartOfMonth(entry_date) AS month, line_id,
+    argMaxState(if(account_type = 'REVENUE', credit_amount, toDecimal64(0, 2)), synced_at) AS revenue_state,
+    argMaxState(if(account_type = 'EXPENSE', debit_amount, toDecimal64(0, 2)), synced_at) AS expense_state
+FROM fact_finance_journal_lines
+WHERE entry_status = 'POSTED'
+GROUP BY company_id, month, line_id
 `
 
 // EnsureSchema membuat tabel-tabel di atas kalau belum ada -- idempotent,
@@ -182,6 +223,32 @@ func (c *Client) EnsureSchema(ctx context.Context) error {
 		if err := c.conn.Exec(ctx, stmt); err != nil {
 			return fmt.Errorf("ensure schema: %w", err)
 		}
+	}
+	if err := c.backfillFinanceMonthlyState(ctx); err != nil {
+		return fmt.Errorf("ensure schema: %w", err)
+	}
+	return nil
+}
+
+// backfillFinanceMonthlyState menjalankan financeMonthlyStateBackfillSQL
+// SEKALI SAJA -- dijaga oleh count() check supaya EnsureSchema tetap murah
+// dipanggil tiap startup service pada steady state (tanpa guard ini, tiap
+// restart akan full-scan ulang fact_finance_journal_lines dan menulis baris
+// state duplikat, benar secara hasil query karena argMax deterministik tapi
+// boros). Guard ini cukup untuk kasus MV baru dibuat sekali di awal umur
+// service; kalau MV di-drop lalu dibuat ulang secara manual di masa depan,
+// backfill perlu dipicu manual juga (count() != 0 lagi setelah baris pertama
+// masuk lewat sinkronisasi berikutnya).
+func (c *Client) backfillFinanceMonthlyState(ctx context.Context) error {
+	n, err := c.CountRows(ctx, "agg_finance_monthly_line_state")
+	if err != nil {
+		return fmt.Errorf("check agg_finance_monthly_line_state: %w", err)
+	}
+	if n > 0 {
+		return nil
+	}
+	if err := c.conn.Exec(ctx, financeMonthlyStateBackfillSQL); err != nil {
+		return fmt.Errorf("backfill agg_finance_monthly_line_state: %w", err)
 	}
 	return nil
 }
@@ -257,18 +324,44 @@ type MonthlyFinanceSummaryRow struct {
 
 // MonthlyFinanceSummary agregasi fact_finance_journal_lines per bulan untuk
 // satu company -- query analitik pertama yang benar-benar membaca dari
-// ClickHouse (bukan cuma CountRows untuk status sync). Pakai FINAL supaya
-// baris duplikat dari ReplacingMergeTree (dua jalur tulis: batch ETL 5 menit
-// + Kafka Streaming ETL, lihat internal/streaming) yang belum sempat
-// di-merge background tidak menghitung revenue/expense dobel.
+// ClickHouse (bukan cuma CountRows untuk status sync).
+//
+// Dibaca dari agg_finance_monthly_line_state (Materialized View
+// mv_finance_monthly_line_state), BUKAN langsung dari fact_finance_journal_lines
+// FINAL seperti versi awal endpoint ini -- MV pre-agregasi di setiap INSERT
+// (bukan di setiap query), sehingga tabel yang di-scan di sini jauh lebih
+// sempit (5 kolom kecil per baris vs 17 kolom fact table penuh).
+//
+// Query ini SENGAJA dua tingkat, BUKAN sum() langsung satu tingkat:
+//  1. Tingkat dalam: argMaxMerge per (company_id, month, line_id) --
+//     menyelesaikan nilai TERAKHIR tiap baris journal line, persis makna
+//     FINAL di tabel asli. Ini WAJIB ada karena dw-service dual-write ke
+//     fact_finance_journal_lines (batch ETL 5 menit DAN Kafka Streaming ETL,
+//     lihat internal/streaming) -- line_id yang sama bisa di-INSERT dua kali
+//     dengan synced_at berbeda. MV memproses tiap event INSERT independen
+//     (tidak menunggu merge ReplacingMergeTree di background), jadi tanpa
+//     argMax di tingkat ini, revenue/expense akan terhitung DOBEL untuk
+//     setiap baris yang di-dual-write. Dibuktikan lewat
+//     TestMonthlyFinanceSummary_DualWriteDoesNotDoubleCount (2 InsertFinance-
+//     JournalLines terpisah dengan line_id sama, synced_at berbeda, meniru
+//     proses batch+streaming yang benar-benar terpisah).
+//  2. Tingkat luar: sum() biasa per bulan dari hasil tingkat dalam yang
+//     sudah di-dedup per baris.
 func (c *Client) MonthlyFinanceSummary(ctx context.Context, companyID uuid.UUID) ([]MonthlyFinanceSummaryRow, error) {
 	rows, err := c.conn.Query(ctx, `
 		SELECT
-			toString(toStartOfMonth(entry_date)) AS month,
-			sumIf(credit_amount, account_type = 'REVENUE') AS revenue,
-			sumIf(debit_amount, account_type = 'EXPENSE') AS expense
-		FROM fact_finance_journal_lines FINAL
-		WHERE company_id = ? AND entry_status = 'POSTED'
+			toString(month) AS month,
+			sum(revenue) AS revenue,
+			sum(expense) AS expense
+		FROM (
+			SELECT
+				company_id, month, line_id,
+				argMaxMerge(revenue_state) AS revenue,
+				argMaxMerge(expense_state) AS expense
+			FROM agg_finance_monthly_line_state
+			WHERE company_id = ?
+			GROUP BY company_id, month, line_id
+		)
 		GROUP BY month
 		ORDER BY month
 	`, companyID)
