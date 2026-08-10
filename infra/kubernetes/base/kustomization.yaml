@@ -20,6 +20,7 @@ resources:
   - iot-service.yaml
   - crm-service.yaml
   - ticketing-service.yaml
+  - ecommerce-service.yaml
   - frontend.yaml
   - ingress.yaml
 
@@ -91,6 +92,7 @@ configMapGenerator:
       - IOT_SERVICE_URL=http://iot-service:8094
       - CRM_SERVICE_URL=http://crm-service:8096
       - TICKETING_SERVICE_URL=http://ticketing-service:8097
+      - ECOMMERCE_SERVICE_URL=http://ecommerce-service:8098
       - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
 
   - name: finance-service-config
@@ -210,3 +212,10 @@ configMapGenerator:
       - PORT=8097
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_TICKETING
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+
+  - name: ecommerce-service-config
+    literals:
+      - PORT=8098
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_ECOMMERCE
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089

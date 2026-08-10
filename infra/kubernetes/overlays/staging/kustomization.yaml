@@ -52,6 +52,8 @@ replicas:
     count: 2
   - name: ticketing-service
     count: 2
+  - name: ecommerce-service
+    count: 2
   - name: frontend
     count: 2
 

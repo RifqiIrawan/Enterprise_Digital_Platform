@@ -1,6 +1,6 @@
 # E-Commerce Service
 
-Status: **Fase 3 — diimplementasikan (core module)** (2026-08-10). Modul bisnis baru ketiga di luar 9 modul Fase 2 awal (setelah CRM dan Ticketing) — pilihan terakhir dari opsi roadmap "New business module" (Ticketing dan E-Commerce sebelumnya ditawarkan bersamaan, Ticketing dipilih lebih dulu).
+Status: **Fase 3 — diimplementasikan, termasuk production-readiness** (2026-08-10, dua sesi hari yang sama). Modul bisnis baru ketiga di luar 9 modul Fase 2 awal (setelah CRM dan Ticketing) — pilihan terakhir dari opsi roadmap "New business module" (Ticketing dan E-Commerce sebelumnya ditawarkan bersamaan, Ticketing dipilih lebih dulu).
 
 Role terkait: `ecommerce`.
 
@@ -50,7 +50,6 @@ Frontend: `frontend/web/src/pages/ecommerce/OrdersPage.jsx`, route `/ecommerce/o
 ## Belum ada / batasan yang disengaja
 
 - **Belum ada fact table dw-service** untuk E-Commerce — tidak ada bukti kebutuhan BI/reporting saat modul ini dibangun.
-- **Belum ada production-readiness** (Dockerfile, docker-compose service block, Kubernetes manifest, entri CI, env template staging/prod, target Prometheus) — sengaja ditunda ke sesi terpisah, sama pola dua-tahap seperti crm-service dan ticketing-service.
 - **Tidak ada validasi live ke warehouse-service saat order dibuat** — `product_id`/`product_sku`/`product_name`/`unit_price` di setiap baris dipercaya apa adanya dari request (frontend sudah mengambilnya dari `GET /api/warehouse/products`), tidak ada panggilan HTTP balik untuk memverifikasi produk itu benar-benar ada atau harganya masuk akal. Sama seperti `sales_order_lines` di sales-service, ini trade-off yang disengaja untuk menghindari coupling ekstra saat create — kalau nanti terbukti perlu, validasi bisa ditambahkan di dalam transaksi `createOrder` (pola yang sama seperti `createTicket` memvalidasi `category_id` ke tabel lokalnya sendiri).
 - Nomor order digenerate via `COUNT(*)+1` per company per periode (`nextSequence`, disalin dari sales-service/crm-service/ticketing-service) — cukup untuk dev/demo, bukan production-grade di bawah concurrency tinggi (batasan yang sama sudah didokumentasikan di `finance-service/README.md`, `crm-service/README.md`, dan `ticketing-service/README.md`).
 - Customer TIDAK di-link ke CRM Account/Contact (keputusan sengaja, lihat "Lingkup" di atas) — kalau ternyata dibutuhkan nanti, pola soft-link (nullable UUID tanpa FK/validasi lintas service, karena beda database) bisa ditambahkan sebagai kolom opsional tanpa migrasi breaking.

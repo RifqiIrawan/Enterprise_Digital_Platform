@@ -84,6 +84,7 @@ jobs:
           - modules/iot-service
           - modules/crm-service
           - modules/ticketing-service
+          - modules/ecommerce-service
 
     steps:
       - uses: actions/checkout@v4
