@@ -15,12 +15,13 @@ import (
 )
 
 var validReferenceTypes = map[string]bool{
-	"PURCHASE_ORDER": true,
-	"SALES_ORDER":    true,
-	"TRANSFER":       true,
-	"OPNAME":         true,
-	"MANUAL":         true,
-	"WORK_ORDER":     true,
+	"PURCHASE_ORDER":  true,
+	"SALES_ORDER":     true,
+	"TRANSFER":        true,
+	"OPNAME":          true,
+	"MANUAL":          true,
+	"WORK_ORDER":      true,
+	"ECOMMERCE_ORDER": true, // stok keluar dari ecommerce-service saat order SHIPPED, lihat internal/warehouseclient di sana
 }
 
 // findOrCreateProduct mencocokkan product_name teks bebas (dari PO/SO

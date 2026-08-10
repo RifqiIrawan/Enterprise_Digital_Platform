@@ -47,6 +47,7 @@ import ActivitiesPage from './pages/crm/ActivitiesPage.jsx'
 import TicketCategoriesPage from './pages/ticketing/TicketCategoriesPage.jsx'
 import TicketsPage from './pages/ticketing/TicketsPage.jsx'
 import TicketCommentsPage from './pages/ticketing/TicketCommentsPage.jsx'
+import OrdersPage from './pages/ecommerce/OrdersPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -113,6 +114,7 @@ function App() {
         <Route path="/ticketing/categories" element={<TicketCategoriesPage />} />
         <Route path="/ticketing/tickets" element={<TicketsPage />} />
         <Route path="/ticketing/comments" element={<TicketCommentsPage />} />
+        <Route path="/ecommerce/orders" element={<OrdersPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

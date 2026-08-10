@@ -108,6 +108,12 @@ var Topics = []string{
 	"ticketing.ticket.closed",
 	"ticketing.ticket.reopened",
 	"ticketing.comment.created",
+	"ecommerce.order.created",
+	"ecommerce.order.updated",
+	"ecommerce.order.paid",
+	"ecommerce.order.shipped",
+	"ecommerce.order.delivered",
+	"ecommerce.order.cancelled",
 }
 
 const (
