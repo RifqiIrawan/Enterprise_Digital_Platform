@@ -53,6 +53,7 @@ func New(cfg *config.Config) http.Handler {
 		{prefix: "/api/crm", proxy: newProxy(cfg.CRMServiceURL, "/api/crm")},
 		{prefix: "/api/ticketing", proxy: newProxy(cfg.TicketingServiceURL, "/api/ticketing")},
 		{prefix: "/api/ecommerce", proxy: newProxy(cfg.EcommerceServiceURL, "/api/ecommerce")},
+		{prefix: "/api/fleet", proxy: newProxy(cfg.FleetServiceURL, "/api/fleet")},
 	}
 
 	mux := http.NewServeMux()

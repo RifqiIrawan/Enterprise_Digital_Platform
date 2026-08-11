@@ -114,6 +114,15 @@ var Topics = []string{
 	"ecommerce.order.shipped",
 	"ecommerce.order.delivered",
 	"ecommerce.order.cancelled",
+	"fleet.vehicle.created",
+	"fleet.vehicle.updated",
+	"fleet.driver.created",
+	"fleet.driver.updated",
+	"fleet.delivery.created",
+	"fleet.delivery.updated",
+	"fleet.delivery.dispatched",
+	"fleet.delivery.delivered",
+	"fleet.delivery.cancelled",
 }
 
 const (

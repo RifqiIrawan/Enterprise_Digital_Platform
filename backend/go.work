@@ -20,4 +20,5 @@ use (
 	./modules/crm-service
 	./modules/ticketing-service
 	./modules/ecommerce-service
+	./modules/fleet-service
 )
