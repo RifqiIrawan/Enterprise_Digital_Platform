@@ -43,17 +43,32 @@ const (
 // handler SQL di handlers.go. Skema ini meniru tabel asli di masing-masing
 // service, hanya kolom yang benar-benar di-SELECT oleh handler (atau wajib
 // ada karena FK/NOT NULL/DEFAULT). Sama persis polanya dengan sourceSchema
-// di internal/etl/testmain_test.go tapi hanya untuk 8 domain (tidak IoT).
+// di internal/etl/testmain_test.go tapi hanya untuk 11 domain (tidak IoT --
+// IoT masuk lewat MQTT langsung ke Postgres, tidak lewat Kafka).
 const streamingSourceSchema = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- Finance
+-- Finance. Tabel "accounts" ini dipakai BERSAMA oleh dua source berbeda dalam
+-- skema test ini: chart-of-accounts finance-service (account_code/account_name/
+-- account_type) dan customer accounts crm-service (account_code/name) -- di
+-- production keduanya tabel "accounts" di database yang berbeda, jadi tidak
+-- pernah benar-benar bentrok; disatukan di sini murni demi kesederhanaan
+-- harness (satu Postgres test untuk semua domain). Kolom "name" khusus CRM.
 CREATE TABLE IF NOT EXISTS accounts (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	account_code VARCHAR(20) NOT NULL,
-	account_name VARCHAR(200) NOT NULL,
-	account_type VARCHAR(20) NOT NULL
+	account_name VARCHAR(200) NOT NULL DEFAULT '',
+	account_type VARCHAR(20) NOT NULL DEFAULT '',
+	name VARCHAR(200) DEFAULT ''
 );
+-- Harness ini TIDAK pernah drop database test antar run, jadi CREATE TABLE IF
+-- NOT EXISTS di atas jadi no-op total di mesin yang sudah pernah menjalankan
+-- versi skema sebelumnya -- kolom/DEFAULT baru tidak akan pernah sampai ke
+-- tabel lamanya. ALTER idempoten di bawah inilah yang membawa database test
+-- lama ikut naik versi (di CI database selalu kosong, jadi cuma no-op).
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS name VARCHAR(200) DEFAULT '';
+ALTER TABLE accounts ALTER COLUMN account_name SET DEFAULT '';
+ALTER TABLE accounts ALTER COLUMN account_type SET DEFAULT '';
 CREATE TABLE IF NOT EXISTS journal_entries (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	company_id UUID NOT NULL,
@@ -236,6 +251,71 @@ CREATE TABLE IF NOT EXISTS maintenance_schedules (
 	status VARCHAR(20) NOT NULL DEFAULT 'SCHEDULED',
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- CRM (accounts di atas dipakai ulang sebagai parent opportunities)
+CREATE TABLE IF NOT EXISTS opportunities (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	opportunity_number VARCHAR(30) NOT NULL,
+	account_id UUID NOT NULL REFERENCES accounts(id),
+	contact_id UUID,
+	name VARCHAR(200) NOT NULL,
+	stage VARCHAR(20) NOT NULL DEFAULT 'PROSPECTING',
+	amount NUMERIC(15,2) NOT NULL DEFAULT 0,
+	probability SMALLINT NOT NULL DEFAULT 0,
+	expected_close_date DATE,
+	owner_user_id UUID,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Ticketing
+CREATE TABLE IF NOT EXISTS ticket_categories (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	category_code VARCHAR(30) NOT NULL,
+	name VARCHAR(100) NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tickets (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	ticket_number VARCHAR(30) NOT NULL,
+	category_id UUID NOT NULL REFERENCES ticket_categories(id),
+	subject VARCHAR(200) NOT NULL,
+	priority VARCHAR(20) NOT NULL DEFAULT 'MEDIUM',
+	status VARCHAR(20) NOT NULL DEFAULT 'OPEN',
+	requester_name VARCHAR(200) NOT NULL,
+	requester_email VARCHAR(200),
+	assigned_to UUID,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	resolved_at TIMESTAMPTZ,
+	closed_at TIMESTAMPTZ,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- E-Commerce
+CREATE TABLE IF NOT EXISTS orders (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	order_number VARCHAR(30) NOT NULL,
+	customer_name VARCHAR(200) NOT NULL,
+	customer_email VARCHAR(200),
+	status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+	order_date DATE NOT NULL DEFAULT CURRENT_DATE,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS order_items (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	order_id UUID NOT NULL REFERENCES orders(id),
+	product_id UUID NOT NULL,
+	product_sku VARCHAR(50) NOT NULL,
+	product_name VARCHAR(200) NOT NULL,
+	unit_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+	quantity NUMERIC(18,3) NOT NULL DEFAULT 1,
+	line_total NUMERIC(18,2) NOT NULL DEFAULT 0
+);
 `
 
 func TestMain(m *testing.M) {
@@ -276,8 +356,9 @@ func TestMain(m *testing.M) {
 	}
 
 	// Semua sourcedb.Pools menunjuk ke database test yang sama (schema sudah
-	// mencakup tabel dari semua domain). Tidak perlu 8 database terpisah untuk
-	// test karena tidak ada konflik nama tabel antar domain.
+	// mencakup tabel dari semua domain). Tidak perlu 11 database terpisah untuk
+	// test karena satu-satunya nama tabel yang benar-benar bentrok antar domain
+	// ("accounts": finance vs crm) sudah disatukan di streamingSourceSchema.
 	pools = &sourcedb.Pools{
 		Finance:    pool,
 		Sales:      pool,
@@ -287,6 +368,9 @@ func TestMain(m *testing.M) {
 		Production: pool,
 		QC:         pool,
 		Asset:      pool,
+		CRM:        pool,
+		Ticketing:  pool,
+		Ecommerce:  pool,
 	}
 
 	// Connect ClickHouse.

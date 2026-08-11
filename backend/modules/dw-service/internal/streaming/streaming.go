@@ -21,9 +21,10 @@ type handlerFn func(context.Context, []byte, *sourcedb.Pools, *ch.Client, *datal
 // langsung ke Postgres via MQTT, bukan lewat Kafka). Batch ETL di
 // internal/etl/iot.go tetap menangani IoT readings setiap 5 menit.
 //
-// 12 topic → 8 domain handler (sales/purchasing/asset masing-masing punya
-// 2 trigger berbeda tapi handler yang sama, karena keduanya cuma mengubah
-// status entitas dan kita extract ulang seluruh data entitas itu).
+// 18 topic → 11 domain handler (sales/purchasing/asset/crm/ticketing/
+// ecommerce masing-masing punya 2 trigger berbeda tapi handler yang sama,
+// karena keduanya cuma mengubah status entitas dan kita extract ulang
+// seluruh data entitas itu).
 var topicHandlers = map[string]handlerFn{
 	// Finance: journal entry di-post → extract semua lines-nya
 	"finance.journal.posted": handleFinanceJournalPosted,
@@ -52,6 +53,18 @@ var topicHandlers = map[string]handlerFn{
 	// Asset: maintenance selesai atau dibatalkan → status berubah
 	"asset.maintenance.completed": handleAssetMaintenanceEvent,
 	"asset.maintenance.cancelled": handleAssetMaintenanceEvent,
+
+	// CRM: opportunity dimenangkan atau kalah → stage terminal, extract ulang
+	"crm.opportunity.won":  handleCRMOpportunityEvent,
+	"crm.opportunity.lost": handleCRMOpportunityEvent,
+
+	// Ticketing: tiket ditutup atau dibuka lagi → status terminal berubah
+	"ticketing.ticket.closed":   handleTicketingTicketEvent,
+	"ticketing.ticket.reopened": handleTicketingTicketEvent,
+
+	// E-Commerce: order dibayar atau dikirim → status berubah, extract ulang order_items
+	"ecommerce.order.paid":    handleEcommerceOrderLineEvent,
+	"ecommerce.order.shipped": handleEcommerceOrderLineEvent,
 }
 
 // Start menjalankan satu goroutine konsumer per topic. Setiap goroutine:

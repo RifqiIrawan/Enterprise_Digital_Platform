@@ -5,7 +5,7 @@
 
 ## Overview
 
-"Big Data" di EDP berarti **ClickHouse sebagai OLAP engine** untuk analytical queries di atas 9 fact tables. Tidak ada Apache Spark, Airflow, Trino, atau Flink — semua data processing dilakukan oleh dw-service (Go) dan query langsung ke ClickHouse.
+"Big Data" di EDP berarti **ClickHouse sebagai OLAP engine** untuk analytical queries di atas 12 fact tables. Tidak ada Apache Spark, Airflow, Trino, atau Flink — semua data processing dilakukan oleh dw-service (Go) dan query langsung ke ClickHouse.
 
 ---
 

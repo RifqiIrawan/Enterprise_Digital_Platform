@@ -28,7 +28,7 @@
 │  BATCH ETL      │    │  KAFKA STREAMING ETL            │
 │  (ticker 5 min) │    │  (near-realtime, <100ms)        │
 │                 │    │                                  │
-│  9 SyncX() fns  │    │  12 Kafka topics                │
+│  12 SyncX() fns │    │  18 Kafka topics                │
 │  watermark-based│    │  → single-row Postgres re-query  │
 │  incremental    │    │  → insert ClickHouse             │
 └────────┬────────┘    └────────────────┬────────────────┘
@@ -37,7 +37,7 @@
                         ▼
          ┌──────────────────────────────┐
          │     CLICKHOUSE (dw database) │
-         │  9 fact tables               │
+         │  12 fact tables              │
          │  ReplacingMergeTree engine   │
          │  (upsert via synced_at)      │
          └──────────────────────────────┘
@@ -53,7 +53,7 @@
 
 ---
 
-## 9 Fact Tables di ClickHouse
+## 12 Fact Tables di ClickHouse
 
 | Fact Table | Source | Watermark Column | Engine |
 |------------|--------|-----------------|--------|
@@ -66,6 +66,9 @@
 | `fact_qc_inspections` | qc_service | quality_inspections.updated_at | ReplacingMergeTree(synced_at) |
 | `fact_asset_maintenance` | asset_service | maintenance_schedules.updated_at | ReplacingMergeTree(synced_at) |
 | `fact_iot_readings` | iot_service | readings.created_at | ReplacingMergeTree(synced_at) |
+| `fact_crm_opportunities` | crm_service | opportunities.updated_at | ReplacingMergeTree(synced_at) |
+| `fact_ticketing_tickets` | ticketing_service | tickets.updated_at | ReplacingMergeTree(synced_at) |
+| `fact_ecommerce_order_lines` | ecommerce_service | orders.updated_at | ReplacingMergeTree(synced_at) |
 
 Semua tabel **denormalized** — JOIN dimensi (customer_name, account_code, dll) dilakukan saat extract dari Postgres, bukan saat query di ClickHouse. Ini sesuai best practice ClickHouse sebagai kolom-store OLAP.
 
@@ -91,7 +94,7 @@ Semua tabel **denormalized** — JOIN dimensi (customer_name, account_code, dll)
 
 **Package**: `internal/streaming/` (consumer.go, handlers.go, streaming.go)
 
-**12 Topic yang Dikonsumsi** (consumer group: `dw-service-streaming`):
+**18 Topic yang Dikonsumsi** (consumer group: `dw-service-streaming`):
 
 | Kafka Topic | Entity ID | Target Fact |
 |-------------|-----------|-------------|
@@ -107,6 +110,12 @@ Semua tabel **denormalized** — JOIN dimensi (customer_name, account_code, dll)
 | `qc.inspection.created` | inspection_id | fact_qc_inspections |
 | `asset.maintenance.completed` | schedule_id | fact_asset_maintenance |
 | `asset.maintenance.cancelled` | schedule_id | fact_asset_maintenance |
+| `crm.opportunity.won` | opportunity_id | fact_crm_opportunities |
+| `crm.opportunity.lost` | opportunity_id | fact_crm_opportunities |
+| `ticketing.ticket.closed` | ticket_id | fact_ticketing_tickets |
+| `ticketing.ticket.reopened` | ticket_id | fact_ticketing_tickets |
+| `ecommerce.order.paid` | order_id | fact_ecommerce_order_lines |
+| `ecommerce.order.shipped` | order_id | fact_ecommerce_order_lines |
 
 IoT readings **tidak ada di Kafka** (telemetri frekuensi tinggi → Postgres langsung via MQTT). Batch ETL menangani IoT.
 
@@ -128,5 +137,5 @@ Kedua path (batch + streaming) bisa menulis baris yang sama ke ClickHouse — in
 | Endpoint | Fungsi |
 |----------|--------|
 | `GET /health` | Status service |
-| `POST /sync` | Trigger manual batch ETL untuk semua 9 fact |
+| `POST /sync` | Trigger manual batch ETL untuk semua 12 fact |
 | `GET /sync/status` | Row count per fact + last watermark |

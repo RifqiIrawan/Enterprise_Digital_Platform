@@ -167,6 +167,9 @@ configMapGenerator:
       - QC_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/qc_service?sslmode=disable
       - ASSET_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/asset_service?sslmode=disable
       - IOT_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/iot_service?sslmode=disable
+      - CRM_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/crm_service?sslmode=disable
+      - TICKETING_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/ticketing_service?sslmode=disable
+      - ECOMMERCE_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/ecommerce_service?sslmode=disable
       - CLICKHOUSE_ADDR=host.docker.internal:9101
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=clickhouse

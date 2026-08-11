@@ -38,7 +38,7 @@ Platform ini dirancang untuk **pembelajaran mendalam dan demonstrasi** ekosistem
 | **Fase 4 — Hardening** | Automated tests (251+ test, 1 bug produksi ditemukan), Branch-level filtering, Company/Branch switcher | ✅ Selesai |
 | **Fase 5 — Production-Readiness** | Dockerfile + docker-compose, K8s Kustomize manifests, Env config templates, GitHub Actions CI | ✅ Selesai |
 | **Fase 6 — IoT** | iot-service: Device registry, MQTT pipeline, threshold alerts, IoT Simulator | ✅ Selesai |
-| **Fase 7/8 — Data Layer** | dw-service: 9 fact tables (ClickHouse), Batch ETL + Kafka Streaming ETL, Data Lake (MinIO JSON Lines) | ✅ Selesai |
+| **Fase 7/8 — Data Layer** | dw-service: 12 fact tables (ClickHouse), Batch ETL + Kafka Streaming ETL, Data Lake (MinIO JSON Lines) | ✅ Selesai |
 
 ---
 

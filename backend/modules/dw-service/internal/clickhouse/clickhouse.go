@@ -167,6 +167,36 @@ CREATE TABLE IF NOT EXISTS fact_iot_readings (
 ) ENGINE = ReplacingMergeTree(synced_at)
 PARTITION BY toYYYYMM(recorded_at) ORDER BY (company_id, reading_id);
 
+CREATE TABLE IF NOT EXISTS fact_crm_opportunities (
+    opportunity_id UUID, company_id UUID, branch_id Nullable(UUID),
+    opportunity_number String, account_id UUID, account_name String,
+    contact_id Nullable(UUID), opportunity_name String, stage String,
+    amount Decimal(15,2), probability Int32,
+    expected_close_date Nullable(Date), owner_user_id Nullable(UUID),
+    created_at DateTime, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(created_at) ORDER BY (company_id, opportunity_id);
+
+CREATE TABLE IF NOT EXISTS fact_ticketing_tickets (
+    ticket_id UUID, company_id UUID, branch_id Nullable(UUID),
+    ticket_number String, category_id UUID, category_name String,
+    subject String, priority String, status String,
+    requester_name String, requester_email Nullable(String), assigned_to Nullable(UUID),
+    created_at DateTime, resolved_at Nullable(DateTime), closed_at Nullable(DateTime),
+    updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(created_at) ORDER BY (company_id, ticket_id);
+
+CREATE TABLE IF NOT EXISTS fact_ecommerce_order_lines (
+    line_id UUID, order_id UUID, company_id UUID, branch_id Nullable(UUID),
+    order_number String, order_date Date, order_status String,
+    customer_name String, customer_email Nullable(String),
+    product_id UUID, product_sku String, product_name String,
+    quantity Decimal(18,3), unit_price Decimal(18,2), amount Decimal(18,2),
+    updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(order_date) ORDER BY (company_id, line_id);
+
 CREATE TABLE IF NOT EXISTS etl_sync_state (
     source_table String, last_synced_at DateTime
 ) ENGINE = ReplacingMergeTree(last_synced_at) ORDER BY source_table;
@@ -811,6 +841,122 @@ func (c *Client) InsertIoTReadings(ctx context.Context, rows []IoTReadingRow, sy
 			toDecimalPtr(r.ValueNumeric), r.ValueText, r.RecordedAt, syncedAt,
 		); err != nil {
 			return fmt.Errorf("append iot row %s: %w", r.ReadingID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type CRMOpportunityRow struct {
+	OpportunityID     uuid.UUID
+	CompanyID         uuid.UUID
+	BranchID          *uuid.UUID
+	OpportunityNumber string
+	AccountID         uuid.UUID
+	AccountName       string
+	ContactID         *uuid.UUID
+	OpportunityName   string
+	Stage             string
+	Amount            float64
+	Probability       int32
+	ExpectedCloseDate *time.Time
+	OwnerUserID       *uuid.UUID
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
+}
+
+func (c *Client) InsertCRMOpportunities(ctx context.Context, rows []CRMOpportunityRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_crm_opportunities")
+	if err != nil {
+		return fmt.Errorf("prepare crm batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.OpportunityID, r.CompanyID, r.BranchID, r.OpportunityNumber, r.AccountID, r.AccountName,
+			r.ContactID, r.OpportunityName, r.Stage, toDecimal(r.Amount), r.Probability,
+			r.ExpectedCloseDate, r.OwnerUserID, r.CreatedAt, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append crm row %s: %w", r.OpportunityID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type TicketingTicketRow struct {
+	TicketID       uuid.UUID
+	CompanyID      uuid.UUID
+	BranchID       *uuid.UUID
+	TicketNumber   string
+	CategoryID     uuid.UUID
+	CategoryName   string
+	Subject        string
+	Priority       string
+	Status         string
+	RequesterName  string
+	RequesterEmail *string
+	AssignedTo     *uuid.UUID
+	CreatedAt      time.Time
+	ResolvedAt     *time.Time
+	ClosedAt       *time.Time
+	UpdatedAt      time.Time
+}
+
+func (c *Client) InsertTicketingTickets(ctx context.Context, rows []TicketingTicketRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_ticketing_tickets")
+	if err != nil {
+		return fmt.Errorf("prepare ticketing batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.TicketID, r.CompanyID, r.BranchID, r.TicketNumber, r.CategoryID, r.CategoryName,
+			r.Subject, r.Priority, r.Status, r.RequesterName, r.RequesterEmail, r.AssignedTo,
+			r.CreatedAt, r.ResolvedAt, r.ClosedAt, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append ticketing row %s: %w", r.TicketID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type EcommerceOrderLineRow struct {
+	LineID        uuid.UUID
+	OrderID       uuid.UUID
+	CompanyID     uuid.UUID
+	BranchID      *uuid.UUID
+	OrderNumber   string
+	OrderDate     time.Time
+	OrderStatus   string
+	CustomerName  string
+	CustomerEmail *string
+	ProductID     uuid.UUID
+	ProductSKU    string
+	ProductName   string
+	Quantity      float64
+	UnitPrice     float64
+	Amount        float64
+	UpdatedAt     time.Time
+}
+
+func (c *Client) InsertEcommerceOrderLines(ctx context.Context, rows []EcommerceOrderLineRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_ecommerce_order_lines")
+	if err != nil {
+		return fmt.Errorf("prepare ecommerce batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.LineID, r.OrderID, r.CompanyID, r.BranchID, r.OrderNumber, r.OrderDate, r.OrderStatus,
+			r.CustomerName, r.CustomerEmail, r.ProductID, r.ProductSKU, r.ProductName,
+			toDecimal(r.Quantity), toDecimal(r.UnitPrice), toDecimal(r.Amount), r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append ecommerce row %s: %w", r.LineID, err)
 		}
 	}
 	return batch.Send()

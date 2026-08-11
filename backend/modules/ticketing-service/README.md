@@ -45,6 +45,6 @@ Frontend: `frontend/web/src/pages/ticketing/{TicketCategoriesPage,TicketsPage,Ti
 
 ## Belum ada / batasan yang disengaja
 
-- **Belum ada fact table dw-service** untuk Ticketing — tidak ada bukti kebutuhan BI/reporting saat modul ini dibangun.
+- **Belum ada endpoint analitik / Materialized View** di atas `fact_ticketing_tickets` — fact table-nya sendiri sudah ada sejak 2026-08-11 (batch ETL + streaming lewat `ticketing.ticket.closed`/`ticketing.ticket.reopened`), tapi belum ada query analitik yang memakainya.
 - Nomor tiket digenerate via `COUNT(*)+1` per company per periode (`nextSequence`, disalin dari crm-service/sales-service) — cukup untuk dev/demo, bukan production-grade di bawah concurrency tinggi (batasan yang sama sudah didokumentasikan di `finance-service/README.md` dan `crm-service/README.md`).
 - Requester TIDAK di-link ke CRM Account/Contact (keputusan sengaja, lihat "Lingkup" di atas) — kalau ternyata dibutuhkan nanti, pola soft-link (nullable UUID tanpa FK/validasi lintas service, karena beda database) bisa ditambahkan sebagai kolom opsional tanpa migrasi breaking.

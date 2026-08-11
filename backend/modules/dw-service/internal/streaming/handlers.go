@@ -427,3 +427,132 @@ func handleAssetMaintenanceEvent(ctx context.Context, raw []byte, sources *sourc
 	}
 	return insertAndLog(ctx, dest, lake, "asset_maintenance", out, dest.InsertAssetMaintenance)
 }
+
+// ---------------------------------------------------------------------------
+// CRM — opportunity.won, opportunity.lost
+// Kedua event dipetakan ke handler yang sama (stage berubah ke status
+// terminal, extract ulang) -- mirror duality asset completed/cancelled.
+// ---------------------------------------------------------------------------
+
+const crmSingleSQL = `
+	SELECT o.id, o.company_id, o.branch_id, o.opportunity_number, o.account_id, a.name AS account_name,
+	       o.contact_id, o.name AS opportunity_name, o.stage, o.amount, o.probability,
+	       o.expected_close_date, o.owner_user_id, o.created_at, o.updated_at
+	FROM opportunities o
+	JOIN accounts a ON a.id = o.account_id
+	WHERE o.id = $1`
+
+func handleCRMOpportunityEvent(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) error {
+	id, err := parseEntityID(raw)
+	if err != nil {
+		return err
+	}
+	rows, err := sources.CRM.Query(ctx, crmSingleSQL, id)
+	if err != nil {
+		return fmt.Errorf("query opportunity %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	var out []ch.CRMOpportunityRow
+	for rows.Next() {
+		var r ch.CRMOpportunityRow
+		if err := rows.Scan(
+			&r.OpportunityID, &r.CompanyID, &r.BranchID, &r.OpportunityNumber, &r.AccountID, &r.AccountName,
+			&r.ContactID, &r.OpportunityName, &r.Stage, &r.Amount, &r.Probability,
+			&r.ExpectedCloseDate, &r.OwnerUserID, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return fmt.Errorf("scan crm row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate crm rows: %w", err)
+	}
+	return insertAndLog(ctx, dest, lake, "opportunities", out, dest.InsertCRMOpportunities)
+}
+
+// ---------------------------------------------------------------------------
+// Ticketing — ticket.closed, ticket.reopened
+// Kedua event dipetakan ke handler yang sama (status terminal berubah,
+// extract ulang).
+// ---------------------------------------------------------------------------
+
+const ticketingSingleSQL = `
+	SELECT t.id, t.company_id, t.branch_id, t.ticket_number, t.category_id, c.name AS category_name,
+	       t.subject, t.priority, t.status, t.requester_name, t.requester_email, t.assigned_to,
+	       t.created_at, t.resolved_at, t.closed_at, t.updated_at
+	FROM tickets t
+	JOIN ticket_categories c ON c.id = t.category_id
+	WHERE t.id = $1`
+
+func handleTicketingTicketEvent(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) error {
+	id, err := parseEntityID(raw)
+	if err != nil {
+		return err
+	}
+	rows, err := sources.Ticketing.Query(ctx, ticketingSingleSQL, id)
+	if err != nil {
+		return fmt.Errorf("query ticket %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	var out []ch.TicketingTicketRow
+	for rows.Next() {
+		var r ch.TicketingTicketRow
+		if err := rows.Scan(
+			&r.TicketID, &r.CompanyID, &r.BranchID, &r.TicketNumber, &r.CategoryID, &r.CategoryName,
+			&r.Subject, &r.Priority, &r.Status, &r.RequesterName, &r.RequesterEmail, &r.AssignedTo,
+			&r.CreatedAt, &r.ResolvedAt, &r.ClosedAt, &r.UpdatedAt,
+		); err != nil {
+			return fmt.Errorf("scan ticketing row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate ticketing rows: %w", err)
+	}
+	return insertAndLog(ctx, dest, lake, "tickets", out, dest.InsertTicketingTickets)
+}
+
+// ---------------------------------------------------------------------------
+// E-Commerce — order.paid, order.shipped
+// Kedua event dipetakan ke handler yang sama (status order berubah, extract
+// ulang seluruh order_items-nya) -- mirror pola sales fulfilled/invoiced.
+// ---------------------------------------------------------------------------
+
+const ecommerceSingleSQL = `
+	SELECT oi.id, oi.order_id, o.company_id, o.branch_id, o.order_number, o.order_date, o.status,
+	       o.customer_name, o.customer_email, oi.product_id, oi.product_sku, oi.product_name,
+	       oi.quantity, oi.unit_price, oi.line_total, o.updated_at
+	FROM order_items oi
+	JOIN orders o ON o.id = oi.order_id
+	WHERE o.id = $1`
+
+func handleEcommerceOrderLineEvent(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) error {
+	id, err := parseEntityID(raw)
+	if err != nil {
+		return err
+	}
+	rows, err := sources.Ecommerce.Query(ctx, ecommerceSingleSQL, id)
+	if err != nil {
+		return fmt.Errorf("query order %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	var out []ch.EcommerceOrderLineRow
+	for rows.Next() {
+		var r ch.EcommerceOrderLineRow
+		if err := rows.Scan(
+			&r.LineID, &r.OrderID, &r.CompanyID, &r.BranchID, &r.OrderNumber, &r.OrderDate, &r.OrderStatus,
+			&r.CustomerName, &r.CustomerEmail, &r.ProductID, &r.ProductSKU, &r.ProductName,
+			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
+		); err != nil {
+			return fmt.Errorf("scan ecommerce row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate ecommerce rows: %w", err)
+	}
+	return insertAndLog(ctx, dest, lake, "order_items", out, dest.InsertEcommerceOrderLines)
+}

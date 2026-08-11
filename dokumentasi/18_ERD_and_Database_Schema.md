@@ -231,4 +231,4 @@ PARTITION BY toYYYYMM(entry_date)
 ORDER BY (company_id, line_id);
 ```
 
-Semua 9 fact table mengikuti pola yang sama: data denormalized + ORDER BY (company_id, {entity_id}).
+Semua 12 fact table mengikuti pola yang sama: data denormalized + ORDER BY (company_id, {entity_id}).

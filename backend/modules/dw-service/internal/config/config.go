@@ -16,6 +16,9 @@ type Config struct {
 	QCDatabaseURL         string
 	AssetDatabaseURL      string
 	IoTDatabaseURL        string
+	CRMDatabaseURL        string
+	TicketingDatabaseURL  string
+	EcommerceDatabaseURL  string
 	ClickHouseAddr        string
 	ClickHouseUser        string
 	ClickHousePassword    string
@@ -47,6 +50,9 @@ func Load() *Config {
 		QCDatabaseURL:         getEnv("QC_DATABASE_URL", "postgres://platform:platform@localhost:5432/qc_service?sslmode=disable"),
 		AssetDatabaseURL:      getEnv("ASSET_DATABASE_URL", "postgres://platform:platform@localhost:5432/asset_service?sslmode=disable"),
 		IoTDatabaseURL:        getEnv("IOT_DATABASE_URL", "postgres://platform:platform@localhost:5432/iot_service?sslmode=disable"),
+		CRMDatabaseURL:        getEnv("CRM_DATABASE_URL", "postgres://platform:platform@localhost:5432/crm_service?sslmode=disable"),
+		TicketingDatabaseURL:  getEnv("TICKETING_DATABASE_URL", "postgres://platform:platform@localhost:5432/ticketing_service?sslmode=disable"),
+		EcommerceDatabaseURL:  getEnv("ECOMMERCE_DATABASE_URL", "postgres://platform:platform@localhost:5432/ecommerce_service?sslmode=disable"),
 		ClickHouseAddr:        getEnv("CLICKHOUSE_ADDR", "localhost:9101"),
 		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", "clickhouse"),

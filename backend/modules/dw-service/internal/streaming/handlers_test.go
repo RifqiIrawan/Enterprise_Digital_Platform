@@ -375,6 +375,141 @@ func TestHandleAssetMaintenanceEvent(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// CRM
+// ---------------------------------------------------------------------------
+
+func TestHandleCRMOpportunityEvent(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	var accountID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO accounts (account_code, name) VALUES ('ACC-STREAM', 'PT Stream CRM') RETURNING id`,
+	).Scan(&accountID); err != nil {
+		t.Fatal(err)
+	}
+
+	var oppID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO opportunities (company_id, opportunity_number, account_id, name, stage, amount, probability)
+		VALUES ($1, 'OPP-STREAM-001', $2, 'Stream Deal', 'WON', 7500000, 100) RETURNING id`,
+		companyID, accountID).Scan(&oppID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := handleCRMOpportunityEvent(ctx, makeEvent(oppID), pools, chClient, nil); err != nil {
+		t.Fatalf("handleCRMOpportunityEvent: %v", err)
+	}
+
+	// Verifikasi bukan cuma "ada barisnya" tapi juga bahwa JOIN ke accounts
+	// benar-benar ter-resolve (account_name adalah satu-satunya kolom di fact
+	// ini yang tidak berasal dari tabel opportunities sendiri).
+	var gotAccountName, gotStage string
+	row := chClient.QueryRow(ctx,
+		"SELECT account_name, stage FROM fact_crm_opportunities FINAL WHERE company_id = ?", companyID)
+	if err := row.Scan(&gotAccountName, &gotStage); err != nil {
+		t.Fatalf("query crm row: %v", err)
+	}
+	if gotAccountName != "PT Stream CRM" {
+		t.Errorf("account_name = %q, want %q", gotAccountName, "PT Stream CRM")
+	}
+	if gotStage != "WON" {
+		t.Errorf("stage = %q, want WON", gotStage)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Ticketing
+// ---------------------------------------------------------------------------
+
+func TestHandleTicketingTicketEvent(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	var catID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO ticket_categories (category_code, name) VALUES ('CAT-STREAM', 'Technical Support') RETURNING id`,
+	).Scan(&catID); err != nil {
+		t.Fatal(err)
+	}
+
+	var ticketID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO tickets (company_id, ticket_number, category_id, subject, priority, status, requester_name, closed_at)
+		VALUES ($1, 'TICKET-STREAM-001', $2, 'Printer rusak', 'HIGH', 'CLOSED', 'Budi', now()) RETURNING id`,
+		companyID, catID).Scan(&ticketID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := handleTicketingTicketEvent(ctx, makeEvent(ticketID), pools, chClient, nil); err != nil {
+		t.Fatalf("handleTicketingTicketEvent: %v", err)
+	}
+
+	var gotCategoryName, gotStatus string
+	row := chClient.QueryRow(ctx,
+		"SELECT category_name, status FROM fact_ticketing_tickets FINAL WHERE company_id = ?", companyID)
+	if err := row.Scan(&gotCategoryName, &gotStatus); err != nil {
+		t.Fatalf("query ticketing row: %v", err)
+	}
+	if gotCategoryName != "Technical Support" {
+		t.Errorf("category_name = %q, want %q", gotCategoryName, "Technical Support")
+	}
+	if gotStatus != "CLOSED" {
+		t.Errorf("status = %q, want CLOSED", gotStatus)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// E-Commerce
+// ---------------------------------------------------------------------------
+
+func TestHandleEcommerceOrderLineEvent(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	var orderID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO orders (company_id, order_number, customer_name, status, order_date)
+		VALUES ($1, 'ORD-STREAM-001', 'Siti', 'SHIPPED', $2) RETURNING id`,
+		companyID, today()).Scan(&orderID); err != nil {
+		t.Fatal(err)
+	}
+
+	// Dua item dalam satu order — event-nya order-level (entity_id = order_id),
+	// jadi handler harus menarik SEMUA baris item order itu, bukan cuma satu.
+	mustExec(t, `INSERT INTO order_items (order_id, product_id, product_sku, product_name, unit_price, quantity, line_total)
+		VALUES ($1, $2, 'SKU-A', 'Widget A', 15000, 2, 30000)`, orderID, uuid.New())
+	mustExec(t, `INSERT INTO order_items (order_id, product_id, product_sku, product_name, unit_price, quantity, line_total)
+		VALUES ($1, $2, 'SKU-B', 'Widget B', 5000, 1, 5000)`, orderID, uuid.New())
+
+	if err := handleEcommerceOrderLineEvent(ctx, makeEvent(orderID), pools, chClient, nil); err != nil {
+		t.Fatalf("handleEcommerceOrderLineEvent: %v", err)
+	}
+
+	var n uint64
+	row := chClient.QueryRow(ctx,
+		"SELECT count(*) FROM fact_ecommerce_order_lines FINAL WHERE company_id = ?", companyID)
+	if err := row.Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("want 2 ecommerce order lines, got %d", n)
+	}
+
+	// order_status berasal dari tabel parent orders, bukan order_items —
+	// memastikan JOIN-nya benar, bukan cuma jumlah barisnya.
+	var gotStatus string
+	row = chClient.QueryRow(ctx,
+		"SELECT DISTINCT order_status FROM fact_ecommerce_order_lines FINAL WHERE company_id = ?", companyID)
+	if err := row.Scan(&gotStatus); err != nil {
+		t.Fatal(err)
+	}
+	if gotStatus != "SHIPPED" {
+		t.Errorf("order_status = %q, want SHIPPED", gotStatus)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // parseEntityID unit test — tidak butuh Postgres/ClickHouse
 // ---------------------------------------------------------------------------
 

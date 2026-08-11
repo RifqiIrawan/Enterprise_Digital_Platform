@@ -52,7 +52,7 @@ type syncResult struct {
 // menangani itu sebagai no-op, ClickHouse tetap jadi destinasi curated yang
 // wajib ada.
 func RunSync(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) []syncResult {
-	results := make([]syncResult, 0, 9)
+	results := make([]syncResult, 0, 12)
 
 	if n, err := etl.SyncFinance(ctx, sources.Finance, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "finance_journal_lines", Error: err.Error()})
@@ -108,6 +108,24 @@ func RunSync(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake
 		results = append(results, syncResult{Fact: "iot_readings", Rows: n})
 	}
 
+	if n, err := etl.SyncCRM(ctx, sources.CRM, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "opportunities", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "opportunities", Rows: n})
+	}
+
+	if n, err := etl.SyncTicketing(ctx, sources.Ticketing, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "tickets", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "tickets", Rows: n})
+	}
+
+	if n, err := etl.SyncEcommerce(ctx, sources.Ecommerce, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "order_items", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "order_items", Rows: n})
+	}
+
 	return results
 }
 
@@ -139,6 +157,9 @@ func (h *Handler) syncStatus(w http.ResponseWriter, r *http.Request) {
 		{"qc_inspections", "fact_qc_inspections"},
 		{"asset_maintenance", "fact_asset_maintenance"},
 		{"iot_readings", "fact_iot_readings"},
+		{"opportunities", "fact_crm_opportunities"},
+		{"tickets", "fact_ticketing_tickets"},
+		{"order_items", "fact_ecommerce_order_lines"},
 	}
 
 	type factStatus struct {

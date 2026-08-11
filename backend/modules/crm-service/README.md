@@ -57,6 +57,6 @@ Frontend: `frontend/web/src/pages/crm/{LeadsPage,AccountsPage,ContactsPage,Oppor
 
 ## Belum ada / batasan yang disengaja
 
-- **Belum ada fact table dw-service** untuk CRM -- tidak ada bukti kebutuhan BI/reporting terhadap data CRM saat modul ini dibangun; pola replikasi (agg table + backfill count-gated, lihat `dw-service`'s `finance-monthly-summary`) tersedia kalau ternyata dibutuhkan nanti.
+- **Belum ada endpoint analitik / Materialized View** di atas `fact_crm_opportunities` -- fact table-nya sendiri sudah ada sejak 2026-08-11 (batch ETL + streaming lewat `crm.opportunity.won`/`crm.opportunity.lost`), tapi belum ada query analitik yang memakainya, jadi belum ada bukti kebutuhan untuk MV (pola bertahap yang sama seperti `finance-monthly-summary`: endpoint dulu, MV menyusul kalau terbukti perlu).
 - Nomor lead/opportunity/account (saat konversi) digenerate via `COUNT(*)+1` per company per periode (`nextSequence`, disalin dari sales-service) -- cukup untuk dev/demo, bukan production-grade di bawah concurrency tinggi (sama batasan yang sudah didokumentasikan di `finance-service/README.md`).
 - Tidak ada integrasi otomatis ke Sales module saat Opportunity `WON` (mis. auto-create Sales Quotation) -- keputusan sengaja supaya scope tetap CRM standalone di fase ini, bukan oversight.

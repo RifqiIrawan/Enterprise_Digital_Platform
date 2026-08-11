@@ -39,12 +39,32 @@ const (
 const sourceSchema = `
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- accounts dipakai BERSAMA oleh dua source berbeda dalam skema test ini:
+-- finance-service's chart-of-accounts (account_code/account_name/account_type)
+-- dan crm-service's customer accounts (account_code/name/account_type) --
+-- keduanya nama tabel "accounts" di databasenya masing-masing (berbeda
+-- database di production, jadi tidak pernah benar-benar bentrok), disatukan
+-- di sini murni demi kesederhanaan test harness (satu Postgres test DB untuk
+-- semua source). Kolom "name" ditambahkan khusus untuk kebutuhan test CRM;
+-- account_name/account_type diberi DEFAULT '' supaya insert test CRM (yang
+-- tidak peduli kolom-kolom finance) tidak perlu mengisinya.
 CREATE TABLE IF NOT EXISTS accounts (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	account_code VARCHAR(20) NOT NULL,
-	account_name VARCHAR(200) NOT NULL,
-	account_type VARCHAR(20) NOT NULL
+	account_name VARCHAR(200) NOT NULL DEFAULT '',
+	account_type VARCHAR(20) NOT NULL DEFAULT '',
+	name VARCHAR(200) DEFAULT ''
 );
+
+-- Harness ini TIDAK pernah drop dw_service_test antar run, jadi CREATE TABLE
+-- IF NOT EXISTS di atas jadi no-op total di mesin yang sudah pernah menjalankan
+-- versi skema sebelumnya -- kolom "name" dan DEFAULT '' yang baru ditambahkan
+-- tidak akan pernah sampai ke tabel lamanya. ALTER idempoten di bawah inilah
+-- yang benar-benar membawa database test lama ikut naik versi (CI selalu mulai
+-- dari database kosong, jadi di sana ini cuma no-op yang tidak berbahaya).
+ALTER TABLE accounts ADD COLUMN IF NOT EXISTS name VARCHAR(200) DEFAULT '';
+ALTER TABLE accounts ALTER COLUMN account_name SET DEFAULT '';
+ALTER TABLE accounts ALTER COLUMN account_type SET DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS journal_entries (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -254,6 +274,70 @@ CREATE TABLE IF NOT EXISTS readings (
 	value_text VARCHAR(200),
 	recorded_at TIMESTAMPTZ NOT NULL,
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS opportunities (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	opportunity_number VARCHAR(30) NOT NULL,
+	account_id UUID NOT NULL REFERENCES accounts(id),
+	contact_id UUID,
+	name VARCHAR(200) NOT NULL,
+	stage VARCHAR(20) NOT NULL DEFAULT 'PROSPECTING',
+	amount NUMERIC(15,2) NOT NULL DEFAULT 0,
+	probability SMALLINT NOT NULL DEFAULT 0,
+	expected_close_date DATE,
+	owner_user_id UUID,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ticket_categories (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	category_code VARCHAR(30) NOT NULL,
+	name VARCHAR(100) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS tickets (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	ticket_number VARCHAR(30) NOT NULL,
+	category_id UUID NOT NULL REFERENCES ticket_categories(id),
+	subject VARCHAR(200) NOT NULL,
+	priority VARCHAR(20) NOT NULL DEFAULT 'MEDIUM',
+	status VARCHAR(20) NOT NULL DEFAULT 'OPEN',
+	requester_name VARCHAR(200) NOT NULL,
+	requester_email VARCHAR(200),
+	assigned_to UUID,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	resolved_at TIMESTAMPTZ,
+	closed_at TIMESTAMPTZ,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS orders (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	order_number VARCHAR(30) NOT NULL,
+	customer_name VARCHAR(200) NOT NULL,
+	customer_email VARCHAR(200),
+	status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+	order_date DATE NOT NULL DEFAULT CURRENT_DATE,
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS order_items (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	order_id UUID NOT NULL REFERENCES orders(id),
+	product_id UUID NOT NULL,
+	product_sku VARCHAR(50) NOT NULL,
+	product_name VARCHAR(200) NOT NULL,
+	unit_price NUMERIC(18,2) NOT NULL DEFAULT 0,
+	quantity NUMERIC(18,3) NOT NULL DEFAULT 1,
+	line_total NUMERIC(18,2) NOT NULL DEFAULT 0
 );
 `
 

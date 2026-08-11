@@ -33,3 +33,30 @@ func TestSyncFinance_RerunIsIdempotent(t *testing.T) {
 		t.Errorf("expected exactly 1 row for line_id %s after 2 syncs, got %d (ReplacingMergeTree dedup not working as expected)", lineID, count)
 	}
 }
+
+// TestSyncEcommerce_RerunIsIdempotent is the same proof as
+// TestSyncFinance_RerunIsIdempotent, applied to one of the 3 new fact
+// tables (CRM/Ticketing/E-Commerce) added alongside the original 9 -- the
+// watermark-based extract SQL and ReplacingMergeTree dedup are identical
+// mechanisms, this just confirms they weren't broken for the new facts too.
+func TestSyncEcommerce_RerunIsIdempotent(t *testing.T) {
+	companyID := uuid.New()
+	lineID, _ := mustSeedOrderItem(t, companyID)
+
+	if _, err := SyncEcommerce(context.Background(), sourcePool, chClient, nil); err != nil {
+		t.Fatalf("first SyncEcommerce: %v", err)
+	}
+	if _, err := SyncEcommerce(context.Background(), sourcePool, chClient, nil); err != nil {
+		t.Fatalf("second SyncEcommerce: %v", err)
+	}
+
+	var count uint64
+	row := chClient.QueryRow(context.Background(),
+		"SELECT count(*) FROM fact_ecommerce_order_lines FINAL WHERE line_id = ?", lineID)
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("count synced rows: %v", err)
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 row for line_id %s after 2 syncs, got %d (ReplacingMergeTree dedup not working as expected)", lineID, count)
+	}
+}

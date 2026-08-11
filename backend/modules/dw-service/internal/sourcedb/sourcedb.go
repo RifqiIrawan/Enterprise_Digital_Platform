@@ -24,10 +24,13 @@ type Pools struct {
 	QC         *pgxpool.Pool
 	Asset      *pgxpool.Pool
 	IoT        *pgxpool.Pool
+	CRM        *pgxpool.Pool
+	Ticketing  *pgxpool.Pool
+	Ecommerce  *pgxpool.Pool
 }
 
-// URLs mengumpulkan connection string untuk kesembilan source database --
-// dikelompokkan jadi satu struct supaya Connect tidak punya 9 parameter
+// URLs mengumpulkan connection string untuk kedua belas source database --
+// dikelompokkan jadi satu struct supaya Connect tidak punya 12 parameter
 // posisional yang gampang tertukar urutannya.
 type URLs struct {
 	Finance    string
@@ -39,6 +42,9 @@ type URLs struct {
 	QC         string
 	Asset      string
 	IoT        string
+	CRM        string
+	Ticketing  string
+	Ecommerce  string
 }
 
 func Connect(ctx context.Context, urls URLs) (*Pools, error) {
@@ -78,10 +84,23 @@ func Connect(ctx context.Context, urls URLs) (*Pools, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect iot source db: %w", err)
 	}
+	crm, err := pgxpool.New(ctx, urls.CRM)
+	if err != nil {
+		return nil, fmt.Errorf("connect crm source db: %w", err)
+	}
+	ticketing, err := pgxpool.New(ctx, urls.Ticketing)
+	if err != nil {
+		return nil, fmt.Errorf("connect ticketing source db: %w", err)
+	}
+	ecommerce, err := pgxpool.New(ctx, urls.Ecommerce)
+	if err != nil {
+		return nil, fmt.Errorf("connect ecommerce source db: %w", err)
+	}
 	return &Pools{
 		Finance: finance, Sales: sales, Warehouse: warehouse,
 		HR: hr, Purchasing: purchasing, Production: production,
 		QC: qc, Asset: asset, IoT: iot,
+		CRM: crm, Ticketing: ticketing, Ecommerce: ecommerce,
 	}, nil
 }
 
@@ -89,7 +108,10 @@ func (p *Pools) Close() {
 	if p == nil {
 		return
 	}
-	for _, pool := range []*pgxpool.Pool{p.Finance, p.Sales, p.Warehouse, p.HR, p.Purchasing, p.Production, p.QC, p.Asset, p.IoT} {
+	for _, pool := range []*pgxpool.Pool{
+		p.Finance, p.Sales, p.Warehouse, p.HR, p.Purchasing, p.Production, p.QC, p.Asset, p.IoT,
+		p.CRM, p.Ticketing, p.Ecommerce,
+	} {
 		if pool != nil {
 			pool.Close()
 		}
