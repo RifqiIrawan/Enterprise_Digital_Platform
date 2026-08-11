@@ -315,3 +315,137 @@ func TestMonthlySalesSummary_NoDataReturnsEmpty(t *testing.T) {
 		t.Errorf("expected empty summary for company with no data, got %+v", summary)
 	}
 }
+
+// TestCRMPipelineSummary_AggregatesByStageInPipelineOrder menguji query
+// analitik keempat -- yang pertama bukan time series bulanan. Dataset sengaja
+// memakai stage yang urutan ALFABETISnya berbeda dari urutan pipeline-nya
+// (PROPOSAL < PROSPECTING < WON secara alfabetis, tapi PROSPECTING mendahului
+// PROPOSAL di pipeline), supaya assertion urutan di bawah benar-benar
+// membuktikan ORDER BY indexOf() bekerja -- bukan kebetulan lolos karena
+// alfabetis dan pipeline kebetulan sama.
+func TestCRMPipelineSummary_AggregatesByStageInPipelineOrder(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	createdAt := time.Date(2026, 6, 5, 0, 0, 0, 0, time.UTC)
+	syncedAt := time.Now()
+
+	rows := []ch.CRMOpportunityRow{
+		// PROSPECTING: 2 deal, total 300, weighted 300*0.1 = 30.
+		{
+			OpportunityID: uuid.New(), CompanyID: companyID, OpportunityNumber: "OPP-1",
+			AccountID: uuid.New(), AccountName: "Account A", OpportunityName: "Deal 1",
+			Stage: "PROSPECTING", Amount: 100, Probability: 10,
+			CreatedAt: createdAt, UpdatedAt: createdAt,
+		},
+		{
+			OpportunityID: uuid.New(), CompanyID: companyID, OpportunityNumber: "OPP-2",
+			AccountID: uuid.New(), AccountName: "Account B", OpportunityName: "Deal 2",
+			Stage: "PROSPECTING", Amount: 200, Probability: 10,
+			CreatedAt: createdAt, UpdatedAt: createdAt,
+		},
+		// PROPOSAL: 1 deal, total 500, weighted 500*0.5 = 250.
+		{
+			OpportunityID: uuid.New(), CompanyID: companyID, OpportunityNumber: "OPP-3",
+			AccountID: uuid.New(), AccountName: "Account C", OpportunityName: "Deal 3",
+			Stage: "PROPOSAL", Amount: 500, Probability: 50,
+			CreatedAt: createdAt, UpdatedAt: createdAt,
+		},
+		// WON: 1 deal, total 1000, weighted 1000*1.0 = 1000.
+		{
+			OpportunityID: uuid.New(), CompanyID: companyID, OpportunityNumber: "OPP-4",
+			AccountID: uuid.New(), AccountName: "Account D", OpportunityName: "Deal 4",
+			Stage: "WON", Amount: 1000, Probability: 100,
+			CreatedAt: createdAt, UpdatedAt: createdAt,
+		},
+	}
+
+	if err := chClient.InsertCRMOpportunities(ctx, rows, syncedAt); err != nil {
+		t.Fatalf("InsertCRMOpportunities: %v", err)
+	}
+
+	summary, err := chClient.CRMPipelineSummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("CRMPipelineSummary: %v", err)
+	}
+	if len(summary) != 3 {
+		t.Fatalf("expected exactly 3 stages (stage tanpa deal tidak muncul), got %d: %+v", len(summary), summary)
+	}
+
+	wantStages := []string{"PROSPECTING", "PROPOSAL", "WON"}
+	for i, want := range wantStages {
+		if summary[i].Stage != want {
+			t.Errorf("stage[%d] = %q, want %q (urutan pipeline, bukan alfabetis)", i, summary[i].Stage, want)
+		}
+	}
+
+	if summary[0].OpportunityCount != 2 {
+		t.Errorf("PROSPECTING count = %d, want 2", summary[0].OpportunityCount)
+	}
+	if !summary[0].TotalAmount.Equal(mustDecimal(t, "300")) {
+		t.Errorf("PROSPECTING total_amount = %s, want 300", summary[0].TotalAmount)
+	}
+	if !summary[0].WeightedAmount.Equal(mustDecimal(t, "30")) {
+		t.Errorf("PROSPECTING weighted_amount = %s, want 30", summary[0].WeightedAmount)
+	}
+	if !summary[1].WeightedAmount.Equal(mustDecimal(t, "250")) {
+		t.Errorf("PROPOSAL weighted_amount = %s, want 250", summary[1].WeightedAmount)
+	}
+	if summary[2].OpportunityCount != 1 || !summary[2].TotalAmount.Equal(mustDecimal(t, "1000")) {
+		t.Errorf("WON = count %d / total %s, want 1 / 1000", summary[2].OpportunityCount, summary[2].TotalAmount)
+	}
+}
+
+// TestCRMPipelineSummary_DualWriteDoesNotDoubleCount adalah alasan query di
+// atas memakai FINAL. Dua panggilan Insert TERPISAH untuk opportunity_id yang
+// SAMA meniru batch ETL dan Kafka Streaming ETL yang benar-benar berjalan
+// sebagai dua proses berbeda (satu slice berisi 2 baris tidak akan menangkap
+// ini -- baris-barisnya ter-GROUP BY dalam satu block sebelum sempat jadi
+// bug). Tanpa FINAL, satu deal akan terhitung sebagai 2 opportunity dengan
+// nilai dobel. Pola test identik dengan
+// TestMonthlyFinanceSummary_DualWriteDoesNotDoubleCount.
+func TestCRMPipelineSummary_DualWriteDoesNotDoubleCount(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+	opportunityID := uuid.New()
+	createdAt := time.Date(2026, 6, 5, 0, 0, 0, 0, time.UTC)
+
+	row := ch.CRMOpportunityRow{
+		OpportunityID: opportunityID, CompanyID: companyID, OpportunityNumber: "OPP-DUP",
+		AccountID: uuid.New(), AccountName: "Account Dup", OpportunityName: "Deal Dup",
+		Stage: "NEGOTIATION", Amount: 750, Probability: 80,
+		CreatedAt: createdAt, UpdatedAt: createdAt,
+	}
+
+	if err := chClient.InsertCRMOpportunities(ctx, []ch.CRMOpportunityRow{row}, time.Now()); err != nil {
+		t.Fatalf("first InsertCRMOpportunities: %v", err)
+	}
+	if err := chClient.InsertCRMOpportunities(ctx, []ch.CRMOpportunityRow{row}, time.Now().Add(time.Second)); err != nil {
+		t.Fatalf("second InsertCRMOpportunities: %v", err)
+	}
+
+	summary, err := chClient.CRMPipelineSummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("CRMPipelineSummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected exactly 1 stage, got %d: %+v", len(summary), summary)
+	}
+	if summary[0].OpportunityCount != 1 {
+		t.Errorf("opportunity_count = %d, want 1 (dual-write must not double-count)", summary[0].OpportunityCount)
+	}
+	if !summary[0].TotalAmount.Equal(mustDecimal(t, "750")) {
+		t.Errorf("total_amount = %s, want 750 (dual-write must not double-count)", summary[0].TotalAmount)
+	}
+}
+
+// TestCRMPipelineSummary_NoDataReturnsEmpty konsisten dengan tiga endpoint
+// analitik lain: company tanpa opportunity mengembalikan slice kosong.
+func TestCRMPipelineSummary_NoDataReturnsEmpty(t *testing.T) {
+	summary, err := chClient.CRMPipelineSummary(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("CRMPipelineSummary: %v", err)
+	}
+	if len(summary) != 0 {
+		t.Errorf("expected empty summary for company with no data, got %+v", summary)
+	}
+}

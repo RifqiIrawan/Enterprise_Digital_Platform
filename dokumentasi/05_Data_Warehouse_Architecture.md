@@ -139,3 +139,13 @@ Kedua path (batch + streaming) bisa menulis baris yang sama ke ClickHouse — in
 | `GET /health` | Status service |
 | `POST /sync` | Trigger manual batch ETL untuk semua 12 fact |
 | `GET /sync/status` | Row count per fact + last watermark |
+| `GET /analytics/finance-monthly-summary` | Revenue vs expense per bulan (dibacking Materialized View `mv_finance_monthly_line_state`) |
+| `GET /analytics/stock-movement-monthly-summary` | Kuantitas stok masuk vs keluar per bulan |
+| `GET /analytics/sales-monthly-summary` | Nilai sales per bulan (DRAFT/CANCELLED dikecualikan) |
+| `GET /analytics/crm-pipeline-summary` | Nilai pipeline per stage (count + total + weighted by probability) |
+
+Semua endpoint analitik wajib `?company_id=<uuid>` dan memakai `FINAL` untuk
+korektnes -- tiap fact ditulis oleh batch ETL DAN streaming ETL, jadi satu
+entitas bisa punya beberapa baris yang belum ter-merge background. Hanya
+`finance-monthly-summary` yang sudah punya Materialized View; tiga lainnya
+sengaja query-only sampai ada bukti traffic yang butuh percepatan.

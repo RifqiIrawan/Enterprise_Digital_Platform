@@ -29,6 +29,18 @@ const STOCK_SERIES = [
 ]
 const SALES_SERIES = [{ key: 'sales_value', label: 'Sales Value', color: 'var(--bs-primary)' }]
 
+// Pipeline CRM SENGAJA tidak memakai pasangan biru/oranye di atas. Weighted
+// value bukan lawan dari total value, tapi BAGIAN dari total itu (total
+// dikalikan probability tiap deal) -- memberinya warna kategorikal kedua akan
+// terbaca sebagai dua hal yang berlawanan, persis makna yang sudah dipakai
+// biru/oranye di dua chart pertama. Satu hue yang sama dengan opacity lebih
+// rendah adalah encoding yang jujur untuk "himpunan bagian dari bar
+// sebelahnya", dan tidak mengotori konvensi masuk-vs-keluar halaman ini.
+const CRM_PIPELINE_SERIES = [
+  { key: 'total_amount', label: 'Nilai Total', color: 'var(--bs-primary)' },
+  { key: 'weighted_amount', label: 'Nilai Terbobot (× probability)', color: 'rgba(var(--bs-primary-rgb), 0.4)' },
+]
+
 function StatTile({ label, value, sub, className = '' }) {
   return (
     <div className="col-md-3 col-sm-6">
@@ -91,6 +103,8 @@ function BIDashboardsPage() {
   const [monthlyStockError, setMonthlyStockError] = useState('')
   const [monthlySales, setMonthlySales] = useState(null)
   const [monthlySalesError, setMonthlySalesError] = useState('')
+  const [crmPipeline, setCrmPipeline] = useState(null)
+  const [crmPipelineError, setCrmPipelineError] = useState('')
 
   function loadSummary(cid) {
     setLoading(true)
@@ -132,6 +146,21 @@ function BIDashboardsPage() {
       .catch(() => setMonthlySalesError('Gagal memuat ringkasan sales bulanan. Pastikan dw-service aktif.'))
   }
 
+  // Chart keempat dari dw-service, dan yang pertama BUKAN time series bulanan
+  // -- sumbu X-nya stage pipeline, urutannya sudah ditentukan backend (urutan
+  // funnel, bukan alfabetis) jadi frontend cukup merender apa adanya.
+  function loadCrmPipeline(cid) {
+    setCrmPipelineError('')
+    apiClient
+      .get('/api/dw/analytics/crm-pipeline-summary', { params: { company_id: cid } })
+      .then(({ data }) =>
+        setCrmPipeline(
+          data.map((d) => ({ ...d, total_amount: Number(d.total_amount), weighted_amount: Number(d.weighted_amount) })),
+        ),
+      )
+      .catch(() => setCrmPipelineError('Gagal memuat pipeline CRM. Pastikan dw-service aktif.'))
+  }
+
   useEffect(() => {
     if (!companyId) {
       setLoading(false)
@@ -141,6 +170,7 @@ function BIDashboardsPage() {
     loadMonthlyFinance(companyId)
     loadMonthlyStock(companyId)
     loadMonthlySales(companyId)
+    loadCrmPipeline(companyId)
   }, [companyId])
 
   return (
@@ -242,6 +272,25 @@ function BIDashboardsPage() {
                 {!monthlySalesError && monthlySales == null && <div className="text-secondary small">Memuat...</div>}
                 {!monthlySalesError && monthlySales != null && (
                   <GroupedBarChart data={monthlySales} series={SALES_SERIES} formatValue={(v) => `Rp ${formatMoney(v)}`} />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="row g-3">
+            <div className="col-md-8">
+              <div className="card p-3 h-100">
+                <h6 className="mb-3">Pipeline CRM per Stage (dari Data Warehouse)</h6>
+                {crmPipelineError && <div className="alert alert-warning py-2 small mb-0">{crmPipelineError}</div>}
+                {!crmPipelineError && crmPipeline == null && <div className="text-secondary small">Memuat...</div>}
+                {!crmPipelineError && crmPipeline != null && (
+                  <GroupedBarChart
+                    data={crmPipeline}
+                    series={CRM_PIPELINE_SERIES}
+                    formatValue={(v) => `Rp ${formatMoney(v)}`}
+                    categoryKey="stage"
+                    formatCategoryTick={(v) => v}
+                  />
                 )}
               </div>
             </div>

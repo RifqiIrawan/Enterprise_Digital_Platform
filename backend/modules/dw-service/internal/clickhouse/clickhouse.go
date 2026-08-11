@@ -1,5 +1,5 @@
 // Package clickhouse adalah wrapper di atas driver native
-// github.com/ClickHouse/clickhouse-go/v2, dipakai untuk membuat skema (9
+// github.com/ClickHouse/clickhouse-go/v2, dipakai untuk membuat skema (12
 // fact table + 1 tabel state watermark) dan batch-insert hasil ETL.
 // ClickHouse dipilih sebagai destinasi (bukan Postgres) karena ini kolom-
 // store OLAP -- tabel fact di sini sengaja denormalized (pre-joined ke
@@ -507,6 +507,73 @@ func (c *Client) MonthlySalesSummary(ctx context.Context, companyID uuid.UUID) (
 		var r MonthlySalesSummaryRow
 		if err := rows.Scan(&r.Month, &r.SalesValue); err != nil {
 			return nil, fmt.Errorf("scan monthly sales summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type CRMPipelineSummaryRow struct {
+	Stage            string          `json:"stage"`
+	OpportunityCount uint64          `json:"opportunity_count"`
+	TotalAmount      decimal.Decimal `json:"total_amount"`
+	WeightedAmount   decimal.Decimal `json:"weighted_amount"`
+}
+
+// crmPipelineStageOrder adalah urutan stage sepanjang pipeline sales, dipakai
+// untuk ORDER BY. TIDAK bisa mengurutkan by nama stage -- alfabetis akan
+// menghasilkan LOST/NEGOTIATION/PROPOSAL/PROSPECTING/QUALIFICATION/WON, urutan
+// yang tidak berarti apa-apa untuk pembaca funnel. Daftar ini cocok dengan
+// CHECK constraint stage di crm-service/migrations/001_init.sql.
+var crmPipelineStageOrder = []string{"PROSPECTING", "QUALIFICATION", "PROPOSAL", "NEGOTIATION", "WON", "LOST"}
+
+// CRMPipelineSummary agregasi fact_crm_opportunities per stage untuk satu
+// company -- query analitik keempat di dw-service, dan yang PERTAMA yang
+// bukan time series bulanan (tiga sebelumnya semua per bulan). Grain fact-nya
+// satu baris per opportunity, jadi count() setelah FINAL memang jumlah
+// opportunity yang sebenarnya, bukan jumlah baris detail.
+//
+// Pola staged yang SAMA dengan tiga endpoint analitik sebelumnya: FINAL
+// langsung, TANPA Materialized View, karena endpoint baru ini belum punya
+// bukti traffic yang butuh percepatan. FINAL sendiri tetap WAJIB untuk
+// korektnes -- fact_crm_opportunities dual-write lewat batch ETL DAN Kafka
+// Streaming ETL (event crm.opportunity.won/lost, lihat internal/streaming),
+// jadi satu opportunity bisa punya beberapa baris yang belum ter-merge
+// background; tanpa FINAL, satu deal yang di-sync dua kali akan terhitung
+// dua kali baik di count maupun di sum.
+//
+// SEMUA stage dikembalikan, termasuk WON dan LOST -- keputusan sengaja: yang
+// menarik dari data ini justru perbandingan nilai yang masih terbuka vs yang
+// sudah menutup, dan menyembunyikan LOST akan membuat total di chart terbaca
+// seolah-olah semua deal masih hidup. Stage tanpa satupun opportunity tidak
+// muncul sebagai baris nol (konsisten dengan tiga endpoint lain yang juga
+// tidak memunculkan bulan kosong).
+//
+// weighted_amount = amount * probability/100, nilai pipeline yang sudah
+// dibobot peluang menang -- angka yang lazim dipakai forecasting sales, dan
+// alasan kolom `probability` ikut dimasukkan ke fact table sejak awal.
+func (c *Client) CRMPipelineSummary(ctx context.Context, companyID uuid.UUID) ([]CRMPipelineSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			stage,
+			count() AS opportunity_count,
+			sum(amount) AS total_amount,
+			sum(amount * probability / 100) AS weighted_amount
+		FROM fact_crm_opportunities FINAL
+		WHERE company_id = ?
+		GROUP BY stage
+		ORDER BY indexOf(?, stage)
+	`, companyID, crmPipelineStageOrder)
+	if err != nil {
+		return nil, fmt.Errorf("query crm pipeline summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []CRMPipelineSummaryRow{}
+	for rows.Next() {
+		var r CRMPipelineSummaryRow
+		if err := rows.Scan(&r.Stage, &r.OpportunityCount, &r.TotalAmount, &r.WeightedAmount); err != nil {
+			return nil, fmt.Errorf("scan crm pipeline summary row: %w", err)
 		}
 		out = append(out, r)
 	}

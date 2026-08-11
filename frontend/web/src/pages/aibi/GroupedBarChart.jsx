@@ -9,16 +9,28 @@ const PAD_BOTTOM = 28
 const BAR_MAX_THICKNESS = 24
 const BAR_GAP = 2
 
-// Grouped bar chart generik: N seri per bulan, sumbu tunggal (dipakai untuk
+// Grouped bar chart generik: N seri per kategori, sumbu tunggal (dipakai untuk
 // data dengan satuan yang sama antar seri -- mata uang, atau kuantitas)
 // -- warna kategorikal urutan tetap yang di-pass lewat prop `series`, BUKAN
 // warna status (bg-success/bg-danger) supaya tidak dikira "baik/buruk" (lihat
-// dataviz skill palette.md). Tooltip satu per grup bulan (bukan per bar)
+// dataviz skill palette.md). Tooltip satu per grup kategori (bukan per bar)
 // supaya semua nilai seri selalu terbaca bersamaan tanpa perlu hover
 // berkali-kali. Awalnya khusus Revenue/Expense (RevenueExpenseBarChart),
 // digeneralisasi supaya chart bulanan lain (mis. stock in/out) bisa pakai
 // komponen yang sama alih-alih duplikat ~140 baris SVG.
-function GroupedBarChart({ data, series, formatValue }) {
+//
+// `categoryKey`/`formatCategoryTick` default ke bentuk bulanan ("2026-07-01"
+// dipendekkan jadi "26-07") karena tiga chart pertama yang memakai komponen
+// ini semuanya time series bulanan -- call site itu tidak perlu tahu prop ini
+// ada. Chart kategorikal (mis. pipeline CRM per stage) tinggal meng-override
+// keduanya; sumbu X-nya tidak harus berupa waktu.
+function GroupedBarChart({
+  data,
+  series,
+  formatValue,
+  categoryKey = 'month',
+  formatCategoryTick = (v) => v.slice(2, 7),
+}) {
   const [hoverIndex, setHoverIndex] = useState(null)
 
   const maxValue = useMemo(() => {
@@ -77,7 +89,7 @@ function GroupedBarChart({ data, series, formatValue }) {
           const isHovered = i === hoverIndex
           const groupSpan = series.length * (barThickness + BAR_GAP) - BAR_GAP
           return (
-            <g key={d.month} opacity={hoverIndex != null && !isHovered ? 0.5 : 1}>
+            <g key={d[categoryKey]} opacity={hoverIndex != null && !isHovered ? 0.5 : 1}>
               {series.map((s, si) => {
                 const value = d[s.key]
                 const barX = groupCenter - groupSpan / 2 + si * (barThickness + BAR_GAP)
@@ -107,7 +119,7 @@ function GroupedBarChart({ data, series, formatValue }) {
                 style={{ cursor: 'pointer' }}
               />
               <text x={groupCenter} y={HEIGHT - 8} fontSize="9" textAnchor="middle" fill="currentColor" fillOpacity="0.6">
-                {d.month.slice(2, 7)}
+                {formatCategoryTick(d[categoryKey])}
               </text>
             </g>
           )
@@ -126,7 +138,7 @@ function GroupedBarChart({ data, series, formatValue }) {
             zIndex: 1,
           }}
         >
-          <div className="fw-semibold mb-1">{hovered.month}</div>
+          <div className="fw-semibold mb-1">{hovered[categoryKey]}</div>
           {series.map((s) => (
             <div key={s.key} className="d-flex align-items-center gap-1">
               <span style={{ width: 8, height: 2, background: s.color, display: 'inline-block' }} />
