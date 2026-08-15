@@ -517,6 +517,8 @@ services:
       CRM_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/crm_service?sslmode=disable
       TICKETING_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/ticketing_service?sslmode=disable
       ECOMMERCE_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/ecommerce_service?sslmode=disable
+      FLEET_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/fleet_service?sslmode=disable
+      PROJECT_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/project_service?sslmode=disable
       # Native protocol port inside the container network is ClickHouse's
       # default 9000 -- the 9101 host remap in the clickhouse service above
       # only applies to connections from outside Docker (e.g. `go run` on

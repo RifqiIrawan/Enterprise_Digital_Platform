@@ -65,6 +65,16 @@ var topicHandlers = map[string]handlerFn{
 	// E-Commerce: order dibayar atau dikirim → status berubah, extract ulang order_items
 	"ecommerce.order.paid":    handleEcommerceOrderLineEvent,
 	"ecommerce.order.shipped": handleEcommerceOrderLineEvent,
+
+	// Fleet: surat jalan berangkat/selesai/batal → status + timestamp transisi
+	"fleet.delivery.dispatched": handleFleetDeliveryEvent,
+	"fleet.delivery.delivered":  handleFleetDeliveryEvent,
+	"fleet.delivery.cancelled":  handleFleetDeliveryEvent,
+
+	// Project: timesheet disetujui (entity_id = timesheet) dan biaya diposting
+	// ke GL (entity_id = PROYEK, mengubah banyak timesheet sekaligus)
+	"project.timesheet.approved": handleProjectTimesheetEvent,
+	"project.cost.posted":        handleProjectCostPostedEvent,
 }
 
 // Start menjalankan satu goroutine konsumer per topic. Setiap goroutine:

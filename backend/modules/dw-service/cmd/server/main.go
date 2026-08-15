@@ -41,6 +41,8 @@ func main() {
 		CRM:        cfg.CRMDatabaseURL,
 		Ticketing:  cfg.TicketingDatabaseURL,
 		Ecommerce:  cfg.EcommerceDatabaseURL,
+		Fleet:      cfg.FleetDatabaseURL,
+		Project:    cfg.ProjectDatabaseURL,
 	})
 	if err != nil {
 		log.Fatalf("dw-service: connect source databases failed: %v", err)

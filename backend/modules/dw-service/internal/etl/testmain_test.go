@@ -339,6 +339,86 @@ CREATE TABLE IF NOT EXISTS order_items (
 	quantity NUMERIC(18,3) NOT NULL DEFAULT 1,
 	line_total NUMERIC(18,2) NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS vehicles (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	vehicle_code VARCHAR(30) NOT NULL,
+	plate_number VARCHAR(20) NOT NULL,
+	name VARCHAR(200) NOT NULL,
+	vehicle_type VARCHAR(20) NOT NULL DEFAULT 'VAN',
+	status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'
+);
+
+CREATE TABLE IF NOT EXISTS drivers (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	driver_code VARCHAR(30) NOT NULL,
+	name VARCHAR(200) NOT NULL,
+	status VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE'
+);
+
+CREATE TABLE IF NOT EXISTS delivery_orders (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	delivery_number VARCHAR(30) NOT NULL,
+	vehicle_id UUID NOT NULL REFERENCES vehicles(id),
+	driver_id UUID NOT NULL REFERENCES drivers(id),
+	ecommerce_order_id UUID,
+	reference_number VARCHAR(30),
+	recipient_name VARCHAR(200) NOT NULL,
+	destination_address TEXT,
+	scheduled_date DATE NOT NULL DEFAULT CURRENT_DATE,
+	status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+	dispatched_at TIMESTAMPTZ,
+	delivered_at TIMESTAMPTZ,
+	cancelled_at TIMESTAMPTZ,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	project_code VARCHAR(30) NOT NULL,
+	name VARCHAR(200) NOT NULL,
+	status VARCHAR(20) NOT NULL DEFAULT 'PLANNING',
+	budget_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+	actual_cost NUMERIC(18,2) NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	project_id UUID NOT NULL REFERENCES projects(id),
+	task_number VARCHAR(30) NOT NULL,
+	title VARCHAR(200) NOT NULL,
+	status VARCHAR(20) NOT NULL DEFAULT 'TODO'
+);
+
+CREATE TABLE IF NOT EXISTS timesheets (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	project_id UUID NOT NULL REFERENCES projects(id),
+	task_id UUID REFERENCES tasks(id),
+	employee_id UUID NOT NULL,
+	employee_name VARCHAR(200) NOT NULL,
+	work_date DATE NOT NULL DEFAULT CURRENT_DATE,
+	hours NUMERIC(6,2) NOT NULL,
+	hourly_rate NUMERIC(14,2) NOT NULL DEFAULT 0,
+	amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+	status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+	approved_at TIMESTAMPTZ,
+	posted_at TIMESTAMPTZ,
+	journal_entry_id UUID,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `
 
 func TestMain(m *testing.M) {

@@ -127,6 +127,18 @@ func RunSync(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake
 		results = append(results, syncResult{Fact: "order_items", Rows: n})
 	}
 
+	if n, err := etl.SyncFleet(ctx, sources.Fleet, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "delivery_orders", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "delivery_orders", Rows: n})
+	}
+
+	if n, err := etl.SyncProject(ctx, sources.Project, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "timesheets", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "timesheets", Rows: n})
+	}
+
 	return results
 }
 

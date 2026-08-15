@@ -509,6 +509,98 @@ func TestHandleEcommerceOrderLineEvent(t *testing.T) {
 	}
 }
 
+func TestHandleFleetDeliveryEvent(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	var vehicleID, driverID uuid.UUID
+	if err := pool.QueryRow(ctx, `INSERT INTO vehicles (company_id, vehicle_code, plate_number, name, vehicle_type)
+		VALUES ($1, 'VHC-STREAM-01', 'B 9 STR', 'Isuzu Elf', 'TRUCK') RETURNING id`, companyID).Scan(&vehicleID); err != nil {
+		t.Fatal(err)
+	}
+	if err := pool.QueryRow(ctx, `INSERT INTO drivers (company_id, driver_code, name)
+		VALUES ($1, 'DRV-STREAM-01', 'Agus Salim') RETURNING id`, companyID).Scan(&driverID); err != nil {
+		t.Fatal(err)
+	}
+
+	var deliveryID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO delivery_orders (company_id, delivery_number, vehicle_id, driver_id, recipient_name, status, dispatched_at)
+		VALUES ($1, 'DLV-STREAM-001', $2, $3, 'Siti', 'DISPATCHED', now()) RETURNING id`,
+		companyID, vehicleID, driverID).Scan(&deliveryID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := handleFleetDeliveryEvent(ctx, makeEvent(deliveryID), pools, chClient, nil); err != nil {
+		t.Fatalf("handleFleetDeliveryEvent: %v", err)
+	}
+
+	// vehicle_type ikut dari JOIN ke vehicles, jadi sekaligus membuktikan
+	// join-nya benar, bukan cuma barisnya ada.
+	var gotStatus, gotVehicleType string
+	row := chClient.QueryRow(ctx,
+		"SELECT status, vehicle_type FROM fact_fleet_delivery_orders FINAL WHERE delivery_id = ?", deliveryID)
+	if err := row.Scan(&gotStatus, &gotVehicleType); err != nil {
+		t.Fatal(err)
+	}
+	if gotStatus != "DISPATCHED" {
+		t.Errorf("status = %q, want DISPATCHED", gotStatus)
+	}
+	if gotVehicleType != "TRUCK" {
+		t.Errorf("vehicle_type = %q, want TRUCK", gotVehicleType)
+	}
+}
+
+// project.cost.posted membawa entity_id PROYEK (bukan timesheet), karena satu
+// posting mengubah SEMUA timesheet APPROVED milik proyek itu. Test ini menaruh
+// DUA timesheet di proyek yang sama dan menuntut keduanya ikut ter-sync --
+// handler yang salah memakai query "WHERE ts.id = $1" hanya akan menulis satu.
+func TestHandleProjectCostPostedEvent(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	var projectID uuid.UUID
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO projects (company_id, project_code, name, status)
+		VALUES ($1, 'PRJ-STREAM-01', 'Migrasi DC', 'ACTIVE') RETURNING id`,
+		companyID).Scan(&projectID); err != nil {
+		t.Fatal(err)
+	}
+
+	journalID := uuid.New()
+	for _, hours := range []float64{6, 2} {
+		mustExec(t, `INSERT INTO timesheets (company_id, project_id, employee_id, employee_name, hours, hourly_rate, amount, status, posted_at, journal_entry_id)
+			VALUES ($1, $2, $3, 'Dewi Lestari', $4, 100000, $5, 'POSTED', now(), $6)`,
+			companyID, projectID, uuid.New(), hours, hours*100000, journalID)
+	}
+
+	if err := handleProjectCostPostedEvent(ctx, makeEvent(projectID), pools, chClient, nil); err != nil {
+		t.Fatalf("handleProjectCostPostedEvent: %v", err)
+	}
+
+	var n uint64
+	row := chClient.QueryRow(ctx,
+		"SELECT count(*) FROM fact_project_timesheets FINAL WHERE project_id = ?", projectID)
+	if err := row.Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("want both timesheets of the project synced, got %d", n)
+	}
+
+	// Totalnya harus 800.000 (6 jam + 2 jam @100.000) -- angka yang bisa
+	// dihitung tangan, bukan sekadar "ada barisnya".
+	var total float64
+	row = chClient.QueryRow(ctx,
+		"SELECT toFloat64(sum(amount)) FROM fact_project_timesheets FINAL WHERE project_id = ?", projectID)
+	if err := row.Scan(&total); err != nil {
+		t.Fatal(err)
+	}
+	if total != 800000 {
+		t.Errorf("sum(amount) = %v, want 800000", total)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // parseEntityID unit test — tidak butuh Postgres/ClickHouse
 // ---------------------------------------------------------------------------

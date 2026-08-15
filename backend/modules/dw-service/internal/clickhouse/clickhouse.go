@@ -197,6 +197,30 @@ CREATE TABLE IF NOT EXISTS fact_ecommerce_order_lines (
 ) ENGINE = ReplacingMergeTree(synced_at)
 PARTITION BY toYYYYMM(order_date) ORDER BY (company_id, line_id);
 
+CREATE TABLE IF NOT EXISTS fact_fleet_delivery_orders (
+    delivery_id UUID, company_id UUID, branch_id Nullable(UUID),
+    delivery_number String,
+    vehicle_id UUID, vehicle_code String, vehicle_type String,
+    driver_id UUID, driver_code String, driver_name String,
+    ecommerce_order_id Nullable(UUID), reference_number Nullable(String),
+    recipient_name String, scheduled_date Date, status String,
+    dispatched_at Nullable(DateTime), delivered_at Nullable(DateTime), cancelled_at Nullable(DateTime),
+    created_at DateTime, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(created_at) ORDER BY (company_id, delivery_id);
+
+CREATE TABLE IF NOT EXISTS fact_project_timesheets (
+    timesheet_id UUID, company_id UUID, branch_id Nullable(UUID),
+    project_id UUID, project_code String, project_name String, project_status String,
+    task_id Nullable(UUID), task_number Nullable(String),
+    employee_id UUID, employee_name String, work_date Date,
+    hours Decimal(18,2), hourly_rate Decimal(18,2), amount Decimal(18,2),
+    status String, approved_at Nullable(DateTime), posted_at Nullable(DateTime),
+    journal_entry_id Nullable(UUID),
+    created_at DateTime, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(work_date) ORDER BY (company_id, timesheet_id);
+
 CREATE TABLE IF NOT EXISTS etl_sync_state (
     source_table String, last_synced_at DateTime
 ) ENGINE = ReplacingMergeTree(last_synced_at) ORDER BY source_table;
@@ -985,6 +1009,105 @@ func (c *Client) InsertTicketingTickets(ctx context.Context, rows []TicketingTic
 			r.CreatedAt, r.ResolvedAt, r.ClosedAt, r.UpdatedAt, syncedAt,
 		); err != nil {
 			return fmt.Errorf("append ticketing row %s: %w", r.TicketID, err)
+		}
+	}
+	return batch.Send()
+}
+
+// FleetDeliveryOrderRow -- grain satu baris per surat jalan. Kolom kendaraan/
+// pengemudi sudah terdenormalisasi dari JOIN di internal/etl/fleet.go.
+type FleetDeliveryOrderRow struct {
+	DeliveryID       uuid.UUID
+	CompanyID        uuid.UUID
+	BranchID         *uuid.UUID
+	DeliveryNumber   string
+	VehicleID        uuid.UUID
+	VehicleCode      string
+	VehicleType      string
+	DriverID         uuid.UUID
+	DriverCode       string
+	DriverName       string
+	EcommerceOrderID *uuid.UUID
+	ReferenceNumber  *string
+	RecipientName    string
+	ScheduledDate    time.Time
+	Status           string
+	DispatchedAt     *time.Time
+	DeliveredAt      *time.Time
+	CancelledAt      *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+func (c *Client) InsertFleetDeliveryOrders(ctx context.Context, rows []FleetDeliveryOrderRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_fleet_delivery_orders")
+	if err != nil {
+		return fmt.Errorf("prepare fleet batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.DeliveryID, r.CompanyID, r.BranchID, r.DeliveryNumber,
+			r.VehicleID, r.VehicleCode, r.VehicleType,
+			r.DriverID, r.DriverCode, r.DriverName,
+			r.EcommerceOrderID, r.ReferenceNumber, r.RecipientName,
+			r.ScheduledDate, r.Status, r.DispatchedAt, r.DeliveredAt, r.CancelledAt,
+			r.CreatedAt, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append fleet row %s: %w", r.DeliveryID, err)
+		}
+	}
+	return batch.Send()
+}
+
+// ProjectTimesheetRow -- grain satu baris per timesheet. Hours/HourlyRate/
+// Amount float64 di sini (hasil scan pgx dari NUMERIC) dan dikonversi lewat
+// toDecimal saat append, sama seperti fact ecommerce/sales.
+type ProjectTimesheetRow struct {
+	TimesheetID    uuid.UUID
+	CompanyID      uuid.UUID
+	BranchID       *uuid.UUID
+	ProjectID      uuid.UUID
+	ProjectCode    string
+	ProjectName    string
+	ProjectStatus  string
+	TaskID         *uuid.UUID
+	TaskNumber     *string
+	EmployeeID     uuid.UUID
+	EmployeeName   string
+	WorkDate       time.Time
+	Hours          float64
+	HourlyRate     float64
+	Amount         float64
+	Status         string
+	ApprovedAt     *time.Time
+	PostedAt       *time.Time
+	JournalEntryID *uuid.UUID
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+func (c *Client) InsertProjectTimesheets(ctx context.Context, rows []ProjectTimesheetRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_project_timesheets")
+	if err != nil {
+		return fmt.Errorf("prepare project batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.TimesheetID, r.CompanyID, r.BranchID,
+			r.ProjectID, r.ProjectCode, r.ProjectName, r.ProjectStatus,
+			r.TaskID, r.TaskNumber,
+			r.EmployeeID, r.EmployeeName, r.WorkDate,
+			toDecimal(r.Hours), toDecimal(r.HourlyRate), toDecimal(r.Amount),
+			r.Status, r.ApprovedAt, r.PostedAt, r.JournalEntryID,
+			r.CreatedAt, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append project row %s: %w", r.TimesheetID, err)
 		}
 	}
 	return batch.Send()

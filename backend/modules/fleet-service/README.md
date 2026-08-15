@@ -64,8 +64,9 @@ berarti pengirimannya dijadwalkan ulang, bukan bahwa order-nya batal.
 
 ## Belum ada / batasan yang disengaja
 
-- **Belum ada fact table dw-service** untuk Fleet — belum ada bukti kebutuhan
-  BI/reporting terhadap data pengiriman.
+- **Fact table dw-service sudah ada** sejak 2026-08-16
+  (`fact_fleet_delivery_orders`, grain satu baris per surat jalan), tapi belum
+  ada endpoint analitik maupun chart BI yang memakainya.
 - **Tidak ada rute/optimasi multi-drop** — satu surat jalan = satu tujuan.
   Multi-drop butuh tabel baris tujuan tersendiri dan urutan pemberhentian,
   di luar lingkup modul inti ini.

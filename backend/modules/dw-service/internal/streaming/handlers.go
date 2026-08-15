@@ -556,3 +556,124 @@ func handleEcommerceOrderLineEvent(ctx context.Context, raw []byte, sources *sou
 	}
 	return insertAndLog(ctx, dest, lake, "order_items", out, dest.InsertEcommerceOrderLines)
 }
+
+// ---------------------------------------------------------------------------
+// Fleet — delivery.dispatched, delivery.delivered, delivery.cancelled
+// Ketiganya dipetakan ke handler yang sama: yang berubah adalah status +
+// timestamp transisi surat jalan, jadi barisnya cukup di-extract ulang.
+// delivery.created SENGAJA tidak ikut -- surat jalan yang baru dibuat belum
+// punya nilai analitik apa pun (belum berangkat), dan batch ETL 5 menit sudah
+// cukup untuk menangkapnya.
+// ---------------------------------------------------------------------------
+
+const fleetSingleSQL = `
+	SELECT d.id, d.company_id, d.branch_id, d.delivery_number,
+	       d.vehicle_id, v.vehicle_code, v.vehicle_type,
+	       d.driver_id, dr.driver_code, dr.name AS driver_name,
+	       d.ecommerce_order_id, d.reference_number, d.recipient_name,
+	       d.scheduled_date, d.status, d.dispatched_at, d.delivered_at, d.cancelled_at,
+	       d.created_at, d.updated_at
+	FROM delivery_orders d
+	JOIN vehicles v ON v.id = d.vehicle_id
+	JOIN drivers dr ON dr.id = d.driver_id
+	WHERE d.id = $1`
+
+func handleFleetDeliveryEvent(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) error {
+	id, err := parseEntityID(raw)
+	if err != nil {
+		return err
+	}
+	rows, err := sources.Fleet.Query(ctx, fleetSingleSQL, id)
+	if err != nil {
+		return fmt.Errorf("query delivery order %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	var out []ch.FleetDeliveryOrderRow
+	for rows.Next() {
+		var r ch.FleetDeliveryOrderRow
+		if err := rows.Scan(
+			&r.DeliveryID, &r.CompanyID, &r.BranchID, &r.DeliveryNumber,
+			&r.VehicleID, &r.VehicleCode, &r.VehicleType,
+			&r.DriverID, &r.DriverCode, &r.DriverName,
+			&r.EcommerceOrderID, &r.ReferenceNumber, &r.RecipientName,
+			&r.ScheduledDate, &r.Status, &r.DispatchedAt, &r.DeliveredAt, &r.CancelledAt,
+			&r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return fmt.Errorf("scan fleet row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate fleet rows: %w", err)
+	}
+	return insertAndLog(ctx, dest, lake, "delivery_orders", out, dest.InsertFleetDeliveryOrders)
+}
+
+// ---------------------------------------------------------------------------
+// Project — timesheet.approved (satu baris) dan cost.posted (banyak baris)
+//
+// Kedua event punya entity_id dengan ARTI BERBEDA, jadi masing-masing punya
+// query sendiri: timesheet.approved membawa id TIMESHEET, sementara
+// cost.posted membawa id PROYEK karena satu posting mengubah semua timesheet
+// APPROVED milik proyek itu sekaligus. Memakai satu query untuk keduanya akan
+// diam-diam melewatkan sebagian besar baris yang berubah saat posting.
+// ---------------------------------------------------------------------------
+
+const projectTimesheetSelect = `
+	SELECT ts.id, ts.company_id, ts.branch_id, ts.project_id,
+	       p.project_code, p.name AS project_name, p.status AS project_status,
+	       ts.task_id, t.task_number,
+	       ts.employee_id, ts.employee_name, ts.work_date,
+	       ts.hours, ts.hourly_rate, ts.amount,
+	       ts.status, ts.approved_at, ts.posted_at, ts.journal_entry_id,
+	       ts.created_at, ts.updated_at
+	FROM timesheets ts
+	JOIN projects p ON p.id = ts.project_id
+	LEFT JOIN tasks t ON t.id = ts.task_id
+	WHERE `
+
+const projectSingleSQL = projectTimesheetSelect + `ts.id = $1`
+
+const projectByProjectSQL = projectTimesheetSelect + `ts.project_id = $1`
+
+func handleProjectTimesheetEvent(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) error {
+	return syncProjectTimesheets(ctx, raw, sources, dest, lake, projectSingleSQL)
+}
+
+func handleProjectCostPostedEvent(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) error {
+	return syncProjectTimesheets(ctx, raw, sources, dest, lake, projectByProjectSQL)
+}
+
+func syncProjectTimesheets(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client, query string) error {
+	id, err := parseEntityID(raw)
+	if err != nil {
+		return err
+	}
+	rows, err := sources.Project.Query(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("query timesheets for %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	var out []ch.ProjectTimesheetRow
+	for rows.Next() {
+		var r ch.ProjectTimesheetRow
+		if err := rows.Scan(
+			&r.TimesheetID, &r.CompanyID, &r.BranchID, &r.ProjectID,
+			&r.ProjectCode, &r.ProjectName, &r.ProjectStatus,
+			&r.TaskID, &r.TaskNumber,
+			&r.EmployeeID, &r.EmployeeName, &r.WorkDate,
+			&r.Hours, &r.HourlyRate, &r.Amount,
+			&r.Status, &r.ApprovedAt, &r.PostedAt, &r.JournalEntryID,
+			&r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return fmt.Errorf("scan project row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate project rows: %w", err)
+	}
+	return insertAndLog(ctx, dest, lake, "timesheets", out, dest.InsertProjectTimesheets)
+}

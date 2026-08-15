@@ -27,10 +27,12 @@ type Pools struct {
 	CRM        *pgxpool.Pool
 	Ticketing  *pgxpool.Pool
 	Ecommerce  *pgxpool.Pool
+	Fleet      *pgxpool.Pool
+	Project    *pgxpool.Pool
 }
 
-// URLs mengumpulkan connection string untuk kedua belas source database --
-// dikelompokkan jadi satu struct supaya Connect tidak punya 12 parameter
+// URLs mengumpulkan connection string untuk keempat belas source database --
+// dikelompokkan jadi satu struct supaya Connect tidak punya 14 parameter
 // posisional yang gampang tertukar urutannya.
 type URLs struct {
 	Finance    string
@@ -45,6 +47,8 @@ type URLs struct {
 	CRM        string
 	Ticketing  string
 	Ecommerce  string
+	Fleet      string
+	Project    string
 }
 
 func Connect(ctx context.Context, urls URLs) (*Pools, error) {
@@ -96,11 +100,20 @@ func Connect(ctx context.Context, urls URLs) (*Pools, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect ecommerce source db: %w", err)
 	}
+	fleet, err := pgxpool.New(ctx, urls.Fleet)
+	if err != nil {
+		return nil, fmt.Errorf("connect fleet source db: %w", err)
+	}
+	project, err := pgxpool.New(ctx, urls.Project)
+	if err != nil {
+		return nil, fmt.Errorf("connect project source db: %w", err)
+	}
 	return &Pools{
 		Finance: finance, Sales: sales, Warehouse: warehouse,
 		HR: hr, Purchasing: purchasing, Production: production,
 		QC: qc, Asset: asset, IoT: iot,
 		CRM: crm, Ticketing: ticketing, Ecommerce: ecommerce,
+		Fleet: fleet, Project: project,
 	}, nil
 }
 
@@ -110,7 +123,7 @@ func (p *Pools) Close() {
 	}
 	for _, pool := range []*pgxpool.Pool{
 		p.Finance, p.Sales, p.Warehouse, p.HR, p.Purchasing, p.Production, p.QC, p.Asset, p.IoT,
-		p.CRM, p.Ticketing, p.Ecommerce,
+		p.CRM, p.Ticketing, p.Ecommerce, p.Fleet, p.Project,
 	} {
 		if pool != nil {
 			pool.Close()

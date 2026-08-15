@@ -19,6 +19,8 @@ type Config struct {
 	CRMDatabaseURL        string
 	TicketingDatabaseURL  string
 	EcommerceDatabaseURL  string
+	FleetDatabaseURL      string
+	ProjectDatabaseURL    string
 	ClickHouseAddr        string
 	ClickHouseUser        string
 	ClickHousePassword    string
@@ -53,6 +55,8 @@ func Load() *Config {
 		CRMDatabaseURL:        getEnv("CRM_DATABASE_URL", "postgres://platform:platform@localhost:5432/crm_service?sslmode=disable"),
 		TicketingDatabaseURL:  getEnv("TICKETING_DATABASE_URL", "postgres://platform:platform@localhost:5432/ticketing_service?sslmode=disable"),
 		EcommerceDatabaseURL:  getEnv("ECOMMERCE_DATABASE_URL", "postgres://platform:platform@localhost:5432/ecommerce_service?sslmode=disable"),
+		FleetDatabaseURL:      getEnv("FLEET_DATABASE_URL", "postgres://platform:platform@localhost:5432/fleet_service?sslmode=disable"),
+		ProjectDatabaseURL:    getEnv("PROJECT_DATABASE_URL", "postgres://platform:platform@localhost:5432/project_service?sslmode=disable"),
 		ClickHouseAddr:        getEnv("CLICKHOUSE_ADDR", "localhost:9101"),
 		ClickHouseUser:        getEnv("CLICKHOUSE_USER", "default"),
 		ClickHousePassword:    getEnv("CLICKHOUSE_PASSWORD", "clickhouse"),

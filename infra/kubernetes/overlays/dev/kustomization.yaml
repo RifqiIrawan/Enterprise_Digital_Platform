@@ -176,6 +176,8 @@ configMapGenerator:
       - CRM_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/crm_service?sslmode=disable
       - TICKETING_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/ticketing_service?sslmode=disable
       - ECOMMERCE_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/ecommerce_service?sslmode=disable
+      - FLEET_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/fleet_service?sslmode=disable
+      - PROJECT_DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/project_service?sslmode=disable
       - CLICKHOUSE_ADDR=host.docker.internal:9101
       - CLICKHOUSE_USER=default
       - CLICKHOUSE_PASSWORD=clickhouse

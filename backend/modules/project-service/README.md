@@ -99,13 +99,15 @@ Dua keputusan yang sengaja berbeda dari `deliverDeliveryOrder` di fleet-service:
 
 ## Belum ada / batasan yang disengaja
 
-- **Belum ada fact table dw-service** untuk Project — belum ada bukti kebutuhan
-  BI/reporting terhadap data proyek.
+- **Fact table dw-service sudah ada** sejak 2026-08-16
+  (`fact_project_timesheets`, grain satu baris per timesheet), tapi belum ada
+  endpoint analitik maupun chart BI yang memakainya.
 - **Tidak ada dependensi antar tugas / Gantt / jalur kritis** — tugas berdiri
   sendiri, tidak ada `predecessor_id` maupun penjadwalan otomatis.
-- **Tidak ada rekap jam per karyawan lintas proyek** — `GET /timesheets` bisa
-  difilter per proyek dan status, tapi tidak ada endpoint agregasi. Itu pekerjaan
-  dw-service kalau nanti dibutuhkan.
+- **Tidak ada rekap jam per karyawan lintas proyek di service ini** —
+  `GET /timesheets` bisa difilter per proyek dan status, tapi tidak ada endpoint
+  agregasi. Datanya sudah tersedia untuk itu di dw-service lewat
+  `fact_project_timesheets`; query analitiknya sendiri belum dibuat.
 - **Anggaran tidak menahan apa pun** — `budget_amount` murni pembanding; posting
   biaya yang melewati anggaran tetap diterima (UI menandainya merah). Menolaknya
   akan memblokir pencatatan biaya yang sudah benar-benar terjadi.
