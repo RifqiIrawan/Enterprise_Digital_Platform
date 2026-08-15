@@ -22,6 +22,7 @@ resources:
   - ticketing-service.yaml
   - ecommerce-service.yaml
   - fleet-service.yaml
+  - project-service.yaml
   - frontend.yaml
   - ingress.yaml
 
@@ -95,6 +96,7 @@ configMapGenerator:
       - TICKETING_SERVICE_URL=http://ticketing-service:8097
       - ECOMMERCE_SERVICE_URL=http://ecommerce-service:8098
       - FLEET_SERVICE_URL=http://fleet-service:8099
+      - PROJECT_SERVICE_URL=http://project-service:8100
       - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
 
   - name: finance-service-config
@@ -231,3 +233,11 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_FLEET
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - ECOMMERCE_SERVICE_URL=http://ecommerce-service:8098
+
+  - name: project-service-config
+    literals:
+      - PORT=8100
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_PROJECT
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - HR_SERVICE_URL=http://hr-service:8086
+      - FINANCE_SERVICE_URL=http://finance-service:8085

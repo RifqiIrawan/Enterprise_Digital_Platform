@@ -56,6 +56,8 @@ replicas:
     count: 2
   - name: fleet-service
     count: 2
+  - name: project-service
+    count: 2
   - name: frontend
     count: 2
 

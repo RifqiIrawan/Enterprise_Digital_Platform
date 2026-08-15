@@ -5,11 +5,14 @@ Modul ke-21. Proyek, tugas, dan timesheet, dengan integrasi ke `hr-service`
 
 Port `8100`, database `project_service`, route gateway `/api/project`.
 
-Status: **modul inti selesai (2026-08-16)**. Production-readiness (Dockerfile,
-blok docker-compose, manifest K8s, entri CI, env template staging/prod, target
-Prometheus) SENGAJA belum dikerjakan — mengikuti pola dua-tahap yang sama
-seperti CRM/Ticketing/E-Commerce/Fleet: modul inti dulu, production-readiness
-sebagai sesi terpisah.
+Status: **selesai, termasuk production-readiness** (modul inti 2026-08-16,
+production-readiness 2026-08-16 hari yang sama). Dockerfile, blok
+docker-compose, manifest K8s base + overlay dev/staging/prod, env template
+staging/production, entri CI, dan target scrape Prometheus semuanya sudah ada.
+Image-nya sudah benar-benar di-build (`docker compose build project-service`)
+dan container-nya di-smoke test terhadap Postgres native: `/health` 200,
+`/metrics` melayani metrik Prometheus, dan `GET /projects` mengembalikan data
+proyek nyata dari dalam container.
 
 ## Lingkup
 
@@ -96,7 +99,6 @@ Dua keputusan yang sengaja berbeda dari `deliverDeliveryOrder` di fleet-service:
 
 ## Belum ada / batasan yang disengaja
 
-- **Belum ada production-readiness** (lihat Status di atas).
 - **Belum ada fact table dw-service** untuk Project — belum ada bukti kebutuhan
   BI/reporting terhadap data proyek.
 - **Tidak ada dependensi antar tugas / Gantt / jalur kritis** — tugas berdiri

@@ -86,6 +86,7 @@ jobs:
           - modules/ticketing-service
           - modules/ecommerce-service
           - modules/fleet-service
+          - modules/project-service
 
     steps:
       - uses: actions/checkout@v4

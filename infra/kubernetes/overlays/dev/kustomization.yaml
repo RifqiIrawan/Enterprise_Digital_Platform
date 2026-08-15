@@ -74,6 +74,9 @@ images:
   - name: REPLACE_ME_REGISTRY/fleet-service
     newName: infra-fleet-service
     newTag: latest
+  - name: REPLACE_ME_REGISTRY/project-service
+    newName: infra-project-service
+    newTag: latest
   - name: REPLACE_ME_REGISTRY/frontend
     newName: infra-frontend
     newTag: latest
@@ -210,6 +213,11 @@ configMapGenerator:
     behavior: merge
     literals:
       - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/fleet_service?sslmode=disable
+      - KAFKA_BROKERS=host.docker.internal:9092
+  - name: project-service-config
+    behavior: merge
+    literals:
+      - DATABASE_URL=postgres://platform:platform@host.docker.internal:5432/project_service?sslmode=disable
       - KAFKA_BROKERS=host.docker.internal:9092
 
 # Dev-only, obviously not a real secret. Never reuse this value anywhere
