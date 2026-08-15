@@ -19,8 +19,8 @@
 | **Fase 9** | Observability — Prometheus/Grafana (metrics), JSON logs + Loki/Promtail, OpenTelemetry + Jaeger (tracing) | ✅ Selesai |
 | **Fase 10** | CRM — crm-service: Leads, Accounts, Contacts, Opportunities, Activities, konversi Lead transaksional | ✅ Selesai, termasuk production-readiness (Dockerfile/docker-compose/K8s/CI/env/Prometheus, 2026-08-09) — dan fact table dw-service `fact_crm_opportunities` (2026-08-11) |
 | **Fase 11** | Ticketing — ticketing-service: Ticket Categories, Tickets, Comments (helpdesk/customer support) | ✅ Selesai, termasuk production-readiness (Dockerfile/docker-compose/K8s/CI/env/Prometheus, 2026-08-09) — dan fact table dw-service `fact_ticketing_tickets` (2026-08-11) |
-| **Fase 12** | E-Commerce — ecommerce-service: Orders + Order Items (checkout, reuse katalog produk warehouse-service, stock-out otomatis saat SHIPPED) | ✅ Selesai, termasuk production-readiness (Dockerfile/docker-compose/K8s/CI/env/Prometheus, 2026-08-10 — manifest diverifikasi render bersih, docker build/smoke test container belum karena Docker Desktop tidak jalan sesi itu) — dan fact table dw-service `fact_ecommerce_order_lines` (2026-08-11) |
-| **Fase 13** | Fleet & Delivery — fleet-service: Kendaraan, Pengemudi, Surat Jalan; status armada digerakkan lifecycle surat jalan, integrasi dua arah ke ecommerce-service (snapshot order SHIPPED → surat jalan, penyelesaian surat jalan → order DELIVERED) | ✅ Selesai (core, 2026-08-12) — production-readiness dan fact table dw-service belum |
+| **Fase 12** | E-Commerce — ecommerce-service: Orders + Order Items (checkout, reuse katalog produk warehouse-service, stock-out otomatis saat SHIPPED) | ✅ Selesai, termasuk production-readiness (Dockerfile/docker-compose/K8s/CI/env/Prometheus, 2026-08-10 — manifest diverifikasi render bersih; `docker compose build` + smoke test container menyusul 2026-08-15 saat Docker Desktop hidup lagi) — dan fact table dw-service `fact_ecommerce_order_lines` (2026-08-11) |
+| **Fase 13** | Fleet & Delivery — fleet-service: Kendaraan, Pengemudi, Surat Jalan; status armada digerakkan lifecycle surat jalan, integrasi dua arah ke ecommerce-service (snapshot order SHIPPED → surat jalan, penyelesaian surat jalan → order DELIVERED) | ✅ Selesai, termasuk production-readiness (Dockerfile/docker-compose/K8s/CI/env/Prometheus, 2026-08-13, diverifikasi penuh 2026-08-15 — manifest render bersih + `docker compose build` sungguhan + smoke test container terhadap Postgres native) — fact table dw-service belum |
 
 ---
 
@@ -58,7 +58,7 @@
 - **DW Batch ETL**: dw-service → 9 Postgres DB → ClickHouse + MinIO (setiap 5 menit)
 - **DW Streaming ETL**: Kafka (12 topics) → dw-service → ClickHouse + MinIO (<100ms)
 - **IoT Pipeline**: iot-service simulator → MQTT → Mosquitto → subscribe → Postgres + Kafka
-- **Observability**: semua 19 service → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) port 8096, ticketing-service (Fase 11) port 8097, dan ecommerce-service (Fase 12) port 8098 sudah ditambahkan ke target list statis `infra/prometheus/prometheus.yml` sejak production-readiness masing-masing (2026-08-09/10)
+- **Observability**: semua 20 service → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) port 8096, ticketing-service (Fase 11) port 8097, ecommerce-service (Fase 12) port 8098, dan fleet-service (Fase 13) port 8099 sudah ditambahkan ke target list statis `infra/prometheus/prometheus.yml` sejak production-readiness masing-masing (2026-08-09/10/13)
 - **Stock-out E-Commerce**: ecommerce-service → warehouse-service (via HTTP `POST /stock-movements/batch`, `reference_type=ECOMMERCE_ORDER`) saat order SHIPPED, pola identik Sales Order FULFILLED
 
 ### Frontend
@@ -75,7 +75,7 @@ Ini adalah platform yang sudah berfungsi penuh, bukan "belum selesai". Yang beri
 |-------|-----------|
 | **ClickHouse Materialized View** | ✅ MV pertama (`mv_finance_monthly_line_state`) sudah ada sejak 2026-08-08, backing `finance-monthly-summary` — MV tambahan untuk 11 fact table lain masih bisa dikerjakan kalau ada kebutuhan. `fact_crm_opportunities` sekarang punya endpoint analitik (`crm-pipeline-summary`, 2026-08-12) tapi sengaja masih query-only; `fact_ticketing_tickets`/`fact_ecommerce_order_lines` belum punya endpoint sama sekali |
 | **Silver/Gold Data Lake** | Transformation layer di atas MinIO bronze (butuh Spark atau dbt) |
-| **Modul bisnis tambahan** | ✅ CRM (Leads/Accounts/Contacts/Opportunities/Activities, termasuk konversi Lead→Account+Contact+Opportunity transaksional) sudah ada sejak 2026-08-08 sebagai module ke-17, production-readiness lengkap sejak 2026-08-09, fact table `fact_crm_opportunities` sejak 2026-08-11. ✅ Ticketing (Ticket Categories/Tickets/Comments, alur status close/reopen) sudah ada sejak 2026-08-09 sebagai module ke-18, production-readiness lengkap sejak 2026-08-09 (hari yang sama), fact table `fact_ticketing_tickets` sejak 2026-08-11. ✅ E-Commerce (Orders/Order Items, checkout dengan katalog produk direuse dari warehouse-service, stock-out otomatis saat SHIPPED) sudah ada sejak 2026-08-10 sebagai module ke-19, production-readiness lengkap sejak 2026-08-10 (hari yang sama), fact table `fact_ecommerce_order_lines` sejak 2026-08-11. ✅ Fleet & Delivery (Kendaraan/Pengemudi/Surat Jalan, integrasi dua arah ke ecommerce-service) sudah ada sejak 2026-08-12 sebagai module ke-20 — production-readiness dan fact table SENGAJA belum dikerjakan (pola dua-tahap) |
+| **Modul bisnis tambahan** | ✅ CRM (Leads/Accounts/Contacts/Opportunities/Activities, termasuk konversi Lead→Account+Contact+Opportunity transaksional) sudah ada sejak 2026-08-08 sebagai module ke-17, production-readiness lengkap sejak 2026-08-09, fact table `fact_crm_opportunities` sejak 2026-08-11. ✅ Ticketing (Ticket Categories/Tickets/Comments, alur status close/reopen) sudah ada sejak 2026-08-09 sebagai module ke-18, production-readiness lengkap sejak 2026-08-09 (hari yang sama), fact table `fact_ticketing_tickets` sejak 2026-08-11. ✅ E-Commerce (Orders/Order Items, checkout dengan katalog produk direuse dari warehouse-service, stock-out otomatis saat SHIPPED) sudah ada sejak 2026-08-10 sebagai module ke-19, production-readiness lengkap sejak 2026-08-10 (hari yang sama), fact table `fact_ecommerce_order_lines` sejak 2026-08-11. ✅ Fleet & Delivery (Kendaraan/Pengemudi/Surat Jalan, integrasi dua arah ke ecommerce-service) sudah ada sejak 2026-08-12 sebagai module ke-20, production-readiness lengkap sejak 2026-08-13 — fact table dw-service SENGAJA belum dikerjakan |
 | **Frontend charts di BI** | ✅ 4 chart dari `dw-service` di BI Dashboards — 3 time series bulanan (Revenue vs Expense, Stock In vs Out, Sales Value) sejak 2026-08-08, plus Pipeline CRM per Stage (2026-08-12) yang sumbu X-nya kategorikal, bukan waktu. Semuanya memakai komponen `GroupedBarChart` yang sama (generik untuk 1 atau N seri, sumbu kategori bisa di-override) — chart tambahan lain masih bisa dikerjakan kalau ada kebutuhan |
 | **Production deployment** | Real cloud infra (managed Postgres, Kafka cluster, K8s managed) |
 
@@ -90,7 +90,7 @@ Lihat `20_Implementation_Guide.md` untuk panduan lengkap.
 # 1. Start infra
 cd infra && docker compose up -d
 
-# 2. Start semua 19 Go services (masing-masing di terminal sendiri)
+# 2. Start semua 20 Go services (masing-masing di terminal sendiri)
 cd backend/modules/finance-service && go run ./cmd/server
 # ... (ulangi untuk semua service)
 
@@ -107,4 +107,4 @@ cd frontend/web && npm run dev
 
 GitHub: [github.com/RifqiIrawan/Enterprise_Digital_Platform](https://github.com/RifqiIrawan/Enterprise_Digital_Platform) (public)
 
-CI/CD: GitHub Actions — backend matrix test (semua 19 service) + frontend build, hijau di semua commit.
+CI/CD: GitHub Actions — backend matrix test (semua 20 service) + frontend build, hijau di semua commit.

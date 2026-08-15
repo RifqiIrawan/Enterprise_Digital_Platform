@@ -600,6 +600,26 @@ services:
     networks:
       - edp-network
 
+  fleet-service:
+    build:
+      context: ../backend/modules/fleet-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8099"
+      OTLP_ENDPOINT: jaeger:4318
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/fleet_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      ECOMMERCE_SERVICE_URL: http://ecommerce-service:8098
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+      - ecommerce-service
+    ports:
+      - "8099:8099"
+    networks:
+      - edp-network
+
   api-gateway:
     build:
       context: ../backend/services/api-gateway
@@ -625,6 +645,7 @@ services:
       CRM_SERVICE_URL: http://crm-service:8096
       TICKETING_SERVICE_URL: http://ticketing-service:8097
       ECOMMERCE_SERVICE_URL: http://ecommerce-service:8098
+      FLEET_SERVICE_URL: http://fleet-service:8099
       JWT_SECRET: ${JWT_SECRET:-change-me}
       CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
     depends_on:
@@ -646,6 +667,7 @@ services:
       - crm-service
       - ticketing-service
       - ecommerce-service
+      - fleet-service
     ports:
       - "8079:8079"
     networks:

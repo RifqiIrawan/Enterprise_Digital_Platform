@@ -5,6 +5,16 @@ dengan integrasi dua arah ke `ecommerce-service`.
 
 Port `8099`, database `fleet_service`, route gateway `/api/fleet`.
 
+Status: **diimplementasikan, termasuk production-readiness** (modul inti
+2026-08-12, production-readiness 2026-08-13/15) — Dockerfile, blok
+docker-compose, manifest K8s base + overlay dev/staging/prod, env template
+staging/production, entri CI, dan target scrape Prometheus semuanya sudah ada.
+Image-nya sudah benar-benar di-build (`docker compose build fleet-service`) dan
+container-nya di-smoke test terhadap Postgres native (2026-08-15): `/health`
+200, `/metrics` melayani metrik Prometheus, migrasi jalan sendiri saat startup
+(3 tabel + `schema_migrations`), dan `GET /vehicles` mengembalikan data demo
+nyata dari dalam container.
+
 ## Lingkup
 
 | Entitas | Keterangan |
@@ -54,10 +64,6 @@ berarti pengirimannya dijadwalkan ulang, bukan bahwa order-nya batal.
 
 ## Belum ada / batasan yang disengaja
 
-- **Belum ada production-readiness** (Dockerfile, blok docker-compose, manifest
-  K8s, entri CI, env template staging/prod, target Prometheus) — mengikuti pola
-  dua-tahap yang sama seperti CRM/Ticketing/E-Commerce: modul inti dulu,
-  production-readiness sebagai sesi terpisah.
 - **Belum ada fact table dw-service** untuk Fleet — belum ada bukti kebutuhan
   BI/reporting terhadap data pengiriman.
 - **Tidak ada rute/optimasi multi-drop** — satu surat jalan = satu tujuan.

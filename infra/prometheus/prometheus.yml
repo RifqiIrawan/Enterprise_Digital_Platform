@@ -48,3 +48,5 @@ scrape_configs:
         labels: { service: ticketing-service }
       - targets: ["host.docker.internal:8098"]
         labels: { service: ecommerce-service }
+      - targets: ["host.docker.internal:8099"]
+        labels: { service: fleet-service }

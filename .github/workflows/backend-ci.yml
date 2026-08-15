@@ -85,6 +85,7 @@ jobs:
           - modules/crm-service
           - modules/ticketing-service
           - modules/ecommerce-service
+          - modules/fleet-service
 
     steps:
       - uses: actions/checkout@v4
