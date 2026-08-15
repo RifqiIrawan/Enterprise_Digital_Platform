@@ -110,7 +110,10 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     ports:
-      - "8099:8080"   # host 8090 clashes with production-service (backend/modules/production-service)
+      # Host 8090 clashed with production-service, then 8099 clashed with
+      # fleet-service (module 20). Moved well clear of the 807x-81xx band the
+      # Go services allocate from, so the next module does not collide again.
+      - "8200:8080"
     networks:
       - edp-network
 

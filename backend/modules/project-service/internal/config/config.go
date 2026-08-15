@@ -1,0 +1,30 @@
+package config
+
+import "os"
+
+type Config struct {
+	Port              string
+	DatabaseURL       string
+	KafkaBrokers      string
+	HRServiceURL      string
+	FinanceServiceURL string
+	OTLPEndpoint      string
+}
+
+func Load() *Config {
+	return &Config{
+		Port:              getEnv("PORT", "8100"),
+		DatabaseURL:       getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/project_service?sslmode=disable"),
+		KafkaBrokers:      getEnv("KAFKA_BROKERS", "localhost:9092"),
+		HRServiceURL:      getEnv("HR_SERVICE_URL", "http://localhost:8086"),
+		FinanceServiceURL: getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),
+		OTLPEndpoint:      getEnv("OTLP_ENDPOINT", "localhost:4318"),
+	}
+}
+
+func getEnv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}

@@ -51,6 +51,9 @@ import OrdersPage from './pages/ecommerce/OrdersPage.jsx'
 import VehiclesPage from './pages/fleet/VehiclesPage.jsx'
 import DriversPage from './pages/fleet/DriversPage.jsx'
 import DeliveryOrdersPage from './pages/fleet/DeliveryOrdersPage.jsx'
+import ProjectsPage from './pages/project/ProjectsPage.jsx'
+import TasksPage from './pages/project/TasksPage.jsx'
+import TimesheetsPage from './pages/project/TimesheetsPage.jsx'
 import { isAuthenticated } from './utils/auth.js'
 
 function RequireAuth({ children }) {
@@ -121,6 +124,9 @@ function App() {
         <Route path="/fleet/vehicles" element={<VehiclesPage />} />
         <Route path="/fleet/drivers" element={<DriversPage />} />
         <Route path="/fleet/delivery-orders" element={<DeliveryOrdersPage />} />
+        <Route path="/project/projects" element={<ProjectsPage />} />
+        <Route path="/project/tasks" element={<TasksPage />} />
+        <Route path="/project/timesheets" element={<TimesheetsPage />} />
         <Route path="*" element={<PlaceholderPage />} />
       </Route>
     </Routes>

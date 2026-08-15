@@ -123,6 +123,18 @@ var Topics = []string{
 	"fleet.delivery.dispatched",
 	"fleet.delivery.delivered",
 	"fleet.delivery.cancelled",
+	"project.project.created",
+	"project.project.updated",
+	"project.project.activated",
+	"project.project.held",
+	"project.project.completed",
+	"project.project.cancelled",
+	"project.task.created",
+	"project.task.updated",
+	"project.timesheet.created",
+	"project.timesheet.approved",
+	"project.timesheet.rejected",
+	"project.cost.posted",
 }
 
 const (

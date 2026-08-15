@@ -21,4 +21,5 @@ use (
 	./modules/ticketing-service
 	./modules/ecommerce-service
 	./modules/fleet-service
+	./modules/project-service
 )
