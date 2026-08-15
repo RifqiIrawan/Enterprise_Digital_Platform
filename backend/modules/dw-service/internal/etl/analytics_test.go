@@ -449,3 +449,116 @@ func TestCRMPipelineSummary_NoDataReturnsEmpty(t *testing.T) {
 		t.Errorf("expected empty summary for company with no data, got %+v", summary)
 	}
 }
+
+// projectTimesheet membangun satu baris fact dengan nilai default yang masuk
+// akal, supaya tiap test cuma perlu menyebut field yang benar-benar diuji.
+func projectTimesheet(companyID uuid.UUID, projectCode, status string, hours, amount float64) ch.ProjectTimesheetRow {
+	workDate := time.Date(2026, 8, 14, 0, 0, 0, 0, time.UTC)
+	return ch.ProjectTimesheetRow{
+		TimesheetID: uuid.New(), CompanyID: companyID,
+		ProjectID: uuid.New(), ProjectCode: projectCode,
+		ProjectName: "Proyek " + projectCode, ProjectStatus: "ACTIVE",
+		EmployeeID: uuid.New(), EmployeeName: "Dewi Lestari",
+		WorkDate: workDate, Hours: hours, HourlyRate: 100000, Amount: amount,
+		Status: status, CreatedAt: workDate, UpdatedAt: workDate,
+	}
+}
+
+// TestProjectCostSummary_CountsPostedOnly -- angka sengaja bersih supaya bisa
+// dihitung tangan: PRJ-A punya 6 + 2 jam POSTED (600.000 + 500.000 =
+// 1.100.000), PRJ-B punya 1 baris POSTED (250.000). Baris DRAFT, APPROVED, dan
+// REJECTED sengaja ikut di-insert dan HARUS diabaikan -- hanya POSTED yang
+// biayanya benar-benar sudah masuk jurnal finance-service.
+func TestProjectCostSummary_CountsPostedOnly(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	rows := []ch.ProjectTimesheetRow{
+		projectTimesheet(companyID, "PRJ-A", "POSTED", 6, 600000),
+		projectTimesheet(companyID, "PRJ-A", "POSTED", 2, 500000),
+		projectTimesheet(companyID, "PRJ-B", "POSTED", 1, 250000),
+		// Ketiga baris di bawah TIDAK boleh ikut terhitung.
+		projectTimesheet(companyID, "PRJ-A", "DRAFT", 8, 800000),
+		projectTimesheet(companyID, "PRJ-A", "APPROVED", 4, 400000),
+		projectTimesheet(companyID, "PRJ-B", "REJECTED", 3, 300000),
+	}
+	if err := chClient.InsertProjectTimesheets(ctx, rows, time.Now()); err != nil {
+		t.Fatalf("InsertProjectTimesheets: %v", err)
+	}
+
+	summary, err := chClient.ProjectCostSummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("ProjectCostSummary: %v", err)
+	}
+	if len(summary) != 2 {
+		t.Fatalf("expected 2 projects in summary, got %d (%+v)", len(summary), summary)
+	}
+
+	// ORDER BY posted_amount DESC -- PRJ-A (1.100.000) harus di depan PRJ-B.
+	if summary[0].ProjectCode != "PRJ-A" || summary[1].ProjectCode != "PRJ-B" {
+		t.Fatalf("expected PRJ-A before PRJ-B (ordered by amount), got %s then %s",
+			summary[0].ProjectCode, summary[1].ProjectCode)
+	}
+
+	wantA := mustDecimal(t, "1100000")
+	if !summary[0].PostedAmount.Equal(wantA) {
+		t.Errorf("PRJ-A posted_amount = %s, want %s", summary[0].PostedAmount, wantA)
+	}
+	wantHoursA := mustDecimal(t, "8")
+	if !summary[0].PostedHours.Equal(wantHoursA) {
+		t.Errorf("PRJ-A posted_hours = %s, want %s", summary[0].PostedHours, wantHoursA)
+	}
+	if summary[0].TimesheetCount != 2 {
+		t.Errorf("PRJ-A timesheet_count = %d, want 2", summary[0].TimesheetCount)
+	}
+
+	wantB := mustDecimal(t, "250000")
+	if !summary[1].PostedAmount.Equal(wantB) {
+		t.Errorf("PRJ-B posted_amount = %s, want %s", summary[1].PostedAmount, wantB)
+	}
+}
+
+func TestProjectCostSummary_NoDataReturnsEmpty(t *testing.T) {
+	summary, err := chClient.ProjectCostSummary(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("ProjectCostSummary: %v", err)
+	}
+	if len(summary) != 0 {
+		t.Fatalf("expected no rows for an unknown company, got %d", len(summary))
+	}
+}
+
+// Baris yang sama ditulis DUA KALI lewat dua panggilan Insert TERPISAH (meniru
+// batch ETL dan Kafka Streaming ETL yang memang dual-write dengan synced_at
+// berbeda) tidak boleh menggandakan biaya. Dua panggilan terpisah itu penting:
+// satu slice berisi dua baris identik akan ter-GROUP BY dalam satu block
+// sebelum sempat jadi bug -- pola test yang sama seperti
+// TestMonthlyFinanceSummary_DualWriteDoesNotDoubleCount.
+func TestProjectCostSummary_DualWriteDoesNotDoubleCount(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	row := projectTimesheet(companyID, "PRJ-DUAL", "POSTED", 5, 500000)
+
+	if err := chClient.InsertProjectTimesheets(ctx, []ch.ProjectTimesheetRow{row}, time.Now()); err != nil {
+		t.Fatalf("first InsertProjectTimesheets: %v", err)
+	}
+	if err := chClient.InsertProjectTimesheets(ctx, []ch.ProjectTimesheetRow{row}, time.Now().Add(time.Minute)); err != nil {
+		t.Fatalf("second InsertProjectTimesheets: %v", err)
+	}
+
+	summary, err := chClient.ProjectCostSummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("ProjectCostSummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected 1 project, got %d", len(summary))
+	}
+	want := mustDecimal(t, "500000")
+	if !summary[0].PostedAmount.Equal(want) {
+		t.Errorf("posted_amount = %s, want %s (the same timesheet must not be counted twice)", summary[0].PostedAmount, want)
+	}
+	if summary[0].TimesheetCount != 1 {
+		t.Errorf("timesheet_count = %d, want 1", summary[0].TimesheetCount)
+	}
+}

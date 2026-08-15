@@ -99,9 +99,12 @@ Dua keputusan yang sengaja berbeda dari `deliverDeliveryOrder` di fleet-service:
 
 ## Belum ada / batasan yang disengaja
 
-- **Fact table dw-service sudah ada** sejak 2026-08-16
-  (`fact_project_timesheets`, grain satu baris per timesheet), tapi belum ada
-  endpoint analitik maupun chart BI yang memakainya.
+- **Fact table dw-service + chart BI sudah ada** sejak 2026-08-16
+  (`fact_project_timesheets` dengan grain satu baris per timesheet,
+  endpoint `GET /analytics/project-cost-summary` di dw-service, dan chart
+  "Biaya Proyek yang Sudah Diposting ke GL" di BI Dashboards). Yang belum:
+  Materialized View untuk mempercepatnya, dan agregasi per KARYAWAN
+  (endpoint yang ada meringkas per proyek).
 - **Tidak ada dependensi antar tugas / Gantt / jalur kritis** — tugas berdiri
   sendiri, tidak ada `predecessor_id` maupun penjadwalan otomatis.
 - **Tidak ada rekap jam per karyawan lintas proyek di service ini** —

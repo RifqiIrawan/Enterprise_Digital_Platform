@@ -41,6 +41,14 @@ const CRM_PIPELINE_SERIES = [
   { key: 'weighted_amount', label: 'Nilai Terbobot (× probability)', color: 'rgba(var(--bs-primary-rgb), 0.4)' },
 ]
 
+// Biaya proyek: satu ukuran magnitude (rupiah yang sudah masuk GL), bukan
+// dikotomi masuk-vs-keluar dan bukan subset dari bar sebelahnya -- jadi satu
+// seri, slot 1 biru yang sama seperti Sales Value. Jam kerja SENGAJA tidak
+// dijadikan seri kedua di chart ini: satuannya beda (jam vs rupiah), dan dua
+// satuan pada satu sumbu Y membuat tinggi bar-nya tidak bisa dibandingkan.
+// Angkanya tetap tersedia lewat tooltip di kolom lain kalau nanti dibutuhkan.
+const PROJECT_COST_SERIES = [{ key: 'posted_amount', label: 'Biaya Diposting', color: 'var(--bs-primary)' }]
+
 function StatTile({ label, value, sub, className = '' }) {
   return (
     <div className="col-md-3 col-sm-6">
@@ -105,6 +113,8 @@ function BIDashboardsPage() {
   const [monthlySalesError, setMonthlySalesError] = useState('')
   const [crmPipeline, setCrmPipeline] = useState(null)
   const [crmPipelineError, setCrmPipelineError] = useState('')
+  const [projectCost, setProjectCost] = useState(null)
+  const [projectCostError, setProjectCostError] = useState('')
 
   function loadSummary(cid) {
     setLoading(true)
@@ -161,6 +171,22 @@ function BIDashboardsPage() {
       .catch(() => setCrmPipelineError('Gagal memuat pipeline CRM. Pastikan dw-service aktif.'))
   }
 
+  // Chart kelima dari dw-service, sumbu X-nya kode proyek (kategorikal seperti
+  // pipeline CRM). Backend sudah mengurutkan dari biaya terbesar, jadi frontend
+  // merender apa adanya. Hanya timesheet POSTED yang dihitung di sana -- yang
+  // tampil di sini adalah biaya yang benar-benar sudah masuk jurnal GL.
+  function loadProjectCost(cid) {
+    setProjectCostError('')
+    apiClient
+      .get('/api/dw/analytics/project-cost-summary', { params: { company_id: cid } })
+      .then(({ data }) =>
+        setProjectCost(
+          data.map((d) => ({ ...d, posted_amount: Number(d.posted_amount), posted_hours: Number(d.posted_hours) })),
+        ),
+      )
+      .catch(() => setProjectCostError('Gagal memuat biaya proyek. Pastikan dw-service aktif.'))
+  }
+
   useEffect(() => {
     if (!companyId) {
       setLoading(false)
@@ -171,6 +197,7 @@ function BIDashboardsPage() {
     loadMonthlyStock(companyId)
     loadMonthlySales(companyId)
     loadCrmPipeline(companyId)
+    loadProjectCost(companyId)
   }, [companyId])
 
   return (
@@ -289,6 +316,31 @@ function BIDashboardsPage() {
                     series={CRM_PIPELINE_SERIES}
                     formatValue={(v) => `Rp ${formatMoney(v)}`}
                     categoryKey="stage"
+                    formatCategoryTick={(v) => v}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="row g-3">
+            <div className="col-md-8">
+              <div className="card p-3 h-100">
+                <h6 className="mb-3">Biaya Proyek yang Sudah Diposting ke GL (dari Data Warehouse)</h6>
+                {projectCostError && <div className="alert alert-warning py-2 small mb-0">{projectCostError}</div>}
+                {!projectCostError && projectCost == null && <div className="text-secondary small">Memuat...</div>}
+                {!projectCostError && projectCost != null && projectCost.length === 0 && (
+                  <div className="text-secondary small">
+                    Belum ada timesheet yang diposting ke GL. Biaya baru muncul di sini setelah timesheet disetujui dan
+                    diposting dari halaman Proyek.
+                  </div>
+                )}
+                {!projectCostError && projectCost != null && projectCost.length > 0 && (
+                  <GroupedBarChart
+                    data={projectCost}
+                    series={PROJECT_COST_SERIES}
+                    formatValue={(v) => `Rp ${formatMoney(v)}`}
+                    categoryKey="project_code"
                     formatCategoryTick={(v) => v}
                   />
                 )}

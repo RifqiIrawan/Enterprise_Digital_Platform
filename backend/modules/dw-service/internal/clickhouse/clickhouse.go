@@ -537,6 +537,58 @@ func (c *Client) MonthlySalesSummary(ctx context.Context, companyID uuid.UUID) (
 	return out, rows.Err()
 }
 
+type ProjectCostSummaryRow struct {
+	ProjectCode    string          `json:"project_code"`
+	ProjectName    string          `json:"project_name"`
+	ProjectStatus  string          `json:"project_status"`
+	TimesheetCount uint64          `json:"timesheet_count"`
+	PostedHours    decimal.Decimal `json:"posted_hours"`
+	PostedAmount   decimal.Decimal `json:"posted_amount"`
+}
+
+// ProjectCostSummary meringkas biaya tenaga kerja per proyek dari
+// fact_project_timesheets.
+//
+// Hanya timesheet berstatus POSTED yang dihitung -- itu satu-satunya status
+// yang biayanya benar-benar sudah masuk jurnal finance-service, jadi angka di
+// sini bisa direkonsiliasi dengan GL. DRAFT/APPROVED sengaja DIKECUALIKAN
+// (biaya yang belum diakui di pembukuan) dan REJECTED jelas tidak dihitung.
+// Prinsip yang sama seperti entry_status='POSTED' di MonthlyFinanceSummary dan
+// pengecualian DRAFT/CANCELLED di MonthlySalesSummary.
+//
+// FINAL dipakai karena dw-service dual-write ke fact table lewat batch ETL DAN
+// Kafka Streaming ETL: baris timesheet yang sama bisa ter-INSERT dua kali
+// dengan synced_at berbeda, dan tanpa FINAL keduanya akan ikut terjumlah.
+func (c *Client) ProjectCostSummary(ctx context.Context, companyID uuid.UUID) ([]ProjectCostSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			project_code,
+			any(project_name) AS project_name,
+			any(project_status) AS project_status,
+			count() AS timesheet_count,
+			sum(hours) AS posted_hours,
+			sum(amount) AS posted_amount
+		FROM fact_project_timesheets FINAL
+		WHERE company_id = ? AND status = 'POSTED'
+		GROUP BY project_code
+		ORDER BY posted_amount DESC
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query project cost summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ProjectCostSummaryRow{}
+	for rows.Next() {
+		var r ProjectCostSummaryRow
+		if err := rows.Scan(&r.ProjectCode, &r.ProjectName, &r.ProjectStatus, &r.TimesheetCount, &r.PostedHours, &r.PostedAmount); err != nil {
+			return nil, fmt.Errorf("scan project cost summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 type CRMPipelineSummaryRow struct {
 	Stage            string          `json:"stage"`
 	OpportunityCount uint64          `json:"opportunity_count"`
