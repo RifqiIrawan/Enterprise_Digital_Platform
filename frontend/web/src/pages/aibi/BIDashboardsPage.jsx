@@ -11,6 +11,19 @@ function formatQty(n) {
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 0 }).format(n ?? 0)
 }
 
+// Rata-rata lama pengiriman dilaporkan untuk bulan TERAKHIR yang benar-benar
+// punya pengiriman selesai, bukan dirata-ratakan lagi lintas bulan: merata-rata
+// sekumpulan rata-rata tanpa membobot jumlah pengirimannya akan menghasilkan
+// angka yang salah, dan membobotnya di frontend berarti menghitung ulang sesuatu
+// yang seharusnya jadi tugas query.
+function describeAvgDeliveryHours(rows) {
+  const withAvg = rows.filter((r) => r.avg_delivery_hours != null)
+  if (withAvg.length === 0) return 'Belum ada pengiriman selesai yang bisa dihitung durasinya.'
+  const last = withAvg[withAvg.length - 1]
+  const hours = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(last.avg_delivery_hours)
+  return `Rata-rata lama pengiriman ${last.month.slice(0, 7)}: ${hours} jam (berangkat sampai tiba).`
+}
+
 // Dua dari tiga chart bulanan di halaman ini sama-sama dikotomi "masuk vs
 // keluar" -- slot 1 (biru) selalu sisi masuk (Revenue, Stock In), slot 2
 // (oranye) selalu sisi keluar (Expense, Stock Out). Urutan tetap ini SENGAJA
@@ -48,6 +61,17 @@ const CRM_PIPELINE_SERIES = [
 // satuan pada satu sumbu Y membuat tinggi bar-nya tidak bisa dibandingkan.
 // Angkanya tetap tersedia lewat tooltip di kolom lain kalau nanti dibutuhkan.
 const PROJECT_COST_SERIES = [{ key: 'posted_amount', label: 'Biaya Diposting', color: 'var(--bs-primary)' }]
+
+// Pengiriman selesai vs dibatalkan. Ini BUKAN dikotomi masuk-vs-keluar yang
+// dipakai chart Finance/Stock, tapi pasangan biru/oranye yang sama tetap dipakai
+// karena maknanya tetap "dua sisi berlawanan dari satu proses" -- dan menambah
+// hue kategorikal ketiga cuma untuk chart ini akan membuat halaman ini punya
+// lebih banyak warna daripada makna. Hijau/merah SENGAJA dihindari (di seluruh
+// halaman ini) supaya tidak terbaca sebagai penilaian baik/buruk.
+const FLEET_DELIVERY_SERIES = [
+  { key: 'delivered_count', label: 'Selesai', color: 'var(--bs-primary)' },
+  { key: 'cancelled_count', label: 'Dibatalkan', color: 'var(--bs-orange)' },
+]
 
 function StatTile({ label, value, sub, className = '' }) {
   return (
@@ -115,6 +139,8 @@ function BIDashboardsPage() {
   const [crmPipelineError, setCrmPipelineError] = useState('')
   const [projectCost, setProjectCost] = useState(null)
   const [projectCostError, setProjectCostError] = useState('')
+  const [fleetDelivery, setFleetDelivery] = useState(null)
+  const [fleetDeliveryError, setFleetDeliveryError] = useState('')
 
   function loadSummary(cid) {
     setLoading(true)
@@ -187,6 +213,28 @@ function BIDashboardsPage() {
       .catch(() => setProjectCostError('Gagal memuat biaya proyek. Pastikan dw-service aktif.'))
   }
 
+  // Chart keenam dari dw-service. avg_delivery_hours ikut dikembalikan endpoint
+  // (nullable -- bulan tanpa pengiriman selesai tidak punya rata-rata) dan
+  // ditampilkan sebagai teks ringkas di bawah judul, BUKAN sebagai seri ketiga:
+  // satuannya jam sementara dua seri lainnya cacah, jadi tidak bisa berbagi
+  // sumbu Y yang sama.
+  function loadFleetDelivery(cid) {
+    setFleetDeliveryError('')
+    apiClient
+      .get('/api/dw/analytics/fleet-delivery-monthly-summary', { params: { company_id: cid } })
+      .then(({ data }) =>
+        setFleetDelivery(
+          data.map((d) => ({
+            ...d,
+            delivered_count: Number(d.delivered_count),
+            cancelled_count: Number(d.cancelled_count),
+            avg_delivery_hours: d.avg_delivery_hours == null ? null : Number(d.avg_delivery_hours),
+          })),
+        ),
+      )
+      .catch(() => setFleetDeliveryError('Gagal memuat ringkasan pengiriman. Pastikan dw-service aktif.'))
+  }
+
   useEffect(() => {
     if (!companyId) {
       setLoading(false)
@@ -198,6 +246,7 @@ function BIDashboardsPage() {
     loadMonthlySales(companyId)
     loadCrmPipeline(companyId)
     loadProjectCost(companyId)
+    loadFleetDelivery(companyId)
   }, [companyId])
 
   return (
@@ -342,6 +391,29 @@ function BIDashboardsPage() {
                     formatValue={(v) => `Rp ${formatMoney(v)}`}
                     categoryKey="project_code"
                     formatCategoryTick={(v) => v}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="row g-3">
+            <div className="col-md-8">
+              <div className="card p-3 h-100">
+                <h6 className="mb-1">Pengiriman per Bulan (dari Data Warehouse)</h6>
+                {!fleetDeliveryError && fleetDelivery != null && fleetDelivery.length > 0 && (
+                  <div className="text-secondary small mb-3">{describeAvgDeliveryHours(fleetDelivery)}</div>
+                )}
+                {fleetDeliveryError && <div className="alert alert-warning py-2 small mb-0">{fleetDeliveryError}</div>}
+                {!fleetDeliveryError && fleetDelivery == null && <div className="text-secondary small">Memuat...</div>}
+                {!fleetDeliveryError && fleetDelivery != null && fleetDelivery.length === 0 && (
+                  <div className="text-secondary small">Belum ada surat jalan yang tercatat.</div>
+                )}
+                {!fleetDeliveryError && fleetDelivery != null && fleetDelivery.length > 0 && (
+                  <GroupedBarChart
+                    data={fleetDelivery}
+                    series={FLEET_DELIVERY_SERIES}
+                    formatValue={(v) => formatQty(v)}
                   />
                 )}
               </div>

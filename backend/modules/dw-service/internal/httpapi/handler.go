@@ -32,6 +32,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /analytics/sales-monthly-summary", h.salesMonthlySummary)
 	mux.HandleFunc("GET /analytics/crm-pipeline-summary", h.crmPipelineSummary)
 	mux.HandleFunc("GET /analytics/project-cost-summary", h.projectCostSummary)
+	mux.HandleFunc("GET /analytics/fleet-delivery-monthly-summary", h.fleetDeliveryMonthlySummary)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {

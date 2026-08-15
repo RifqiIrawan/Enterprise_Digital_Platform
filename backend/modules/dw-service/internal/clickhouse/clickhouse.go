@@ -537,6 +537,67 @@ func (c *Client) MonthlySalesSummary(ctx context.Context, companyID uuid.UUID) (
 	return out, rows.Err()
 }
 
+type FleetDeliveryMonthlySummaryRow struct {
+	Month            string   `json:"month"`
+	TotalDeliveries  uint64   `json:"total_deliveries"`
+	DeliveredCount   uint64   `json:"delivered_count"`
+	CancelledCount   uint64   `json:"cancelled_count"`
+	AvgDeliveryHours *float64 `json:"avg_delivery_hours"`
+}
+
+// FleetDeliveryMonthlySummary meringkas surat jalan per bulan dari
+// fact_fleet_delivery_orders.
+//
+// Bulannya diambil dari scheduled_date (kapan pengiriman DIRENCANAKAN), bukan
+// created_at: itu tanggal yang dipakai orang operasional saat bicara "berapa
+// pengiriman bulan ini", dan surat jalan bisa dibuat di bulan sebelumnya untuk
+// jadwal bulan berikutnya.
+//
+// avg_delivery_hours adalah alasan sesi fact table menyimpan dispatched_at/
+// delivered_at RAW alih-alih membekukan durasi di ETL: definisi "lama
+// pengiriman" baru ditentukan DI SINI, yaitu jam antara berangkat dan sampai,
+// dihitung HANYA untuk surat jalan yang benar-benar DELIVERED dan punya kedua
+// timestamp. Nullable karena bulan yang belum punya satu pun pengiriman
+// selesai memang tidak punya rata-rata -- 0 akan terbaca sebagai "sampai
+// seketika", bukan "belum ada data".
+//
+// Selisihnya diambil dalam MENIT lalu dibagi 60, bukan `dateDiff('hour', ...)`
+// langsung: dateDiff memotong ke satuan penuh, jadi pengiriman 45 menit akan
+// terbaca 0 jam. Ketahuan saat verifikasi end-to-end (data demo punya
+// pengiriman yang berangkat dan tiba dalam hitungan menit, dan hasilnya benar
+// benar 0), bukan dari membaca dokumentasi.
+func (c *Client) FleetDeliveryMonthlySummary(ctx context.Context, companyID uuid.UUID) ([]FleetDeliveryMonthlySummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(scheduled_date)) AS month,
+			count() AS total_deliveries,
+			countIf(status = 'DELIVERED') AS delivered_count,
+			countIf(status = 'CANCELLED') AS cancelled_count,
+			avgOrNullIf(
+				dateDiff('minute', dispatched_at, delivered_at) / 60,
+				status = 'DELIVERED' AND dispatched_at IS NOT NULL AND delivered_at IS NOT NULL
+			) AS avg_delivery_hours
+		FROM fact_fleet_delivery_orders FINAL
+		WHERE company_id = ?
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query fleet delivery monthly summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []FleetDeliveryMonthlySummaryRow{}
+	for rows.Next() {
+		var r FleetDeliveryMonthlySummaryRow
+		if err := rows.Scan(&r.Month, &r.TotalDeliveries, &r.DeliveredCount, &r.CancelledCount, &r.AvgDeliveryHours); err != nil {
+			return nil, fmt.Errorf("scan fleet delivery monthly summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 type ProjectCostSummaryRow struct {
 	ProjectCode    string          `json:"project_code"`
 	ProjectName    string          `json:"project_name"`

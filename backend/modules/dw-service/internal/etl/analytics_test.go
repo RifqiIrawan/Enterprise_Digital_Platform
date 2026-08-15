@@ -562,3 +562,162 @@ func TestProjectCostSummary_DualWriteDoesNotDoubleCount(t *testing.T) {
 		t.Errorf("timesheet_count = %d, want 1", summary[0].TimesheetCount)
 	}
 }
+
+// fleetDelivery membangun satu baris fact surat jalan. dispatched/delivered
+// dikirim sebagai pointer supaya kasus "belum berangkat" bisa diuji apa adanya.
+func fleetDelivery(companyID uuid.UUID, scheduled time.Time, status string, dispatched, delivered *time.Time) ch.FleetDeliveryOrderRow {
+	return ch.FleetDeliveryOrderRow{
+		DeliveryID: uuid.New(), CompanyID: companyID,
+		DeliveryNumber: "DLV-" + uuid.NewString()[:8],
+		VehicleID:      uuid.New(), VehicleCode: "VHC-001", VehicleType: "VAN",
+		DriverID: uuid.New(), DriverCode: "DRV-001", DriverName: "Joko Susilo",
+		RecipientName: "Siti Aminah", ScheduledDate: scheduled, Status: status,
+		DispatchedAt: dispatched, DeliveredAt: delivered,
+		CreatedAt: scheduled, UpdatedAt: scheduled,
+	}
+}
+
+// TestFleetDeliveryMonthlySummary_CountsAndAverageDuration -- angka sengaja
+// bersih: dua pengiriman DELIVERED berdurasi 6 jam dan 4 jam (rata-rata tepat
+// 5), satu CANCELLED yang harus terhitung di total tapi TIDAK ikut rata-rata.
+func TestFleetDeliveryMonthlySummary_CountsAndAverageDuration(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	aug := time.Date(2026, 8, 10, 0, 0, 0, 0, time.UTC)
+	dispatchedA := time.Date(2026, 8, 10, 8, 0, 0, 0, time.UTC)
+	deliveredA := time.Date(2026, 8, 10, 14, 0, 0, 0, time.UTC) // 6 jam
+	dispatchedB := time.Date(2026, 8, 11, 8, 0, 0, 0, time.UTC)
+	deliveredB := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC) // 4 jam
+	dispatchedC := time.Date(2026, 8, 12, 9, 0, 0, 0, time.UTC)
+
+	rows := []ch.FleetDeliveryOrderRow{
+		fleetDelivery(companyID, aug, "DELIVERED", &dispatchedA, &deliveredA),
+		fleetDelivery(companyID, aug, "DELIVERED", &dispatchedB, &deliveredB),
+		// Sudah berangkat lalu dibatalkan: masuk total dan cancelled_count,
+		// tapi TIDAK boleh mencemari rata-rata durasi (delivered_at NULL).
+		fleetDelivery(companyID, aug, "CANCELLED", &dispatchedC, nil),
+	}
+	if err := chClient.InsertFleetDeliveryOrders(ctx, rows, time.Now()); err != nil {
+		t.Fatalf("InsertFleetDeliveryOrders: %v", err)
+	}
+
+	summary, err := chClient.FleetDeliveryMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("FleetDeliveryMonthlySummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected 1 month, got %d (%+v)", len(summary), summary)
+	}
+
+	got := summary[0]
+	if got.Month != "2026-08-01" {
+		t.Errorf("month = %q, want 2026-08-01", got.Month)
+	}
+	if got.TotalDeliveries != 3 {
+		t.Errorf("total_deliveries = %d, want 3", got.TotalDeliveries)
+	}
+	if got.DeliveredCount != 2 {
+		t.Errorf("delivered_count = %d, want 2", got.DeliveredCount)
+	}
+	if got.CancelledCount != 1 {
+		t.Errorf("cancelled_count = %d, want 1", got.CancelledCount)
+	}
+	if got.AvgDeliveryHours == nil {
+		t.Fatal("avg_delivery_hours should not be NULL when there are delivered rows")
+	}
+	if *got.AvgDeliveryHours != 5 {
+		t.Errorf("avg_delivery_hours = %v, want 5 (mean of 6 and 4)", *got.AvgDeliveryHours)
+	}
+}
+
+// Bulan tanpa satu pun pengiriman selesai harus mengembalikan avg NULL, bukan
+// 0 -- 0 akan terbaca sebagai "sampai seketika", bukan "belum ada data".
+func TestFleetDeliveryMonthlySummary_NullAverageWhenNothingDelivered(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	sep := time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC)
+	rows := []ch.FleetDeliveryOrderRow{
+		fleetDelivery(companyID, sep, "PENDING", nil, nil),
+	}
+	if err := chClient.InsertFleetDeliveryOrders(ctx, rows, time.Now()); err != nil {
+		t.Fatalf("InsertFleetDeliveryOrders: %v", err)
+	}
+
+	summary, err := chClient.FleetDeliveryMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("FleetDeliveryMonthlySummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected 1 month, got %d", len(summary))
+	}
+	if summary[0].TotalDeliveries != 1 || summary[0].DeliveredCount != 0 {
+		t.Errorf("expected 1 total / 0 delivered, got %d / %d", summary[0].TotalDeliveries, summary[0].DeliveredCount)
+	}
+	if summary[0].AvgDeliveryHours != nil {
+		t.Errorf("avg_delivery_hours = %v, want NULL", *summary[0].AvgDeliveryHours)
+	}
+}
+
+// Bulannya diambil dari scheduled_date, bukan created_at -- surat jalan yang
+// dibuat bulan lalu untuk jadwal bulan ini harus masuk bulan JADWALNYA.
+func TestFleetDeliveryMonthlySummary_GroupsByScheduledDate(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	scheduled := time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC)
+	row := fleetDelivery(companyID, scheduled, "PENDING", nil, nil)
+	row.CreatedAt = time.Date(2026, 9, 20, 0, 0, 0, 0, time.UTC) // dibuat bulan sebelumnya
+	if err := chClient.InsertFleetDeliveryOrders(ctx, []ch.FleetDeliveryOrderRow{row}, time.Now()); err != nil {
+		t.Fatalf("InsertFleetDeliveryOrders: %v", err)
+	}
+
+	summary, err := chClient.FleetDeliveryMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("FleetDeliveryMonthlySummary: %v", err)
+	}
+	if len(summary) != 1 || summary[0].Month != "2026-10-01" {
+		t.Fatalf("expected the row to land in 2026-10 (its scheduled month), got %+v", summary)
+	}
+}
+
+func TestFleetDeliveryMonthlySummary_NoDataReturnsEmpty(t *testing.T) {
+	summary, err := chClient.FleetDeliveryMonthlySummary(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("FleetDeliveryMonthlySummary: %v", err)
+	}
+	if len(summary) != 0 {
+		t.Fatalf("expected no rows for an unknown company, got %d", len(summary))
+	}
+}
+
+// Pengiriman yang selesai dalam HITUNGAN MENIT tidak boleh terbaca 0 jam.
+// dateDiff('hour', ...) memotong ke jam penuh, jadi query-nya menghitung selisih
+// menit lalu membaginya 60. Test ini yang menahan perubahan balik ke dateDiff
+// jam langsung -- bug ini ketemu di verifikasi end-to-end, bukan di test.
+func TestFleetDeliveryMonthlySummary_SubHourDeliveryIsNotZero(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	nov := time.Date(2026, 11, 4, 0, 0, 0, 0, time.UTC)
+	dispatched := time.Date(2026, 11, 4, 9, 0, 0, 0, time.UTC)
+	delivered := time.Date(2026, 11, 4, 9, 30, 0, 0, time.UTC) // 30 menit
+	rows := []ch.FleetDeliveryOrderRow{
+		fleetDelivery(companyID, nov, "DELIVERED", &dispatched, &delivered),
+	}
+	if err := chClient.InsertFleetDeliveryOrders(ctx, rows, time.Now()); err != nil {
+		t.Fatalf("InsertFleetDeliveryOrders: %v", err)
+	}
+
+	summary, err := chClient.FleetDeliveryMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("FleetDeliveryMonthlySummary: %v", err)
+	}
+	if len(summary) != 1 || summary[0].AvgDeliveryHours == nil {
+		t.Fatalf("expected one month with an average, got %+v", summary)
+	}
+	if *summary[0].AvgDeliveryHours != 0.5 {
+		t.Errorf("avg_delivery_hours = %v, want 0.5 (30 minutes must not truncate to 0)", *summary[0].AvgDeliveryHours)
+	}
+}
