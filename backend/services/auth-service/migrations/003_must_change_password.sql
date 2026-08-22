@@ -1,0 +1,12 @@
+-- Penanda "password ini ditetapkan orang lain, ganti dulu sebelum lanjut".
+--
+-- Diperlukan karena reset password di platform ini dilakukan ADMIN, bukan lewat
+-- tautan email: tidak ada satu pun komponen surat-menyurat di seluruh stack
+-- (tidak ada SMTP/mailer di service mana pun maupun di infra/docker-compose.yml),
+-- jadi alur "kirim token ke email" berarti menambah dependency baru sekaligus
+-- satu jalur kegagalan baru.
+--
+-- Konsekuensinya password sementara sempat diketahui admin, dan itulah yang
+-- ditutup kolom ini: user WAJIB menggantinya sendiri di login berikutnya,
+-- sehingga password yang akhirnya dipakai hanya diketahui pemiliknya.
+ALTER TABLE users ADD COLUMN must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
