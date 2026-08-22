@@ -11,6 +11,17 @@ function formatQty(n) {
   return `${new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(n ?? 0)} pcs`
 }
 
+// Metode perhitungan ditampilkan apa adanya: proyeksi dari histori pendek
+// memang lebih lemah, dan menyembunyikan bedanya membuat garis putus-putus
+// terbaca sama meyakinkannya di kedua keadaan.
+function describeMethod(series) {
+  if (!series || series.method === 'insufficient_data') return 'Histori belum cukup untuk membuat proyeksi.'
+  if (series.method === 'seasonal') {
+    return `Tren + pola musiman ${series.seasonal_period} bulan. Area terang = rentang 95%.`
+  }
+  return 'Tren linear (pola musiman butuh histori minimal 24 bulan). Area terang = rentang 95%.'
+}
+
 function ForecastingPage() {
   const { companyId } = useCompany()
   const [data, setData] = useState(null)
@@ -57,13 +68,15 @@ function ForecastingPage() {
           <div className="row g-3">
             <div className="col-lg-6">
               <div className="card p-3">
-                <h6 className="mb-3">Revenue Sales per Bulan</h6>
+                <h6 className="mb-1">Revenue Sales per Bulan</h6>
+                <div className="text-secondary small mb-3">{describeMethod(data.sales_revenue)}</div>
                 <ForecastLineChart history={data.sales_revenue.history} forecast={data.sales_revenue.forecast} formatValue={formatMoney} />
               </div>
             </div>
             <div className="col-lg-6">
               <div className="card p-3">
-                <h6 className="mb-3">Total Stok (Semua Gudang) per Bulan</h6>
+                <h6 className="mb-1">Total Stok (Semua Gudang) per Bulan</h6>
+                <div className="text-secondary small mb-3">{describeMethod(data.stock_level)}</div>
                 <ForecastLineChart history={data.stock_level.history} forecast={data.stock_level.forecast} formatValue={formatQty} color="#0d9488" />
               </div>
             </div>

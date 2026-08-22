@@ -25,7 +25,9 @@ function ForecastLineChart({ history, forecast, formatValue, color = 'var(--bs-p
     return <div className="text-secondary small">Belum ada data.</div>
   }
 
-  const values = points.map((p) => p.value)
+  // Batas atas pita ikut masuk skala -- kalau tidak, pita ketidakpastian
+  // terpotong di tepi atas dan justru terbaca seolah proyeksinya mentok.
+  const values = points.flatMap((p) => (p.isForecast && p.upper != null ? [p.value, p.upper, p.lower] : [p.value]))
   const minValue = Math.min(0, ...values)
   const maxValue = Math.max(1, ...values)
   const plotWidth = WIDTH - PAD_LEFT - PAD_RIGHT
@@ -45,6 +47,21 @@ function ForecastLineChart({ history, forecast, formatValue, color = 'var(--bs-p
       ? linePath([history[historyCount - 1], ...forecast], historyCount - 1)
       : ''
 
+  // Pita 95% digambar sebagai satu poligon dari titik histori terakhir (lebar
+  // nol di situ, karena aktualnya sudah diketahui) melebar ke kanan.
+  const bandPath = (() => {
+    const withBand = forecast.filter((p) => p.upper != null)
+    if (withBand.length === 0 || historyCount === 0) return ''
+    const anchor = history[historyCount - 1]
+    const upper = [`M ${xForIndex(historyCount - 1)} ${yForValue(anchor.value)}`]
+    withBand.forEach((p, i) => upper.push(`L ${xForIndex(historyCount + i)} ${yForValue(p.upper)}`))
+    const lower = []
+    for (let i = withBand.length - 1; i >= 0; i -= 1) {
+      lower.push(`L ${xForIndex(historyCount + i)} ${yForValue(withBand[i].lower)}`)
+    }
+    return [...upper, ...lower, 'Z'].join(' ')
+  })()
+
   const hovered = hoverIndex != null ? points[hoverIndex] : null
 
   return (
@@ -52,6 +69,7 @@ function ForecastLineChart({ history, forecast, formatValue, color = 'var(--bs-p
       <svg viewBox={`0 0 ${WIDTH} ${HEIGHT}`} style={{ width: '100%', height: 'auto', overflow: 'visible' }}>
         <line x1={PAD_LEFT} y1={PAD_TOP + plotHeight} x2={WIDTH - PAD_RIGHT} y2={PAD_TOP + plotHeight} stroke="currentColor" strokeOpacity="0.15" strokeWidth="1" />
 
+        {bandPath && <path d={bandPath} fill={color} fillOpacity="0.12" stroke="none" />}
         {historyPath && <path d={historyPath} fill="none" stroke={color} strokeWidth="2" />}
         {forecastPath && <path d={forecastPath} fill="none" stroke={color} strokeWidth="2" strokeDasharray="5,4" strokeOpacity="0.7" />}
 
@@ -108,6 +126,11 @@ function ForecastLineChart({ history, forecast, formatValue, color = 'var(--bs-p
         >
           <div className="fw-semibold">{hovered.period}</div>
           <div>{formatValue(hovered.value)} {hovered.isForecast && <span className="text-secondary">(proyeksi)</span>}</div>
+          {hovered.isForecast && hovered.upper != null && (
+            <div className="text-secondary">
+              rentang 95%: {formatValue(hovered.lower)} &ndash; {formatValue(hovered.upper)}
+            </div>
+          )}
         </div>
       )}
 

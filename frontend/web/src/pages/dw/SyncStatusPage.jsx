@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import DataTable from '../../components/common/DataTable.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const FACT_LABEL = {
   finance_journal_lines: 'Finance (General Ledger)',
@@ -15,6 +16,7 @@ const FACT_LABEL = {
 }
 
 function SyncStatusPage() {
+  const { can } = usePagePermission()
   const [status, setStatus] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -75,10 +77,12 @@ function SyncStatusPage() {
             ETL batch dari Finance, Sales, Inventory, HR, Purchasing, Production, QC, Asset, dan IoT ke ClickHouse. Berjalan otomatis tiap beberapa menit, atau bisa dipicu manual di bawah ini.
           </div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={syncing} onClick={handleSyncNow}>
-          <i className="bi bi-arrow-repeat me-1" />
-          {syncing ? 'Menyinkronkan...' : 'Sync Now'}
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={syncing} onClick={handleSyncNow}>
+            <i className="bi bi-arrow-repeat me-1" />
+            {syncing ? 'Menyinkronkan...' : 'Sync Now'}
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

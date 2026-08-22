@@ -51,6 +51,24 @@ function AnomalyDetectionPage() {
     { key: 'label', label: 'Referensi', render: (a) => <code>{a.label}</code> },
     { key: 'value', label: 'Nilai', className: 'text-end', cellClassName: 'text-end', render: (a) => formatValue(a) },
     {
+      key: 'method',
+      label: 'Dasar',
+      // Median/MAD dipakai hampir selalu; "classic" muncul saat lebih dari
+      // separuh nilainya identik sehingga MAD = 0 dan median tidak bisa
+      // membedakan apa pun.
+      render: (a) =>
+        a.method === 'classic' ? (
+          <span className="badge text-bg-secondary" title="mean/stddev — dipakai saat MAD = 0">
+            mean/stddev
+          </span>
+        ) : (
+          <span className="badge text-bg-light border" title="median/MAD — tahan terhadap outlier">
+            median/MAD
+          </span>
+        ),
+      sortValue: (a) => (a.method === 'classic' ? 0 : 1),
+    },
+    {
       key: 'z_score',
       label: 'Z-Score',
       className: 'text-end',
