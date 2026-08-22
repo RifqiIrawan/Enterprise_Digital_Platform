@@ -10,15 +10,19 @@ import (
 )
 
 type payrollDetailView struct {
-	EmployeeID     string  `json:"employee_id"`
-	BasicSalary    float64 `json:"basic_salary"`
-	TotalAllowance float64 `json:"total_allowance"`
-	GrossSalary    float64 `json:"gross_salary"`
-	PPh21          float64 `json:"pph21"`
-	TotalDeduction float64 `json:"total_deduction"`
-	NetSalary      float64 `json:"net_salary"`
-	WorkingDays    int     `json:"working_days"`
-	PresentDays    int     `json:"present_days"`
+	EmployeeID      string  `json:"employee_id"`
+	BasicSalary     float64 `json:"basic_salary"`
+	TotalAllowance  float64 `json:"total_allowance"`
+	GrossSalary     float64 `json:"gross_salary"`
+	PPh21           float64 `json:"pph21"`
+	TotalDeduction  float64 `json:"total_deduction"`
+	NetSalary       float64 `json:"net_salary"`
+	WorkingDays     int     `json:"working_days"`
+	PresentDays     int     `json:"present_days"`
+	OvertimeHours   float64 `json:"overtime_hours"`
+	OvertimePay     float64 `json:"overtime_pay"`
+	PaidLeaveDays   int     `json:"paid_leave_days"`
+	UnpaidLeaveDays int     `json:"unpaid_leave_days"`
 }
 
 type payrollRunView struct {
@@ -31,6 +35,7 @@ type payrollRunView struct {
 	TotalPPh21     float64             `json:"total_pph21"`
 	TotalBPJS      float64             `json:"total_bpjs"`
 	TotalDeduction float64             `json:"total_deduction"`
+	TotalOvertime  float64             `json:"total_overtime"`
 	TotalNet       float64             `json:"total_net"`
 	JournalID      *string             `json:"journal_id"`
 	Details        []payrollDetailView `json:"details"`

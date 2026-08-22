@@ -15,12 +15,23 @@ import (
 )
 
 const payrollRunColumns = `id, company_id, branch_id, period, status, total_employees, total_gross, total_pph21,
-	total_bpjs, total_deduction, total_net, journal_id, posted_by, posted_at, created_at`
+	total_bpjs, total_deduction, total_overtime, total_net, journal_id, posted_by, posted_at, created_at`
 
 func scanPayrollRun(row pgx.Row, run *model.PayrollRun) error {
 	return row.Scan(&run.ID, &run.CompanyID, &run.BranchID, &run.Period, &run.Status, &run.TotalEmployees,
-		&run.TotalGross, &run.TotalPPh21, &run.TotalBPJS, &run.TotalDeduction, &run.TotalNet,
+		&run.TotalGross, &run.TotalPPh21, &run.TotalBPJS, &run.TotalDeduction, &run.TotalOvertime, &run.TotalNet,
 		&run.JournalID, &run.PostedBy, &run.PostedAt, &run.CreatedAt)
+}
+
+const payrollDetailColumns = `id, payroll_run_id, employee_id, employee_name, basic_salary, total_allowance,
+	gross_salary, pph21, bpjs_kesehatan_emp, bpjs_tk_jht_emp, bpjs_tk_jp_emp, total_deduction, net_salary,
+	working_days, present_days, overtime_hours, overtime_pay, paid_leave_days, unpaid_leave_days, created_at`
+
+func scanPayrollDetail(row pgx.Row, d *model.PayrollDetail) error {
+	return row.Scan(&d.ID, &d.PayrollRunID, &d.EmployeeID, &d.EmployeeName, &d.BasicSalary, &d.TotalAllowance,
+		&d.GrossSalary, &d.PPh21, &d.BPJSKesehatanEmp, &d.BPJSTKJHTEmp, &d.BPJSTKJPEmp, &d.TotalDeduction,
+		&d.NetSalary, &d.WorkingDays, &d.PresentDays, &d.OvertimeHours, &d.OvertimePay, &d.PaidLeaveDays,
+		&d.UnpaidLeaveDays, &d.CreatedAt)
 }
 
 func (h *Handler) listPayrollRuns(w http.ResponseWriter, r *http.Request) {
@@ -105,29 +116,69 @@ func (h *Handler) processPayroll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workingDays := countWeekdays(periodStart)
+	// Penyebut pro-rata: hari kerja bulan itu SETELAH tanggal merah dibuang.
+	// Sebelum ada kalender libur, bulan dengan banyak tanggal merah membuat
+	// pembagi terlalu besar sehingga gaji tiap karyawan sedikit terpotong.
+	workingDays, err := h.workingDaysInMonth(ctx, req.CompanyID, periodStart)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal menghitung hari kerja periode")
+		return
+	}
 
 	details := make([]model.PayrollDetail, 0, len(employees))
-	var totalGross, totalPPh21, totalBPJS, totalNet float64
+	employeeIDs := make([]string, 0, len(employees))
+	var totalGross, totalPPh21, totalBPJS, totalNet, totalOvertime float64
 	for _, emp := range employees {
 		presentDays, err := h.presentDays(ctx, emp.ID, req.Period)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal menghitung kehadiran")
 			return
 		}
-		// Jika belum ada catatan absensi sama sekali untuk karyawan di periode
-		// ini, anggap hadir penuh supaya payroll tetap bisa diproses tanpa
-		// data absensi (mis. demo/awal implementasi).
+		paidLeaveDays, unpaidLeaveDays, err := h.leaveDaysInPeriod(ctx, emp.ID, req.Period)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Gagal menghitung hari cuti")
+			return
+		}
+		overtimeHours, overtimePay, err := h.approvedOvertimeInPeriod(ctx, emp.ID, req.Period)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Gagal menghitung lembur")
+			return
+		}
+
+		// Dua jalur berbeda, karena artinya memang berbeda:
+		//
+		//   - Ada catatan absensi: hari cuti berbayar DITAMBAHKAN kembali ke
+		//     hari hadir. Tanpa ini, cuti tahunan yang tercatat di absensi
+		//     sebagai LEAVE (bukan PRESENT) akan diam-diam memotong gaji lewat
+		//     pro-rata -- persis hal yang tidak boleh terjadi pada cuti berbayar.
+		//   - Belum ada catatan absensi sama sekali: karyawan dianggap hadir
+		//     penuh (perilaku lama, supaya payroll tetap bisa diproses tanpa
+		//     data absensi), jadi cuti tanpa gaji yang harus DIKURANGKAN.
+		//
+		// Cuti tanpa gaji tidak dikurangkan di jalur pertama karena hari itu
+		// memang sudah tidak terhitung hadir.
 		if presentDays < 0 {
+			presentDays = workingDays - unpaidLeaveDays
+		} else {
+			presentDays += paidLeaveDays
+		}
+		if presentDays < 0 {
+			presentDays = 0
+		}
+		if presentDays > workingDays {
 			presentDays = workingDays
 		}
 
-		detail := calculatePayrollDetail(emp, workingDays, presentDays)
+		detail := calculatePayrollDetail(emp, workingDays, presentDays, overtimeHours, overtimePay)
+		detail.PaidLeaveDays = int16(paidLeaveDays)
+		detail.UnpaidLeaveDays = int16(unpaidLeaveDays)
 		details = append(details, detail)
+		employeeIDs = append(employeeIDs, emp.ID)
 		totalGross += detail.GrossSalary
 		totalPPh21 += detail.PPh21
 		totalBPJS += detail.BPJSKesehatanEmp + detail.BPJSTKJHTEmp + detail.BPJSTKJPEmp
 		totalNet += detail.NetSalary
+		totalOvertime += detail.OvertimePay
 	}
 	totalDeduction := totalPPh21 + totalBPJS
 
@@ -139,14 +190,12 @@ func (h *Handler) processPayroll(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback(ctx)
 
 	var run model.PayrollRun
-	err = tx.QueryRow(ctx, `
-		INSERT INTO payroll_runs (company_id, branch_id, period, total_employees, total_gross, total_pph21, total_bpjs, total_deduction, total_net)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	err = scanPayrollRun(tx.QueryRow(ctx, `
+		INSERT INTO payroll_runs (company_id, branch_id, period, total_employees, total_gross, total_pph21, total_bpjs, total_deduction, total_overtime, total_net)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		RETURNING `+payrollRunColumns,
-		req.CompanyID, req.BranchID, req.Period, len(details), totalGross, totalPPh21, totalBPJS, totalDeduction, totalNet,
-	).Scan(&run.ID, &run.CompanyID, &run.BranchID, &run.Period, &run.Status, &run.TotalEmployees,
-		&run.TotalGross, &run.TotalPPh21, &run.TotalBPJS, &run.TotalDeduction, &run.TotalNet,
-		&run.JournalID, &run.PostedBy, &run.PostedAt, &run.CreatedAt)
+		req.CompanyID, req.BranchID, req.Period, len(details), totalGross, totalPPh21, totalBPJS, totalDeduction, totalOvertime, totalNet,
+	), &run)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal membuat payroll run")
 		return
@@ -158,15 +207,30 @@ func (h *Handler) processPayroll(w http.ResponseWriter, r *http.Request) {
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO payroll_details (payroll_run_id, employee_id, employee_name, basic_salary, total_allowance,
 			                             gross_salary, pph21, bpjs_kesehatan_emp, bpjs_tk_jht_emp, bpjs_tk_jp_emp,
-			                             total_deduction, net_salary, working_days, present_days)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+			                             total_deduction, net_salary, working_days, present_days,
+			                             overtime_hours, overtime_pay, paid_leave_days, unpaid_leave_days)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 			RETURNING id, created_at`,
 			d.PayrollRunID, d.EmployeeID, d.EmployeeName, d.BasicSalary, d.TotalAllowance, d.GrossSalary, d.PPh21,
 			d.BPJSKesehatanEmp, d.BPJSTKJHTEmp, d.BPJSTKJPEmp, d.TotalDeduction, d.NetSalary, d.WorkingDays, d.PresentDays,
+			d.OvertimeHours, d.OvertimePay, d.PaidLeaveDays, d.UnpaidLeaveDays,
 		).Scan(&d.ID, &d.CreatedAt); err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal menyimpan detail payroll")
 			return
 		}
+	}
+
+	// Tandai lembur yang baru saja ikut terhitung. Setelah ini statusnya
+	// terkunci (lihat transitionOvertime): nilai yang sudah masuk gross payroll
+	// tidak boleh dicabut lewat reject, karena angkanya sudah tersimpan di
+	// payroll_details dan -- setelah diposting -- di jurnal GL.
+	if _, err := tx.Exec(ctx, `
+		UPDATE overtime_logs SET payroll_run_id = $1, updated_at = now()
+		WHERE company_id = $2 AND status = 'APPROVED' AND payroll_run_id IS NULL
+		  AND to_char(work_date, 'YYYY-MM') = $3 AND employee_id = ANY($4)`,
+		run.ID, req.CompanyID, req.Period, employeeIDs); err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal menandai lembur yang ikut payroll")
+		return
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -197,10 +261,7 @@ func (h *Handler) getPayrollRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.pool.Query(ctx, `
-		SELECT id, payroll_run_id, employee_id, employee_name, basic_salary, total_allowance, gross_salary, pph21,
-		       bpjs_kesehatan_emp, bpjs_tk_jht_emp, bpjs_tk_jp_emp, total_deduction, net_salary, working_days, present_days, created_at
-		FROM payroll_details WHERE payroll_run_id = $1 ORDER BY employee_name ASC`, id)
+	rows, err := h.pool.Query(ctx, `SELECT `+payrollDetailColumns+` FROM payroll_details WHERE payroll_run_id = $1 ORDER BY employee_name ASC`, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat detail payroll")
 		return
@@ -210,9 +271,7 @@ func (h *Handler) getPayrollRun(w http.ResponseWriter, r *http.Request) {
 	details := []model.PayrollDetail{}
 	for rows.Next() {
 		var d model.PayrollDetail
-		if err := rows.Scan(&d.ID, &d.PayrollRunID, &d.EmployeeID, &d.EmployeeName, &d.BasicSalary, &d.TotalAllowance,
-			&d.GrossSalary, &d.PPh21, &d.BPJSKesehatanEmp, &d.BPJSTKJHTEmp, &d.BPJSTKJPEmp, &d.TotalDeduction,
-			&d.NetSalary, &d.WorkingDays, &d.PresentDays, &d.CreatedAt); err != nil {
+		if err := scanPayrollDetail(rows, &d); err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal membaca detail payroll")
 			return
 		}
@@ -271,8 +330,25 @@ func (h *Handler) postPayrollRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lines := []financeclient.JournalLineInput{
-		{AccountID: req.ExpenseAccountID, DebitAmount: run.TotalGross, Description: "Beban Gaji " + run.Period},
+	// Beban gaji dipecah dua baris (gaji reguler & lembur) supaya komposisi
+	// biaya tenaga kerja terbaca langsung dari jurnal, tanpa harus membuka
+	// payroll_details. Keduanya memakai akun beban yang sama -- pemisahan akun
+	// lembur adalah keputusan bagan akun, bukan sesuatu yang boleh ditebak
+	// service ini. Totalnya tetap run.TotalGross, jadi jurnal tetap balance.
+	regularGross := round2(run.TotalGross - run.TotalOvertime)
+	lines := []financeclient.JournalLineInput{}
+	if regularGross > 0 {
+		lines = append(lines, financeclient.JournalLineInput{AccountID: req.ExpenseAccountID, DebitAmount: regularGross, Description: "Beban Gaji " + run.Period})
+	}
+	if run.TotalOvertime > 0 {
+		lines = append(lines, financeclient.JournalLineInput{AccountID: req.ExpenseAccountID, DebitAmount: run.TotalOvertime, Description: "Beban Lembur " + run.Period})
+	}
+	if len(lines) == 0 {
+		// Gross nol berarti tidak ada yang bisa dijurnal sama sekali (mis.
+		// seluruh karyawan bergaji 0). Ditolak di sini dengan pesan yang jelas
+		// daripada mengirim jurnal kosong ke finance-service.
+		writeError(w, http.StatusConflict, "Total gross payroll adalah 0; tidak ada yang bisa diposting ke GL")
+		return
 	}
 	if run.TotalNet > 0 {
 		lines = append(lines, financeclient.JournalLineInput{AccountID: req.SalaryPayableAccountID, CreditAmount: run.TotalNet, Description: "Hutang Gaji " + run.Period})
@@ -356,27 +432,65 @@ func (h *Handler) presentDays(ctx context.Context, employeeID, period string) (i
 	return present, nil
 }
 
-func countWeekdays(monthStart time.Time) int {
-	count := 0
-	for d := monthStart; d.Month() == monthStart.Month(); d = d.AddDate(0, 0, 1) {
-		if d.Weekday() != time.Saturday && d.Weekday() != time.Sunday {
-			count++
-		}
-	}
-	return count
+// leaveDaysInPeriod menghitung hari kerja cuti APPROVED yang jatuh di dalam
+// periode, dipecah jadi (berbayar, tanpa gaji). Rentang cuti dipecah per hari
+// lewat generate_series -- bukan dibaca dari kolom total_days -- supaya cuti
+// yang menyeberang bulan hanya terhitung pada bagian yang benar-benar masuk
+// periode ini. Akhir pekan dibuang dengan aturan yang sama seperti
+// workingDaysInMonth (akhir pekan DAN tanggal merah), supaya pembilang dan
+// penyebut pro-rata konsisten.
+func (h *Handler) leaveDaysInPeriod(ctx context.Context, employeeID, period string) (int, int, error) {
+	var paid, unpaid int
+	err := h.pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*) FILTER (WHERE lr.leave_type <> 'UNPAID'),
+			COUNT(*) FILTER (WHERE lr.leave_type = 'UNPAID')
+		FROM leave_requests lr
+		CROSS JOIN LATERAL generate_series(lr.start_date::timestamp, lr.end_date::timestamp, INTERVAL '1 day') AS d
+		WHERE lr.employee_id = $1
+		  AND lr.status = 'APPROVED'
+		  AND to_char(d, 'YYYY-MM') = $2
+		  AND EXTRACT(ISODOW FROM d) < 6
+		  AND NOT EXISTS (
+		    SELECT 1 FROM holidays hd
+		    WHERE hd.company_id = lr.company_id AND hd.holiday_date = d::date
+		  )`,
+		employeeID, period,
+	).Scan(&paid, &unpaid)
+	return paid, unpaid, err
+}
+
+// approvedOvertimeInPeriod menjumlahkan jam & rupiah lembur APPROVED yang
+// belum pernah ikut payroll run manapun (payroll_run_id IS NULL), sehingga
+// memproses ulang payroll setelah run sebelumnya dihapus tidak akan membayar
+// lembur yang sama dua kali.
+func (h *Handler) approvedOvertimeInPeriod(ctx context.Context, employeeID, period string) (float64, float64, error) {
+	var hours, amount float64
+	err := h.pool.QueryRow(ctx, `
+		SELECT COALESCE(SUM(hours), 0), COALESCE(SUM(amount), 0)
+		FROM overtime_logs
+		WHERE employee_id = $1 AND status = 'APPROVED' AND payroll_run_id IS NULL
+		  AND to_char(work_date, 'YYYY-MM') = $2`,
+		employeeID, period,
+	).Scan(&hours, &amount)
+	return hours, amount, err
 }
 
 // calculatePayrollDetail meniru calculatePayroll() di 20_Implementation_Guide.md:
 // basic salary pro-rata terhadap kehadiran, allowance tetap, lalu potongan
 // PPh21 (progresif disederhanakan, tanpa TER) dan BPJS (Kesehatan, JHT, JP
 // porsi karyawan).
-func calculatePayrollDetail(emp model.Employee, workingDays, presentDays int) model.PayrollDetail {
+//
+// Upah lembur masuk sebagai penambah gross (bukan komponen terpisah di luar
+// gross), jadi ikut menjadi dasar PPh21 dan BPJS -- sesuai perlakuan upah
+// lembur sebagai penghasilan teratur/tidak teratur yang tetap objek pajak.
+func calculatePayrollDetail(emp model.Employee, workingDays, presentDays int, overtimeHours, overtimePay float64) model.PayrollDetail {
 	ratio := 1.0
 	if workingDays > 0 {
 		ratio = float64(presentDays) / float64(workingDays)
 	}
 	basicSalary := emp.BasicSalary * ratio
-	grossSalary := basicSalary + emp.MonthlyAllowance
+	grossSalary := basicSalary + emp.MonthlyAllowance + overtimePay
 
 	bpjsKesEmp := min(grossSalary*0.01, 120000)
 	bpjsJhtEmp := grossSalary * 0.02
@@ -402,6 +516,8 @@ func calculatePayrollDetail(emp model.Employee, workingDays, presentDays int) mo
 		NetSalary:        round2(netSalary),
 		WorkingDays:      int16(workingDays),
 		PresentDays:      int16(presentDays),
+		OvertimeHours:    round2(overtimeHours),
+		OvertimePay:      round2(overtimePay),
 	}
 }
 

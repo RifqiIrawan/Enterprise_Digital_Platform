@@ -36,6 +36,40 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /attendance", h.createAttendance)
 	mux.HandleFunc("PUT /attendance/{id}", h.updateAttendance)
 
+	mux.HandleFunc("GET /leave-requests", h.listLeaveRequests)
+	mux.HandleFunc("POST /leave-requests", h.createLeaveRequest)
+	mux.HandleFunc("PUT /leave-requests/{id}", h.updateLeaveRequest)
+	mux.HandleFunc("POST /leave-requests/{id}/submit", h.submitLeaveRequest)
+	mux.HandleFunc("POST /leave-requests/{id}/approve", h.approveLeaveRequest)
+	mux.HandleFunc("POST /leave-requests/{id}/reject", h.rejectLeaveRequest)
+	mux.HandleFunc("POST /leave-requests/{id}/cancel", h.cancelLeaveRequest)
+
+	mux.HandleFunc("GET /overtime", h.listOvertime)
+	mux.HandleFunc("POST /overtime", h.createOvertime)
+	mux.HandleFunc("PUT /overtime/{id}", h.updateOvertime)
+	mux.HandleFunc("POST /overtime/{id}/approve", h.approveOvertime)
+	mux.HandleFunc("POST /overtime/{id}/reject", h.rejectOvertime)
+
+	mux.HandleFunc("GET /holidays", h.listHolidays)
+	mux.HandleFunc("POST /holidays", h.createHoliday)
+	mux.HandleFunc("DELETE /holidays/{id}", h.deleteHoliday)
+
+	mux.HandleFunc("GET /leave-quotas", h.listLeaveQuotas)
+	mux.HandleFunc("PUT /leave-quotas", h.putLeaveQuota)
+
+	mux.HandleFunc("GET /kpi-indicators", h.listKPIIndicators)
+	mux.HandleFunc("POST /kpi-indicators", h.createKPIIndicator)
+	mux.HandleFunc("PUT /kpi-indicators/{id}", h.updateKPIIndicator)
+	mux.HandleFunc("DELETE /kpi-indicators/{id}", h.deleteKPIIndicator)
+
+	mux.HandleFunc("GET /kpi-reviews", h.listKPIReviews)
+	mux.HandleFunc("POST /kpi-reviews", h.createKPIReview)
+	mux.HandleFunc("GET /kpi-reviews/{id}", h.getKPIReview)
+	mux.HandleFunc("PUT /kpi-reviews/{id}/scores", h.putKPIScores)
+	mux.HandleFunc("POST /kpi-reviews/{id}/submit", h.submitKPIReview)
+	mux.HandleFunc("POST /kpi-reviews/{id}/approve", h.approveKPIReview)
+	mux.HandleFunc("POST /kpi-reviews/{id}/reject", h.rejectKPIReview)
+
 	mux.HandleFunc("GET /payroll-runs", h.listPayrollRuns)
 	mux.HandleFunc("POST /payroll-runs", h.processPayroll)
 	mux.HandleFunc("GET /payroll-runs/{id}", h.getPayrollRun)
