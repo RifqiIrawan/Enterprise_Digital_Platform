@@ -722,3 +722,783 @@ Karena remote GitHub belum sinkron antar kedua mesin (SSH key komputer lain belu
 ## `.gitignore` — `infra/docker-compose.override.yml` (sesi 2026-07-21, lanjutan lagi)
 
 File ini isinya remap port Grafana lokal (3000→3002) khusus mesin dev ini karena bentrok dengan project lain — sudah ada komentar header sendiri yang bilang "NOT committed" sejak awal dibuat, tapi belum pernah ditambahkan ke `.gitignore` sehingga terus muncul sebagai untracked di `git status`. Ditambahkan rule `infra/docker-compose.override.yml` ke `.gitignore` (commit `8cc71a8`) supaya tidak mengganggu lagi.
+
+## HR — Cuti & Lembur (Fase 4 HRIS, sebagian) — sesi 2026-08-17
+
+User minta "build fitur menu yang belum selesai". Pemetaan awal: **seluruh menu yang sudah di-seed di RBAC ternyata sudah punya halaman** (tidak ada satu pun yang jatuh ke `PlaceholderPage`), jadi yang benar-benar belum selesai adalah item roadmap yang belum pernah dibangun sama sekali. Dari 4 kandidat yang ditawarkan lewat AskUserQuestion (HR Cuti/Lembur, Asset Depresiasi/Kalibrasi, Produksi MES/OEE, BI per-peran), user memilih **HR: Cuti & Lembur**.
+
+### Yang dibangun
+
+- **`003_leave_and_overtime.sql`** (hr-service): tabel `leave_requests` (rentang tanggal, `leave_type` ANNUAL/SICK/MATERNITY/UNPAID/OTHER, status DRAFT→SUBMITTED→APPROVED/REJECTED + CANCELLED) dan `overtime_logs` (satu baris per karyawan per tanggal, `UNIQUE (employee_id, work_date)`, status DRAFT→APPROVED/REJECTED). Plus kolom baru: `payroll_runs.total_overtime`, dan `payroll_details.{overtime_hours,overtime_pay,paid_leave_days,unpaid_leave_days}` — semua `DEFAULT 0` supaya payroll run lama tetap valid.
+- **12 endpoint baru**: `GET/POST /leave-requests`, `PUT /leave-requests/{id}`, 4 transisi status (`submit`/`approve`/`reject`/`cancel`), `GET/POST /overtime`, `PUT /overtime/{id}`, `approve`/`reject`. Tidak ada perubahan di api-gateway — proxy-nya sudah prefix-based (`/api/hr` → hr-service).
+- **`016_seed_hr_leave_overtime_menus.sql`** (rbac-service): 2 menu baru di modul `hr` yang SUDAH ADA (beda dari 013-015 yang menambah modul baru), grant eksplisit untuk 5 role yang sama dengan menu HR lain (super_admin/hr/company_admin/branch_manager penuh, auditor view-only). Grant harus eksplisit karena `004_seed_role_permissions.sql` sudah pernah jalan dan tidak akan diulang migrator.
+- **Frontend**: `LeavePage.jsx` & `OvertimePage.jsx` + 2 route di `App.jsx`; `PayrollPage.jsx` diperluas (kolom Cuti & Lembur di modal detail, keterangan pemecahan jurnal saat posting).
+
+### Integrasi payroll (bagian yang paling perlu diingat)
+
+Ini yang membuat kedua fitur bukan sekadar CRUD:
+
+1. **Lembur APPROVED menambah gross** (`calculatePayrollDetail` sekarang menerima `overtimeHours, overtimePay`), jadi ikut jadi dasar PPh21 & BPJS. Yang DRAFT diabaikan.
+2. **Cuti berbayar DITAMBAHKAN kembali ke hari hadir** saat ada catatan absensi. Ini bukan detail kosmetik: tanpa itu, cuti tahunan yang tercatat `LEAVE` di absensi (dan karena itu tidak terhitung `PRESENT`) akan diam-diam memotong gaji lewat pro-rata. **Cuti tanpa gaji sengaja TIDAK dikurangkan di jalur ini** — hari itu memang sudah tidak terhitung hadir, mengurangkannya lagi = potong dua kali.
+3. **Jalur sebaliknya**: kalau belum ada catatan absensi sama sekali (karyawan dianggap hadir penuh, perilaku lama), justru cuti tanpa gaji yang dikurangkan dan cuti berbayar tidak perlu ditambah.
+4. **`leaveDaysInPeriod` memecah rentang cuti per hari lewat `generate_series`**, bukan membaca `total_days`. Cuti 30 Juli–4 Agustus harus memotong 2 hari di Juli dan 2 hari di Agustus, bukan 4 hari di salah satunya.
+5. **Lembur yang ikut payroll di-stamp `payroll_run_id`** dan statusnya terkunci sejak itu. Rekap dilakukan dengan filter `payroll_run_id IS NULL`, jadi memproses ulang payroll setelah run dihapus tidak membayar lembur yang sama dua kali.
+6. **Pagar lintas-modul**: cuti APPROVED tidak bisa dicabut (cancel/reject) dan lembur tidak bisa dicatat/diubah statusnya kalau payroll periode terkait sudah `POSTED` ke GL. Koreksinya lewat jurnal balik di finance-service, bukan dengan mengubah data sumbernya diam-diam.
+7. **Jurnal payroll sekarang memecah sisi debit jadi 2 baris** ("Beban Gaji" + "Beban Lembur") pada akun beban yang sama. Totalnya tetap `total_gross`, jadi tetap balance — sudah ada test yang menjaga itu.
+
+### Bug yang ditemukan sambil verifikasi (rbac-service, PRE-EXISTING)
+
+`menuTree` di `backend/services/rbac-service/internal/httpapi/modules_menus.go` merakit pohon menu dengan `for menuID, node := range nodeByID` — iterasi map Go SENGAJA diacak, jadi `ORDER BY mod.sort_order, m.sort_order` di query-nya terbuang percuma dan **urutan menu sidebar berubah-ubah tiap request**. Bug ini sudah ada sejak lama (terlihat juga di grup Core), cuma tidak pernah kelihatan mencolok. Fix: simpan `menuOrder []string` dari urutan hasil query, iterasi slice itu. Diverifikasi: 3 request berturut-turut sekarang mengembalikan urutan identik. **Pelajaran umum**: kalau sebuah query pakai `ORDER BY` tapi hasilnya dilewatkan map di Go, urutannya hilang tanpa error apa pun — cek pola ini di tempat lain kalau ada keluhan "urutan berubah-ubah".
+
+### Verifikasi
+
+- **25 test baru** (10 cuti, 8 lembur, 7 integrasi payroll), total 54 fungsi test di hr-service — semua PASS terhadap Postgres lokal sungguhan (`go test ./... -count=1`).
+- **Migrasi rbac 016 divalidasi dulu** dengan `psql ... -c "BEGIN;" -f 016_....sql -c "SELECT ..." -c "ROLLBACK;"` sebelum dijalankan sungguhan — hasilnya 5 menu HR dengan 5 grant masing-masing (identik dengan menu HR lama). Setelah itu benar-benar applied lewat startup rbac-service.
+- **Smoke test end-to-end lewat HTTP sungguhan** (rbac-service :8083 + hr-service :8086, `go run` native): karyawan gaji 8.650.000 (→ tarif 50.000/jam tepat) + cuti tahunan 2 hari APPROVED + lembur 3 jam hari kerja APPROVED → `overtime_pay` 275.000 (1×1,5 + 2×2 = 5,5 jam ekuivalen), gross 9.425.000 = 8.650.000 + 500.000 + 275.000, `paid_leave_days` 2, hadir 21/21. Cocok dengan hitungan manual.
+- `npm run build` frontend hijau.
+- Kedua service di-teardown lagi di akhir sesi (port 8083 & 8086 bebas).
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **KPI karyawan** — item ketiga Fase 4 di roadmap, belum disentuh sama sekali.
+- **Kuota/saldo cuti tahunan per karyawan**: `total_days` sekarang cuma nilai tampilan, tidak ada validasi terhadap jatah tahunan.
+- **Master kalender hari libur nasional**: `countWeekdays`/`countWeekdaysBetween` masih Senin–Jumat polos, tanggal merah terhitung hari kerja. Ini juga pengaruh ke `is_holiday` di lembur yang sekarang di-input manual lewat checkbox.
+- **Fact table dw-service untuk cuti & lembur** — belum ada, kalau mau rekap HR di BI.
+- **rbac-service belum punya test sama sekali** (bukan bagian dari 9 service yang di-hardening dulu), jadi fix urutan menu di atas hanya terverifikasi manual. Kalau nanti ada sesi hardening lagi, service ini kandidat pertama.
+
+---
+
+## rbac-service — hardening automated-test (sesi 2026-08-20)
+
+rbac-service adalah satu-satunya service Go yang belum punya test sama sekali (bukan bagian dari 9 service yang di-hardening dulu), dan fix urutan menu sidebar dari sesi 2026-08-17 masih hanya terverifikasi manual. Sesi ini menutup keduanya.
+
+### Yang dibangun
+
+- **4 file test baru** di `backend/services/rbac-service/internal/httpapi/`, pola persis sama dengan 9 service lain + company-service: `testmain_test.go` (TestMain bikin database `rbac_service_test`, jalankan seluruh 16 migrasi, **SKIP dengan exit 0** kalau Postgres tidak ada), `roles_test.go`, `user_roles_test.go`, `modules_menus_test.go`.
+- **45 test (termasuk subtest), semua pass** terhadap Postgres lokal sungguhan (`go test ./... -count=1`). Handler dipasang dengan publisher `nil` — `eventbus.Publisher.Publish` sudah nil-safe, jadi test tidak butuh Kafka.
+- Isolasi antar-run: role dibuat dengan code acak (`uq_roles_company_code` unik) dan dibersihkan lewat `t.Cleanup`, menu uji di-insert langsung ke tabel lalu dihapus lagi — tidak ada TRUNCATE, data seed migrasi tetap utuh (test lain menghitung `count(*) FROM menus WHERE is_active = true`).
+
+### Bug produksi yang ditemukan (createRole, PRE-EXISTING)
+
+`createRole` di `internal/httpapi/roles.go` menormalkan code dengan `strings.TrimSpace(strings.ToLower(strings.ReplaceAll(req.Code, " ", "_")))` — **urutannya terbalik**. Spasi diganti underscore DULU, jadi spasi di ujung sudah berubah jadi underscore dan `TrimSpace` tidak punya apa pun untuk dipangkas:
+
+- `"  Gudang Malam "` → `"__gudang_malam_"`, bukan `"gudang_malam"`.
+- Lebih parah: code yang isinya spasi semua (`"   "`) jadi `"___"` — **lolos** pemeriksaan `req.Code == ""` di bawahnya, jadi role dengan code sampah benar-benar tersimpan dan bikin 201, bukan 400.
+
+Fix: `strings.ToLower(strings.Join(strings.Fields(req.Code), "_"))` — `Fields` sekaligus memangkas ujung, memecah spasi ganda/tab, dan mengembalikan slice kosong untuk input yang isinya spasi saja (sehingga pemeriksaan "wajib diisi" kembali bekerja). **Pelajaran umum**: kalau normalisasi string berlapis, yang memangkas harus jalan SEBELUM yang mengganti karakter — cek pola `TrimSpace(Replace(...))` di tempat lain.
+
+### Perbaikan perilaku (assignUserRole)
+
+`POST /user-roles` dengan `role_id` yang tidak ada sebelumnya menabrak foreign key dan keluar sebagai **500**. Sekarang role diperiksa dulu (`SELECT EXISTS`) → **404 "Role tidak ditemukan"**, mengikuti pola yang sudah dipakai `deleteRole` & `getRolePermissions` di file yang sama. Kesalahan klien tidak lagi tercatat sebagai error server di metrik.
+
+### Regresi yang sekarang terjaga test
+
+- **Urutan menu-tree stabil** (`TestMenuTreeOrderIsStableAcrossRequests`): 5 request berturut-turut harus mengembalikan body identik — inilah yang dulu bocor karena perakitan pohon mengiterasi map Go. Ditambah `TestMenuTreeFollowsModuleThenMenuSortOrder` yang membandingkan urutan modul & menu di response dengan hasil query `ORDER BY mod.sort_order, m.sort_order` langsung ke database, jadi bukan cuma stabil tapi memang urutan yang benar.
+- **`PUT /roles/{id}/permissions` benar-benar transaksional** (`TestPutRolePermissionsRollsBackWhenAMenuIsUnknown`): satu `menu_id` cacat di payload harus membatalkan seluruh PUT termasuk `DELETE` di awal transaksi. Tanpa ini, satu payload rusak bisa mengosongkan seluruh akses sebuah role.
+- **`DISTINCT` di menu-tree**: menu yang diberikan lewat 2 role sekaligus muncul sekali, bukan dobel di sidebar.
+- **`can_view = false` ≠ punya baris permission**: baris permission tanpa `can_view` tidak boleh memunculkan menu (dibuat lewat SQL langsung, karena PUT memang membuang baris seperti itu).
+- **Response array kosong tetap `[]`, bukan `null`** (menu-tree & user-roles) — frontend mem-`.map()` hasilnya langsung.
+- **Cascade**: menghapus role ikut membersihkan `role_menu_permissions` & `user_roles` miliknya.
+
+### CI
+
+`.github/workflows/backend-ci.yml` sudah menjalankan `go test ./... -v` untuk `services/rbac-service` dengan service container Postgres (`platform/platform` di `localhost:5432`) — jadi test baru ini langsung ikut jalan tanpa perubahan konfigurasi. Yang diperbarui hanya komentar di step Test, yang tadinya menyebut rbac & company "tidak menyentuh Postgres di test" (company-service sudah punya test Postgres sejak sesi 2026-08-16).
+
+### Belum dicakup (kalau mau dilanjutkan)
+
+- **`user_menu_permission_overrides` belum punya endpoint sama sekali** — tabelnya ada sejak `001_init.sql` dan `model.MenuActions.Or` sudah disiapkan untuk menggabungkan hak dari beberapa role, tapi tidak ada handler yang membacanya. Override per-user yang dijanjikan komentar di migrasi masih fitur di atas kertas.
+- **Path param yang bukan UUID masih 500** (mis. `PUT /roles/bukan-uuid`) di seluruh handler — error datang dari Postgres, bukan validasi di handler.
+- **Tidak ada UNIQUE di `user_roles (user_id, role_id, company_id)`**: menugaskan role yang sama dua kali ke user & company yang sama membuat 2 baris. Tidak berdampak fungsional (menu-tree pakai `DISTINCT`), tapi chip role bisa tampil dobel di UserRoleAssignmentPage.
+- **api-gateway & auth-service masih tanpa test** — dua service tersisa yang belum di-hardening.
+
+---
+
+## auth-service & api-gateway — hardening automated-test (sesi 2026-08-20, lanjutan)
+
+Lanjutan langsung dari bagian rbac-service di atas: dua service terakhir yang belum punya test sama sekali. **Dengan ini SELURUH service Go di platform ini sudah punya automated test.**
+
+### auth-service — 42 test (termasuk subtest)
+
+`internal/httpapi/{testmain_test.go,login_test.go,users_test.go}` (integration ke database `auth_service_test`) + `internal/jwtutil/jwtutil_test.go` (unit murni, tanpa database).
+
+Yang dijaga:
+- **Login**: token & profil di response, klaim JWT (`sub`/`email`/`full_name`/`is_super_admin`/`iss`) yang nanti dibaca api-gateway, `last_login_at` terisi, email dinormalkan (lowercase + trim) sebelum dicari.
+- **Refresh token disimpan sebagai SHA-256**, bukan apa adanya — dites dua arah: hash-nya ada di tabel, plaintext-nya tidak.
+- **Tidak ada user enumeration**: password salah dan email tak dikenal harus punya status DAN pesan yang identik.
+- **Akun nonaktif/terkunci** ditolak 403 (bukan 401) sebelum password dicek.
+- **Refresh**: tidak merotasi refresh token (yang lama tetap berlaku, tidak ada token baru di body — perilaku yang diandalkan frontend), ditolak kalau tokennya tidak dikenal, sudah dicabut, kedaluwarsa, atau user-nya dinonaktifkan (menonaktifkan akun memutus sesi di perpanjangan berikutnya).
+- **Logout** idempotent (dua tab browser), token tak dikenal tetap 200, dan setelahnya refresh benar-benar ditolak.
+- **Kredensial tidak pernah bocor** lewat HTTP: body `POST /users`, `GET /users`, dan `POST /login` diperiksa tidak mengandung "password" maupun hash bcrypt.
+- **jwtutil**: round-trip, tolak secret berbeda, tolak token kedaluwarsa, tolak `alg=none`, tolak RS256 (dua varian algorithm confusion — penjagaannya pemeriksaan `*jwt.SigningMethodHMAC` di `Parse`), tolak string sampah.
+
+### Bug produksi yang ditemukan (createUser, PRE-EXISTING)
+
+`username` diturunkan dari bagian sebelum `@` (`strings.Cut(req.Email, "@")`) dan kolomnya **UNIQUE**. Akibatnya `budi@perusahaan-a.com` lalu `budi@perusahaan-b.com` bentrok di **username**, bukan email — dan karena penanganan error-nya cuma `strings.Contains(err.Error(), "duplicate key")`, user kedua ditolak **409 "Email sudah terdaftar"** padahal emailnya masih bebas. Di platform multi-tenant seperti ini (nama depan yang sama di perusahaan berbeda) itu skenario yang wajar, dan pesannya menyesatkan sepenuhnya: user tidak punya cara untuk memperbaikinya.
+
+Fix: `uniqueConstraintOf()` membaca `*pgconn.PgError` (SQLSTATE 23505) dan mengembalikan nama constraint, jadi `users_email_key` dan `users_username_key` bisa dibedakan. Kalau yang bentrok username, INSERT diulang sekali dengan akhiran acak pendek (`budi-3f9a1c`) — username hanya dipakai untuk tampilan, login SELALU lewat email, jadi tidak ada yang rusak karenanya. Kalau yang bentrok email, tetap 409 seperti sebelumnya. Diverifikasi test `TestCreateUserSurvivesAUsernameCollisionFromAnotherDomain`: kedua user terbuat, username-nya berbeda, dan keduanya benar-benar bisa login dengan emailnya masing-masing.
+
+### api-gateway — 60 test (termasuk subtest)
+
+`internal/gateway/gateway_test.go`. Tidak butuh Postgres/Kafka sama sekali: service di belakang gateway diperankan `httptest.Server` yang merekam request terakhir yang diterimanya, lalu test memeriksa apa yang sampai ke sana.
+
+Yang dijaga:
+- **Hanya `POST /api/auth/login` & `POST /api/auth/refresh` yang publik** — dicocokkan METHOD + PATH persis, jadi `POST /api/auth/logout`, `GET /api/auth/login`, dan `POST /api/auth/login/extra` tetap 401.
+- **Token buruk ditolak 401 berbentuk JSON**: tanpa header, tanpa prefix `Bearer `, `Bearer ` kosong, token sampah, secret berbeda, sudah kedaluwarsa.
+- **Terjemahan token → header identitas** (`X-User-Id`, `X-User-Email`, `X-Is-Super-Admin`) — satu-satunya sumber identitas untuk service di belakang gateway.
+- **Header identitas kiriman client DITIMPA** hasil verifikasi token. Ini penjagaan keamanan yang paling penting di file ini: tanpa itu, siapa pun yang punya token user biasa bisa mengaku super admin hanya dengan menambah header. Termasuk kasus `X-Is-Super-Admin: false` yang ditulis eksplisit (bukan hanya di-set saat true).
+- **Pemotongan prefix** (`/api/hr/leave-requests` → `/leave-requests`, `/api/hr` → `/`), query string & body utuh, method diteruskan.
+- **Prefix asing 404**, termasuk `/api/hrx/...` yang TIDAK boleh nyasar ke hr-service (batas segmen path).
+- **Ke-20 prefix yang terdaftar benar-benar terhubung** — daftarnya sengaja ditulis ulang di test supaya modul baru yang lupa didaftarkan (atau salah ketik) ketahuan sebagai 404 di CI, bukan baru terasa saat halamannya dibuka di browser.
+- **X-Request-Id** dibuat kalau client belum mengirim, diteruskan ke backend, dan dipantulkan ke client; kalau client sudah mengirim, punyanya yang dipakai.
+- **Service tujuan mati → 502 berbentuk JSON**, bukan halaman error bawaan `httputil`.
+- **CORS**: preflight `OPTIONS` dijawab 204 tanpa token, origin `localhost`/`127.0.0.1` port apa pun dipantulkan (Vite bisa naik di port mana saja), origin lain dapat nilai `CORS_ALLOWED_ORIGIN`, dan selalu ada `Vary: Origin`.
+
+### Total & CI
+
+rbac (45) + auth (42) + api-gateway (60) = **147 test baru di sesi ini, semua pass**. Ditambah 227 test dari 9 service Fase 2 dan test service lain yang menyusul setelahnya, seluruh service Go kini tercakup. Komentar step Test di `backend-ci.yml` diperbarui lagi supaya jujur: auth-service ikut pola `{service}_test`, api-gateway tidak butuh apa pun dari luar.
+
+### Belum dicakup (kalau mau dilanjutkan)
+
+- **Tidak ada endpoint ganti password / reset password** di auth-service — komentar di `002_seed.sql` menjanjikan "ganti setelah login pertama kali di Fase 2", tapi fiturnya memang belum ada. Password super admin seed masih `Admin@12345`.
+- **Refresh token tidak pernah dirotasi dan tidak ada pembersihan** baris kedaluwarsa di `refresh_tokens`.
+- **`PUT/DELETE /users` tidak ada**: user tidak bisa dinonaktifkan lewat API (hanya lewat SQL), padahal login & refresh sudah menghormati `status`.
+- **api-gateway tidak punya rate limit / batas ukuran body**, dan tidak memeriksa `iss`/`aud` token (hanya signature & exp).
+
+---
+
+## auth-service — Ganti Password & Kelola Status User (sesi 2026-08-21)
+
+Menutup dua lubang yang baru saja ditulis sendiri di daftar "belum dicakup" sesi sebelumnya: platform ini belum punya cara mengganti password (komentar di `002_seed.sql` menjanjikannya sejak Fase 2 — password super admin seed masih `Admin@12345`), dan status akun hanya bisa diubah lewat SQL langsung padahal `login`/`refresh` sudah menghormatinya sejak awal.
+
+### Endpoint baru (auth-service)
+
+- **`POST /change-password`** — mengganti password milik pemanggil sendiri. Identitas diambil dari **`X-User-Id` yang di-inject api-gateway dari klaim JWT, bukan dari body**, jadi tidak ada jalan mengganti password orang lain. Validasi: password lama wajib benar, password baru minimal 8 karakter dan harus berbeda, akun harus `active`.
+- **`PUT /users/{id}`** — mengubah `full_name`, `phone`, dan `status` (`active`/`inactive`/`locked`). Email & username sengaja tidak bisa diubah (identitas login & tampilan).
+
+Tidak ada perubahan di api-gateway: proxy-nya prefix-based (`/api/auth` → auth-service) dan kedua endpoint otomatis masuk jalur terproteksi karena `publicRoutes` hanya berisi `POST /api/auth/login` & `POST /api/auth/refresh`.
+
+### Dua keputusan yang paling perlu diingat
+
+1. **Ganti password mencabut SELURUH refresh token user itu**, termasuk milik sesi yang sedang memanggilnya. Alasan orang mengganti password biasanya justru karena curiga ada yang lain memakai akunnya — sesi itulah yang harus putus. Konsekuensinya pemanggil ikut terusir dan harus login lagi; `ProfilePage` memang membersihkan sesi lokal dan mengarahkan ke `/login` setelah sukses.
+2. **Status kosong di `PUT /users/{id}` berarti TIDAK DIUBAH**, beda dari `updateBranch` di company-service yang menganggap status kosong sebagai `active` (lewat `COALESCE(NULLIF($3, ''), status)`). Menyunting nama seseorang tidak boleh diam-diam mengaktifkan kembali akun yang sengaja dinonaktifkan atau dikunci. Sebaliknya, begitu status berubah menjadi bukan-`active`, seluruh refresh token-nya langsung dicabut — `refresh` memang sudah memeriksa status, jadi mencabut refresh token cukup untuk memutus rantai perpanjangan sesi.
+
+### Frontend
+
+- **`pages/account/ProfilePage.jsx`** + route `/profile` + item "Profil & Password" di dropdown Topbar. Berisi ringkasan akun dan form ganti password (dengan konfirmasi password baru yang dicek di klien).
+- **`UserRoleAssignmentPage`**: tombol **Edit** baru per baris → modal nama/telepon/status, di samping "Kelola Role" yang sudah ada.
+- **`apiClient.js`**: interceptor 401 yang selama ini mengusir ke `/login` sekarang mengecualikan `/auth/change-password` — 401 di endpoint itu berarti "password lama salah", bukan sesi kedaluwarsa, dan salah ketik tidak boleh terasa seperti logout mendadak. (Pengecualian yang sama sudah lama ada untuk `/auth/login`.)
+
+### Verifikasi
+
+- **21 test baru** (`internal/httpapi/account_test.go`), total **63 test di auth-service**, semua pass terhadap Postgres lokal. Yang dijaga antara lain: hash benar-benar berganti & login dengan password baru berhasil sementara yang lama ditolak, seluruh refresh token dari dua sesi berbeda tercabut, password lama yang salah tidak mengubah apa pun, tanpa `X-User-Id` tidak ada yang bisa diganti, status kosong tidak mengubah status, menonaktifkan memblokir login (403) sekaligus memutus refresh (401), dan akun bisa diaktifkan kembali.
+- **Smoke test end-to-end lewat api-gateway sungguhan** (`go run` native, gateway :8079 + auth :8081, 11 pemeriksaan): buat user → ganti password (401 untuk password lama yang salah, 200 untuk yang benar) → refresh token lama 401 → login password lama 401, password baru 200 → `PUT` status `inactive` → login 403 → aktifkan lagi → login 200 → `change-password` tanpa Authorization ditolak 401 oleh gateway. Semua sesuai ekspektasi; user uji dihapus lagi dan kedua service di-teardown (port 8079 & 8081 bebas).
+- `npm run build` frontend hijau.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Reset password oleh admin** (lupa password) belum ada — yang ada baru ganti password oleh pemilik akun sendiri. Butuh keputusan alur: password sementara yang dikirim admin, atau token reset lewat email.
+- **Password super admin seed masih `Admin@12345`** dan seluruh dokumentasi/verifikasi memakainya. Sekarang sudah ADA cara menggantinya lewat UI, tapi kalau diganti, catatan di README/NEXT_SESSION ikut perlu diperbarui.
+- **Tidak ada kebijakan password** selain panjang minimal 8, tidak ada riwayat password, dan tidak ada rate limit pada percobaan login/ganti password.
+- **`DELETE /users/{id}` tetap tidak ada** — menonaktifkan adalah jalan yang disediakan (dan lebih aman untuk audit trail).
+
+---
+
+## rbac-service — Override Permission per User (sesi 2026-08-21, lanjutan)
+
+Melanjutkan daftar "belum dicakup" bagian rbac-service: tabel `user_menu_permission_overrides` sudah ada sejak `001_init.sql` dan `model.MenuActions.Or` sudah disiapkan untuk menggabungkan hak dari beberapa role, tapi **tidak ada satu pun handler yang membacanya** — janji "masing-masing user bisa berbeda walau role-nya sama" di komentar migrasi masih fitur di atas kertas. Sesi ini mewujudkannya.
+
+### Endpoint baru (`internal/httpapi/user_overrides.go`)
+
+- **`GET /user-permissions?user_id=&company_id=`** — hak EFEKTIF user per menu: gabungan (OR per kolom, lewat `MenuActions.Or` yang akhirnya terpakai) dari seluruh role yang ditugaskan padanya, lalu ditimpa override company tsb. Tiap baris membawa `source` (`role`/`override`/`none`) dan `role_actions` (hak bawaan role SEBELUM override) supaya UI bisa menampilkan "aslinya boleh, tapi dicabut untuk user ini" tanpa meniru aturan penggabungannya sendiri.
+- **`GET /user-overrides?user_id=[&company_id=]`** — daftar override, sudah di-join dengan nama menu & modul.
+- **`PUT /user-overrides`** — membuat/memperbarui satu override (idempotent per scope user+company+menu). PUT, bukan POST, karena pemanggil tidak perlu tahu override-nya sudah ada atau belum.
+- **`DELETE /user-overrides/{id}`** — mengembalikan menu itu ke hak bawaan role.
+
+### Keputusan desain yang paling perlu diingat
+
+1. **Override MENANG UTUH atas role, bukan digabung.** Itu yang membuat override "cabut akses" (semua kolom false) bisa menyembunyikan menu yang justru diberikan role. Kalau digabung dengan OR, pencabutan per user mustahil dinyatakan.
+2. **Cakupan versi ini hanya scope COMPANY.** Kolom `branch_id`/`department_id` ada di tabel dan ikut unique index-nya, tapi API **menolak** keduanya dengan 400 — lebih jujur daripada menyimpan baris yang diam-diam tidak berpengaruh karena tidak ada yang membacanya.
+3. **Hak dari role tetap dihitung lintas company**, persis seperti `menuTree` sejak awal; hanya override-nya yang di-scope per company. Menyempitkan hak role ke company yang sedang dipilih akan MENYUSUTKAN sidebar user yang punya role di company lain — itu perubahan perilaku tersendiri dan sengaja bukan bagian dari perubahan ini.
+4. **`menu-tree` tetap kompatibel ke belakang**: `company_id` opsional. Tanpa `company_id`, hasilnya persis seperti dulu (murni hak role); dengan `company_id`, override bisa menambah maupun mencabut menu. Super admin tidak lewat jalur ini sama sekali — dia selalu melihat seluruh menu aktif, termasuk yang di-override cabut (ada test-nya).
+5. **`can_view` adalah syarat**: hak turunan (create/update/...) tanpa hak lihat ditolak 400, sekaligus menjaga override pencabutan tetap terbaca jelas sebagai "semua false".
+6. **DELETE + INSERT dalam satu transaksi, bukan `ON CONFLICT`**: unique index-nya dibangun di atas ekspresi `COALESCE(branch_id, '000...')`, sehingga klausa `ON CONFLICT` harus menyalin ekspresi itu persis dan mudah lepas sinkron kalau scope-nya nanti diperluas.
+
+### Frontend
+
+- **`UserAccessModal.jsx`** (dipakai lewat tombol **Hak Akses** baru di User Management): matriks menu × 6 aksi per user, dikelompokkan per modul, dengan badge `override` di baris yang menyimpang dari role dan tautan "Ikuti role" untuk mengembalikannya. Saat disimpan, baris yang berbeda dari role di-`PUT`, dan baris yang kembali sama dengan role membuat override-nya **dihapus** — bukan disimpan sebagai salinan hak role yang akan basi begitu role-nya diubah.
+- **`MainLayout`** dipecah jadi `MainLayout` (pembungkus `CompanyProvider`) + `Shell` (isi lama), karena `useCompany()` hanya tersedia DI DALAM provider dan `menu-tree` sekarang perlu `company_id`. Sidebar otomatis dimuat ulang saat company diganti.
+- Tombol "Hak Akses" mati kalau belum ada company dipilih (override memang selalu ber-scope company).
+
+### Verifikasi
+
+- **22 test baru** (`user_overrides_test.go`), total **67 test di rbac-service**, semua pass. Termasuk: override menambah menu yang role tidak punya, override mencabut menu yang role punya (sekaligus memastikan `role_actions` tetap melaporkan hak asli), idempotensi PUT per scope (tetap satu baris), 7 kasus validasi payload, `DELETE` mengembalikan hak role, override company lain tidak ikut terpakai, `menu-tree` tanpa `company_id` tidak berubah perilakunya, dan super admin kebal override.
+- **Smoke test end-to-end lewat api-gateway sungguhan** (auth :8081 + rbac :8083 + gateway :8079 native, sidebar diambil memakai token user itu sendiri — bukan token admin): bawaan role `['/hr/leave']` → override cabut → sidebar `[]` → override tambah lembur → sidebar `['/hr/overtime']` → tanpa `company_id` tetap `['/hr/leave']` → kedua override dihapus → kembali `['/hr/leave']` dengan `source=role`. Persis seperti rancangan. Seluruh data uji dibersihkan (diverifikasi: 0 role/override/user sisa) dan ketiga service di-teardown.
+- `npm run build` frontend hijau.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Override per branch/department** (kolomnya sudah ada, API-nya menolak) — butuh keputusan aturan presedensi: apakah override branch mengalahkan override company, dan bagaimana kalau user punya keduanya.
+- **Hak selain `can_view` belum benar-benar ditegakkan di service modul**: `user-permissions` sudah melaporkan create/update/delete/approve/export dengan benar, tapi service di belakang gateway belum memeriksanya — mereka baru mengandalkan menu yang muncul di sidebar. Menegakkannya butuh gateway/service membaca hak per menu, bukan hanya identitas user.
+- **Frontend belum memakai `user-permissions` untuk dirinya sendiri**: tombol Simpan/Hapus di setiap halaman masih selalu tampil untuk siapa pun yang bisa membuka halamannya.
+
+---
+
+## Frontend — Gating tombol aksi berdasarkan hak akses (sesi 2026-08-21, lanjutan lagi)
+
+Melanjutkan "belum dikerjakan" dari bagian override di atas. Lewat AskUserQuestion, user memilih **UI dulu** dari tiga opsi titik penegakan (UI / api-gateway / tiap service modul). Yang dibangun sesi ini karena itu adalah lapisan TAMPILAN — dan itu ditulis eksplisit di kepala `PermissionContext.jsx` supaya tidak ada yang mengiranya penegakan keamanan.
+
+### Mekanismenya
+
+- **`store/PermissionContext.jsx`**: `PermissionProvider` memuat `GET /api/rbac/user-permissions` sekali per company untuk user yang sedang login, lalu `usePagePermission()` memberi `can('create'|'update'|'delete'|'approve'|'export'|'view')` untuk halaman yang sedang dibuka.
+- **Pencocokan path**: mencari menu dengan path TERPANJANG yang mencakup pathname saat ini (memakai `matchesPath` yang sudah ada di `utils/menuTree.js`), supaya rute turunan tanpa menu sendiri — mis. `/admin/roles/new` dan `/admin/roles/:id/permissions` — mewarisi hak menu induknya.
+- **Default BOLEH** kalau hak belum/gagal dimuat, dan untuk halaman yang tidak punya menu sama sekali (mis. `/profile`). Kebalikannya membuat aplikasi tampak rusak tiap kali rbac-service lambat, padahal tidak ada yang benar-benar dijaga di lapisan ini. Super admin melewati fetch sepenuhnya (backend juga memperlakukannya begitu).
+- **`MainLayout`**: `PermissionProvider` dipasang di dalam `Shell` (butuh `companyId` dari `CompanyProvider`).
+
+### Cakupan
+
+**50 halaman, 64 gate**: 49 tombol tambah/buat (`can('create')`), 11 tombol persetujuan (`can('approve')` — Setujui/Tolak di Cuti & Lembur, Approve/Reject requisition, Accept/Reject quotation, Post jurnal & invoice ke GL), 2 hapus, 2 ubah. Sebagian besar dikerjakan dengan skrip karena polanya memang seragam (`<button className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>`), lalu diperiksa satu per satu.
+
+**Jebakan yang ditemukan saat mengerjakannya**: membungkus tombol dengan `{can('x') && (...)}` di dalam ekspresi JSX yang SUDAH berada di dalam kurung kurawal (mis. `{l.status === 'SUBMITTED' && (`) menghasilkan `{...{...}}` yang bukan JSX valid. Tiga tempat kena (Invoices, Journal, Cuti) dan diperbaiki dengan menggabungkan kondisinya jadi satu baris: `{l.status === 'SUBMITTED' && can('approve') && (`. Kalau nanti menambah gate lagi, cek dulu apakah tombolnya sudah berada di dalam ekspresi kondisional.
+
+### Yang SENGAJA tidak digate
+
+Tombol hapus baris di dalam form modal (`removeLine`) — itu mengedit isian form yang belum tersimpan, bukan aksi terhadap data. Transisi status lain (send/convert/start/close/reopen/win/lose) juga belum: pemetaannya ke `update` vs `approve` perlu keputusan per modul, bukan tebakan seragam.
+
+### Verifikasi
+
+- `npm run build` hijau; pemeriksaan statis memastikan ke-50 halaman meng-import hook, memanggilnya DI DALAM komponen, dan tidak ada `can(` yang menggantung di luar ekspresi.
+- **Data yang dibaca UI diverifikasi lewat gateway sungguhan** (auth + company + rbac + hr + gateway native): user uji dengan role view+create+approve di `/hr/leave` → `create=True approve=True source=role`; setelah override view-only → `create=False approve=False source=override` (UI: kedua tombol hilang, menunya tetap ada); setelah override view+create → `create=True approve=False`. Semua data uji dibersihkan (0 override tersisa) dan seluruh service di-teardown.
+- **Pemeriksaan visual di browser TIDAK jadi dilakukan**: ekstensi Chrome memblokir `localhost:3000` ("This site is blocked by your site permissions") dan izin itu hanya bisa diberikan user lewat ekstensinya. Kalau izin itu diberikan, verifikasi visualnya tinggal: login sebagai user uji, buka `/hr/leave`, bandingkan sebelum/sesudah override.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Penegakan sesungguhnya** (opsi api-gateway atau per service modul) masih terbuka — ini baru lapisan tampilan.
+- **Frontend belum punya test runner sama sekali** (tidak ada vitest/jest). Logika pencocokan path di `PermissionContext` dan `utils/menuTree.js` sudah dipisah supaya mudah diuji, tapi belum ada yang mengujinya.
+- Transisi status selain approve/reject belum dipetakan ke hak mana pun (lihat di atas).
+
+---
+
+## Frontend — Test runner (Vitest) & test untuk gating hak akses (sesi 2026-08-21, lanjutan lagi)
+
+Menutup satu lubang yang baru saja ditulis sendiri: frontend tidak punya test runner sama sekali (backend punya 300+ test), padahal logika yang baru dipasang di 50 halaman justru jenis yang bisa rusak diam-diam.
+
+### Yang ditambahkan
+
+- **Vitest + jsdom + @testing-library/react** sebagai devDependency, dikonfigurasi di `vite.config.js` (bukan file config terpisah, supaya alias/plugin-nya sama persis dengan build). `globals: false` — `describe/it/expect` selalu di-import eksplisit; konsekuensinya **auto-cleanup Testing Library tidak aktif**, jadi tiap file test memanggil `cleanup()` di `afterEach`. Tanpa itu, render test berikutnya menumpuk di `document.body` yang sama dan `getByTestId` gagal dengan "found multiple elements" — itu tepat yang terjadi di percobaan pertama.
+- **`npm test`** (`vitest run`) dan step **Test** di `frontend-ci.yml`, dipasang sebelum step Build. Tidak butuh backend: `apiClient` & `CompanyContext` di-mock.
+
+### 25 test, semua pass
+
+- **`utils/menuTree.test.js` (12)** — `matchesPath` cocok persis & untuk rute turunan, TIDAK cocok kalau hanya sama di tengah segmen (`/admin/roles` vs `/admin/roles-lain`), aman untuk path kosong; `moduleContainsPath` menemukan menu anak; `findModuleIdForPath` mengembalikan null untuk Dashboard/`/profile` dan saat menu belum dimuat.
+- **`store/PermissionContext.test.jsx` (11)** — hak dipakai dari `user-permissions`, parameter `user_id`/`company_id` benar, rute turunan mewarisi hak menu induk, **menu dengan path terpanjang menang**, halaman mirip nama tidak diklaim menu lain, **default BOLEH** saat gagal dimuat maupun sebelum selesai dimuat, halaman tanpa menu (mis. `/profile`) tidak dibatasi, super admin tidak memanggil API sama sekali, dan `can('aksi-ngawur')` melempar error (salah tulis harus berisik, bukan diam-diam jadi "tidak boleh").
+- **`pages/hr/LeavePage.test.jsx` (2)** — canary di halaman sungguhan: tombol "Ajukan Cuti" muncul saat `can_create` true dan **benar-benar hilang** saat dicabut, sementara halamannya tetap terbuka. Ini yang menggantikan pemeriksaan visual di browser yang tidak bisa dijalankan sesi lalu (ekstensi Chrome memblokir `localhost:3000`).
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Hanya 1 dari 50 halaman ber-gate yang punya canary.** Sisanya masih bersandar pada keseragaman pola + build hijau. Kalau mau, pola test LeavePage tinggal disalin per modul.
+- **`npm run lint` masih tidak bisa jalan** — repo belum pernah punya config ESLint (sudah dicatat sebagai komentar di `frontend-ci.yml` sejak dulu). Sekarang setelah ada Vitest, menambah `eslint-plugin-react`/`react-hooks` jadi lebih masuk akal: aturan `rules-of-hooks` akan menangkap kesalahan seperti memanggil `usePagePermission()` di luar komponen.
+- Test masih memakai `document.body` bawaan; belum ada setup file bersama (`jest-dom` matcher belum dipasang, assertion memakai `toBeTruthy()`/`toBeNull()` polos).
+
+---
+
+## Frontend — Config ESLint (akhirnya) & bug yang langsung ketahuan (sesi 2026-08-21, lanjutan lagi)
+
+Repo ini punya script `npm run lint` sejak awal tapi **tidak pernah punya file config**, jadi perintahnya selalu gagal dan step lint di `frontend-ci.yml` sengaja dinonaktifkan (komentarnya masih ada di sana sejak lama). Setelah ada Vitest, menambah config jadi masuk akal — terutama `react-hooks/rules-of-hooks`, yang menangkap persis jenis kesalahan yang sesi sebelumnya cuma dijaga skrip pemeriksa statis buatan sendiri.
+
+### `.eslintrc.cjs`
+
+Format `.eslintrc.cjs`, bukan flat config `eslint.config.js`, karena devDependency yang sudah ada di repo adalah **ESLint 8**; naik ke ESLint 9 adalah perubahan tersendiri, bukan efek samping dari menambah config. Plugin: `react`, `react-hooks`, `react-refresh`. Script `lint` diperbaiki jadi `eslint . --ext .js,.jsx` — tanpa `--ext`, ESLint 8 hanya memeriksa `.js` dan **melewatkan seluruh 60+ file `.jsx`**, yang bikin lint pertama tampak "bersih" padahal belum memeriksa apa pun.
+
+Aturan sengaja sedikit dan semuanya bisa menangkap bug nyata; tidak ada aturan gaya penulisan. Tiga yang dimatikan, masing-masing dengan alasannya di file: `react/prop-types` (tidak ada satu pun komponen di repo ini yang memakainya), dan `react-refresh/only-export-components` (file context di sini memang mengekspor hook di samping provider — pola sejak `CompanyContext`, jauh sebelum lint ada; aturannya soal keandalan hot-reload, bukan kebenaran kode, dan 4 warning tetap yang tak akan ditindak hanya melatih orang mengabaikan lint).
+
+### Bug yang langsung ketahuan (dibuat sesi sebelumnya, PRE-EXISTING sejak pass gating)
+
+`'can' is not defined` di **`finance/InvoicesPage.jsx`** dan **`finance/JournalPage.jsx`**. Tombol Post di kedua halaman dirender oleh `invoiceColumns()`/`journalColumns()` — factory kolom yang berada **di luar komponen**, jadi `can(...)` yang dipasang saat gating tidak ada di scope-nya. **`npm run build` tetap hijau** karena ini `ReferenceError` saat render, bukan kesalahan kompilasi: kedua halaman akan blank begitu dibuka. Perbaikannya sama seperti `RoleListPage` yang memang sudah begitu sejak awal: `can` dioper sebagai parameter ke factory-nya.
+
+Ini justru contoh terbaik kenapa config lint-nya layak ditambahkan: build hijau + 25 test hijau + pemeriksaan statis buatan sendiri semuanya melewatkannya, ESLint menemukannya dalam satu kali jalan.
+
+### Test regresi
+
+**`pages/finance/InvoicesPage.test.jsx` (2 test)** menjaga supaya kolom aksinya benar-benar bisa DIRENDER, bukan sekadar bisa dibuild: tombol Post muncul untuk invoice DRAFT saat `can_approve` true dan hilang saat dicabut. Diverifikasi bahwa test-nya memang menangkap: bug-nya sengaja dipasang kembali → test gagal; dikembalikan → hijau lagi. Total frontend sekarang **27 test, semua pass**.
+
+### CI
+
+Step **Lint** dihidupkan lagi di `frontend-ci.yml` (sebelum Test & Build), komentar lamanya diganti penjelasan kenapa sekarang aktif. `npm run lint` sekarang keluar bersih: 0 error, 0 warning.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **`JournalPage` belum punya test regresi** seperti InvoicesPage — perbaikannya identik dan sudah diverifikasi lint, tapi tidak ada test yang menjaganya.
+- **ESLint 8 sudah EOL**; pindah ke ESLint 9 + flat config suatu saat perlu, sekalian menyalakan `eslint-plugin-jsx-a11y` kalau mau.
+- Belum ada Prettier / aturan format otomatis — konsistensi format sekarang masih bersandar pada kebiasaan.
+
+---
+
+## HR — Kalender Hari Libur & Kuota Cuti (Fase 4 HRIS lengkap) — sesi 2026-08-21, lanjutan lagi
+
+Menutup dua item yang tersisa dari `003_leave_and_overtime.sql`: master kalender hari libur nasional dan kuota/saldo cuti tahunan. Sebelum ini "hari kerja" di seluruh hr-service berarti **Senin-Jumat polos** — tanggal merah tetap jadi hari kerja saat pro-rata payroll, ikut memotong jatah cuti, dan `is_holiday` di lembur bergantung pada ketelitian orang mencentang checkbox.
+
+### `004_holidays_and_leave_quota.sql`
+
+- **`holidays`** (`company_id`, `holiday_date`, `name`, `is_national`, UNIQUE per company+tanggal). Disimpan **per company**, bukan global: tanggal merah nasional memang sama untuk semua, tapi cuti bersama dan libur khusus perusahaan tidak. `is_national` hanya membedakan asal-usul untuk tampilan — keduanya sama-sama berarti bukan hari kerja.
+- **`leave_quotas`** (`employee_id`, `year`, `total_days` default 12, `carried_over`, `note`, UNIQUE per karyawan+tahun). **Jumlah hari terpakai TIDAK disimpan** — selalu dihitung ulang dari `leave_requests` yang APPROVED. Kalau disimpan, angka itu harus ikut dikoreksi tiap kali cuti dibatalkan/ditolak dan cepat atau lambat akan lepas sinkron.
+
+### Endpoint baru
+
+`GET/POST /holidays`, `DELETE /holidays/{id}`, `GET /leave-quotas` (per company+tahun, opsional per karyawan), `PUT /leave-quotas` (upsert). Tidak ada perubahan di api-gateway — proxy-nya prefix-based.
+
+### Integrasi (bagian yang membuat ini bukan sekadar CRUD)
+
+1. **`workingDaysBetween` / `workingDaysInMonth`** menggantikan `countWeekdaysBetween`/`countWeekdays` yang lama. Keduanya sekarang membaca kalender company: hari kerja = bukan akhir pekan DAN tidak ada di `holidays`.
+2. **Penyebut pro-rata payroll ikut menyusut** di bulan yang banyak tanggal merahnya. Ini bukan detail kosmetik: dengan pembagi yang terlalu besar, gaji setiap karyawan sedikit terpotong di bulan-bulan seperti itu.
+3. **`leaveDaysInPeriod` membuang hari libur**, jadi tanggal merah di tengah rentang cuti tidak lagi terhitung sebagai hari cuti di payroll.
+4. **Kuota diperiksa saat PERSETUJUAN, bukan saat pengajuan dibuat.** Yang benar-benar memakan jatah adalah cuti yang disetujui; menahan sejak pengajuan hanya memindahkan percakapan "boleh tidak saya ambil" ke luar sistem. Pengajuan yang ditolak karena jatah **tetap SUBMITTED** (tidak hangus) sehingga bisa diproses lagi setelah jatahnya ditambah.
+5. **Cuti lintas tahun membebani jatah masing-masing tahun** (28 Des–1 Jan = 4 hari di 2026 + 1 hari di 2027), dan ditolak kalau salah satu tahunnya tidak cukup.
+6. **Hanya cuti ANNUAL yang memakan jatah** — sakit, melahirkan, dan tanpa gaji punya aturannya sendiri di UU.
+7. **`is_holiday` lembur diturunkan dari kalender**: tanggal merah DAN akhir pekan otomatis memakai pengali hari libur (Kepmenaker 102/2004). Centang manual tetap dihormati sebagai jalan keluar untuk libur pengganti yang belum sempat didata — manual hanya bisa menambah, tidak membatalkan.
+
+### Frontend & menu
+
+`HolidaysPage.jsx` (kalender per tahun + tambah/hapus) dan `LeaveQuotaPage.jsx` (jatah/terpakai/sisa per karyawan, dengan badge "default" untuk yang belum pernah diatur) + 2 route. `017_seed_hr_calendar_quota_menus.sql` di rbac-service menambah 2 menu HR dengan grant untuk 5 role yang sama — **divalidasi dulu** dengan `BEGIN; \i ...; SELECT ...; ROLLBACK;` (hasilnya 7 menu HR dengan 5 grant masing-masing) sebelum benar-benar dijalankan lewat startup rbac-service.
+
+### Verifikasi
+
+- **21 test baru** (10 kalender, 11 kuota), total **75 fungsi test di hr-service**, semua pass. Termasuk: hari libur tidak dihitung sebagai hari cuti, lembur tanggal merah & Sabtu otomatis tarif libur sementara hari kerja biasa tidak, jatah kembali setelah cuti dibatalkan, cuti lintas tahun terpecah benar, dan persetujuan ditolak 409 saat jatah kurang.
+- **Dua bug ketahuan saat menulis test** dan langsung diperbaiki: query kuota memakai `e.full_name` padahal tabel `employees` menyimpan `first_name`/`last_name` terpisah (ketahuan 3x — dua di SELECT, satu tersisa di `ORDER BY` yang sempat lolos dari perbaikan pertama), dan filter `status = 'active'` huruf kecil padahal nilainya `'ACTIVE'`.
+- **Smoke test end-to-end lewat gateway sungguhan** (auth + rbac + hr + gateway native): cuti 17–19 Agustus `total_days` 3 → setelah 17 Agustus masuk kalender jadi 2 → kuota diturunkan ke 1 hari, persetujuan ditolak dengan *"Jatah cuti tahunan 2026 tidak cukup: butuh 2 hari, sisa 1 hari"* → kuota dinaikkan ke 12, persetujuan 200, rekap jadi terpakai 2 sisa 10 → lembur 2 jam di 17 Agustus dengan `is_holiday: false` tetap keluar `is_holiday = true` dan Rp400.000 (tarif libur 2x). Seluruh data uji dibersihkan (diverifikasi 0 baris tersisa) dan keempat service di-teardown.
+- `npm run lint`, `npm test` (29), dan `npm run build` frontend semuanya hijau.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **KPI karyawan** — satu-satunya item Fase 4 HRIS yang tersisa, belum disentuh sama sekali.
+- **Kalender belum bisa di-import massal**: tanggal merah setahun harus diinput satu per satu. Impor dari file atau seed tahunan akan sangat membantu.
+- **Kuota tidak otomatis bergulir ke tahun berikutnya**: `carried_over` diisi manual, dan tidak ada aturan kedaluwarsa sisa cuti.
+- **Payroll yang sudah diproses tidak dihitung ulang** kalau kalender berubah setelahnya — angkanya sudah tersimpan di `payroll_details`. Ini disengaja, tapi belum ada peringatan di UI saat mengubah kalender periode yang sudah diproses.
+
+---
+
+## HR — KPI Karyawan: FASE 4 HRIS SELESAI (sesi 2026-08-21, lanjutan lagi)
+
+Item terakhir Fase 4 HRIS. Dengan ini seluruh Fase 4 selesai: cuti, lembur, kalender hari libur, kuota cuti, dan sekarang KPI.
+
+### `005_kpi.sql` — tiga tabel
+
+- **`kpi_indicators`** — master indikator per company: `code` (unik per company), nama, `unit`, `target_value`, `weight` (bobot persen), `is_active`.
+- **`kpi_reviews`** — penilaian satu karyawan pada satu periode (`YYYY-MM`, format yang sama dengan payroll), status DRAFT→SUBMITTED→APPROVED/REJECTED, plus `total_score` & `rating` yang **disimpan**, bukan dihitung saat dibaca. UNIQUE (employee_id, period).
+- **`kpi_review_items`** — rincian per indikator.
+
+**Keputusan yang menentukan bentuk seluruh modul ini**: rincian penilaian menyimpan **salinan** nama, unit, target, dan bobot indikator saat penilaian dibuat — bukan sekadar foreign key. Bobot dan target itu kebijakan yang berubah tiap tahun; kalau hanya dirujuk, mengubah master indikator akan diam-diam menulis ulang hasil periode yang sudah lewat. Semangat yang sama dengan `payroll_details` yang menyimpan angka hasil hitung, bukan menghitung ulang dari master gaji hari ini. Ada test-nya, dan smoke test end-to-end juga membuktikannya.
+
+### Rumus & aturan
+
+```
+achievement = actual / target * 100, dibatasi 150%
+score       = achievement * weight / 100
+total_score = jumlah score seluruh indikator
+rating      = >=90 SANGAT BAIK | >=75 BAIK | >=60 CUKUP | sisanya PERLU PERBAIKAN
+```
+
+**Pembatasan 150% itu disengaja**: tanpa batas, satu indikator yang tercapai 500% menutupi seluruh indikator lain yang gagal dan nilai akhirnya berhenti berarti. Batasnya di atas 100 supaya pencapaian melebihi target tetap dihargai.
+
+Tiga pagar lain:
+1. **Bobot diperiksa saat PENGAJUAN, bukan saat indikator dibuat.** Bobot yang belum genap 100% wajar selama master masih disusun, tapi nilai akhir dari bobot yang tidak genap tidak bisa dibandingkan antar karyawan. Pesannya menyebut angka yang sekarang ("70%, harus tepat 100%").
+2. **Nilai terkunci setelah diajukan** — pagar yang sama dengan cuti & lembur: kalau masih bisa diubah, penyetuju bisa menyetujui angka yang berbeda dari yang dia baca.
+3. **Indikator yang sudah dipakai penilaian tidak bisa dihapus** (juga dijaga `ON DELETE RESTRICT`), hanya dinonaktifkan — supaya penilaian lama tetap terbaca utuh. Yang belum pernah dipakai boleh dihapus.
+
+Penilaian yang **ditolak boleh diperbaiki dan diajukan ulang** (REJECTED → SUBMITTED), bukan hangus; alasan penolakannya dibersihkan saat diajukan ulang.
+
+### Frontend & menu
+
+`KpiIndicatorsPage.jsx` (master indikator, dengan peringatan tetap kalau total bobot aktif belum 100%) dan `KpiReviewsPage.jsx` (daftar penilaian + modal rincian: input realisasi per indikator, pencapaian & nilai per baris, total + rating, tombol Ajukan/Setujui/Tolak sesuai status dan hak akses). `018_seed_hr_kpi_menus.sql` menambah 2 menu HR — divalidasi dulu dengan `BEGIN; … ROLLBACK;` (9 menu HR × 5 grant) sebelum dijalankan sungguhan.
+
+### Verifikasi
+
+- **15 test baru**, total **90 fungsi test di hr-service** (141 termasuk subtest), semua pass. Termasuk: normalisasi & keunikan code per company, filter `active_only`, penghapusan indikator terpakai ditolak, penilaian menyalin indikator aktif, **salinan tidak ikut berubah saat master diubah**, perhitungan achievement/score/rating, pembatasan 150%, indikator asing & nilai negatif ditolak, alur status lengkap termasuk kunci-setelah-submit, dan pengajuan ditahan saat bobot ≠ 100%.
+- **Smoke test end-to-end lewat gateway sungguhan** (auth + rbac + hr + gateway native): 9 menu HR muncul di sidebar → 2 indikator (60% + 40%) → penilaian menyalin 2 indikator, total bobot 100 → realisasi 80/100 & 20/20 menghasilkan **total 88, rating BAIK** → submit 200, ubah nilai setelah submit **409**, approve 200 → bobot indikator diubah jadi 10% membuat penilaian periode berikutnya ditolak dengan *"Total bobot indikator pada penilaian ini 70%, harus tepat 100%"* → penilaian lama **tetap menyimpan bobot 60/40 dan total 88**. Data uji dibersihkan (0 baris tersisa di ketiga tabel), service di-teardown.
+- Frontend: `npm run lint` bersih, 29 test pass, build hijau.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **KPI belum terhubung ke apa pun**: tidak memengaruhi payroll (mis. bonus berbasis nilai), tidak masuk dw-service/BI, dan tidak ada rekap per periode/departemen.
+- **Indikator berlaku untuk semua karyawan di satu company** — belum ada penetapan indikator per jabatan/departemen, padahal itu yang biasanya dibutuhkan.
+- **Periode bulanan** (`YYYY-MM`) dipilih demi konsistensi dengan payroll; penilaian triwulanan/tahunan harus diwakili satu bulan tertentu.
+- **Tidak ada self-assessment atau penilaian oleh atasan langsung** — semua penilaian dibuat oleh yang punya akses menu KPI.
+
+---
+
+## dw-service + BI — Fact Table Cuti & KPI (14 → 16 fact table), sesi 2026-08-21 lanjutan lagi
+
+Menutup dua catatan lama sekaligus: "fact table dw-service untuk cuti & lembur" (dicatat sejak sesi 2026-08-17) dan "KPI belum masuk dw/BI" (dicatat beberapa jam lalu). Cuti dan KPI masuk; **lembur sengaja belum** — jam & rupiahnya sudah ikut terangkut lewat `fact_hr_payroll_details` (kolom `total_overtime`), jadi fact table sendiri baru berguna kalau nanti butuh analitik per tanggal/per persetujuan.
+
+### Dua fact table baru
+
+- **`fact_hr_leave_requests`** — seluruh pengajuan cuti dengan SEMUA status. Penyaringan status dilakukan di query ringkasan, bukan dengan membuang data di ETL: "berapa banyak pengajuan" dan "berapa hari benar-benar diambil" adalah dua pertanyaan berbeda dan keduanya sah.
+- **`fact_hr_kpi_reviews`** — kepala penilaian (nilai total & rating), bukan rincian per indikator: bobot dan target berbeda antar periode, jadi rincian tidak bisa dibandingkan lintas periode tanpa konteksnya sendiri.
+
+Keduanya memakai **watermark `updated_at` langsung**, beda dari payroll yang harus memakai `COALESCE(posted_at, created_at)` karena tabelnya tidak punya `updated_at`. Transisi status otomatis terangkut di sync berikutnya.
+
+**Streaming ETL** ikut dipasang: `hr.leave.approved/rejected/cancelled` dan `hr.kpi_review.approved/rejected` → extract ulang baris yang sama, ReplacingMergeTree yang menggantikan versi lamanya.
+
+### Dua endpoint analitik + dua chart (chart ke-7 & ke-8)
+
+- **`GET /analytics/hr-leave-monthly-summary`** — per bulan: jumlah pengajuan (semua status), jumlah disetujui, dan hari cuti dipecah per jenis (tahunan/sakit/tanpa gaji/lainnya) **hanya dari yang APPROVED**. Bulannya diambil dari `start_date`, bukan tanggal pengajuan: yang menarik dianalisis adalah kapan orangnya tidak masuk, bukan kapan formulirnya diisi.
+- **`GET /analytics/hr-kpi-summary`** — per periode: jumlah penilaian, jumlah disetujui, rata-rata nilai, dan sebaran rating. Rata-rata & sebaran **hanya dari APPROVED**: yang DRAFT nilainya masih berubah tiap realisasi diisi ulang, dan yang REJECTED justru dinyatakan tidak sah oleh penyetujunya. `avg_score` Nullable — periode tanpa penilaian final tidak punya rata-rata, dan 0 akan terbaca "semua orang nol".
+
+Di `BIDashboardsPage`, rata-rata nilai ditampilkan sebagai teks di bawah judul, bukan sebagai batang ketiga — satuannya poin sementara seri lain cacah orang, pola yang sama dengan `avg_delivery_hours` di chart fleet.
+
+### Dua jebakan tipe ClickHouse (ketahuan dari test, bukan dari membaca dokumentasi)
+
+1. `sumIf()` atas kolom `Int16` menghasilkan **Int64**, dan driver menolak memindahkannya ke `uint64` — beda dari `count()`/`countIf()` yang memang `UInt64`. Kolom hari cuti karena itu bertipe `int64`.
+2. `avg()` atas kolom `Decimal` menghasilkan **Float64**, bukan Decimal — `AvgScore` jadi `*float64`, sama seperti `AvgDeliveryHours`.
+
+### Verifikasi
+
+- **9 test baru** (5 ETL + 4 query ringkasan), seluruh suite dw-service pass. Termasuk: cuti non-APPROVED tetap ikut tersalin, perubahan status menggantikan baris lama (bukan menggandakan), rerun idempotent, hari cuti hanya dijumlah dari yang APPROVED, rata-rata KPI mengabaikan DRAFT & REJECTED, dan `avg_score` nil saat belum ada yang disetujui.
+- **Satu test sempat salah asumsi**: saya menulis "sync kedua harus 0 baris", padahal watermark platform ini memang **inklusif** (`>=`) sehingga baris di batas terakhir diproses ulang dengan sengaja. Test-nya diganti jadi pemeriksaan idempotensi (tetap 1 baris setelah FINAL), mengikuti `TestSyncFinance_RerunIsIdempotent` yang sudah ada.
+- **Smoke test end-to-end lewat gateway sungguhan** (auth + hr + dw + gateway native, ClickHouse via Docker): 1 cuti tahunan disetujui (3 hari) + 1 cuti sakit ditolak + 1 penilaian KPI disetujui nilai 92 → `POST /sync` melaporkan `hr_leave_requests: 3` & `hr_kpi_reviews: 1` → ringkasan cuti Agustus **2 pengajuan, 1 disetujui, 3 hari tahunan, 0 hari sakit** (yang ditolak tidak menambah hari) → ringkasan KPI **rata-rata 92, SANGAT BAIK 1**. Data uji dibersihkan di Postgres DAN di ClickHouse (`ALTER TABLE ... DELETE`), service di-teardown.
+- Frontend: lint bersih, 29 test pass, build hijau.
+
+### Catatan lingkungan
+
+**Docker Desktop dinyalakan sesi ini** untuk menjalankan container ClickHouse saja (`docker compose up -d clickhouse`) — tanpa itu seluruh test dw-service SKIP di lokal. Containernya sudah di-`stop` lagi di akhir sesi, tapi Docker Desktop-nya masih berjalan. Menjalankan satu container yang sudah jadi ternyata aman; yang bermasalah dulu adalah build 21 image sekaligus.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **`fact_hr_overtime`** kalau nanti butuh analitik lembur per tanggal (bukan agregat bulanan lewat payroll).
+- **Chart KPI belum bisa dipecah per departemen** padahal kolomnya (`department`) sudah ikut disalin ke fact table — tinggal menambah endpoint yang GROUP BY department.
+- **Data Lake (MinIO) tidak ikut diverifikasi** sesi ini: containernya tidak dinyalakan, jadi jalur `WriteJSONLines` untuk dua fact baru ini baru terbukti tidak menggagalkan sync (best-effort), belum terbukti menulis file.
+
+---
+
+## dw-service — Data Lake diverifikasi + KPI per Departemen (chart ke-9), sesi 2026-08-21 lanjutan lagi
+
+Dua catatan dari bagian sebelumnya, keduanya ditutup.
+
+### 1. Jalur Data Lake untuk fact table baru — sekarang benar-benar terbukti
+
+Sebelumnya jalur MinIO untuk `hr_leave_requests` & `hr_kpi_reviews` baru terbukti "tidak menggagalkan sync" (error lake memang cuma di-log), belum terbukti menulis file. **Container MinIO dinyalakan**, dan dua test baru (`TestSyncHRKPI_WritesToDataLake`, `TestSyncHRLeave_WritesToDataLake`) mengikuti pola `TestSyncFinance_WritesToDataLake`: sync sungguhan → `ListKeys` → baca object terbaru → cari baris yang baru di-seed dan periksa isinya. Yang cuti sekaligus menjaga bahwa status non-APPROVED (`CANCELLED`) ikut sampai ke bronze layer, sama seperti yang sampai ke ClickHouse. Guard MinIO tetap di dalam test (`t.Skip`), bukan di TestMain — MinIO adalah side-channel opsional dan test lain harus tetap jalan tanpanya.
+
+### 2. KPI per departemen (chart ke-9)
+
+Kolom `department` sudah ikut tersalin ke fact table tapi belum ada yang memakainya.
+
+- **`GET /analytics/hr-kpi-department-summary?company_id=[&period=]`** — rata-rata, min, max, dan jumlah penilaian per departemen. `period` **opsional**: kalau kosong, backend memilih periode terakhir yang punya penilaian **disetujui** (`LatestKPIPeriod`), jadi UI tidak perlu menebak periode mana yang sudah final. Company yang belum punya penilaian final mengembalikan daftar kosong, bukan error.
+- **Satu periode saja per permintaan.** Perbandingan lintas departemen hanya sah dalam periode yang sama — target & bobot indikator bisa berbeda antar periode, jadi menggabungkan beberapa periode akan membandingkan angka yang tidak sebanding.
+- **Min & max ikut dikembalikan**, bukan hanya rata-rata: departemen dengan rata-rata 80 yang isinya 79–81 sangat berbeda dari yang isinya 60–100, dan perbedaan itu yang biasanya perlu ditindak. Di UI, rentang terlebar ditampilkan sebagai teks di bawah judul, bukan seri batang tambahan (tiga batang min/rata/max mudah terbaca sebagai tiga kelompok berbeda padahal menggambarkan kelompok yang sama).
+- **Karyawan tanpa departemen dikelompokkan sebagai "(tanpa departemen)"**, bukan dibuang — kalau dibuang, jumlah orang di grafik tidak akan cocok dengan ringkasan periode yang sama.
+
+### Jebakan tipe ClickHouse ketiga
+
+Sudah tercatat dua sebelumnya (`sumIf` atas Int16 → Int64; `avg` atas Decimal → Float64). Yang ketiga: **`min()`/`max()` atas kolom Decimal MEMPERTAHANKAN Decimal**, sementara `avg()` di kolom yang sama menghasilkan Float64. Jadi tiga kolom yang secara konsep sama-sama "nilai" justru butuh dua tipe Go berbeda dalam satu struct — ada komentarnya di `HRKPIDepartmentSummaryRow`.
+
+### Verifikasi
+
+- **6 test baru** (2 data lake, 4 ringkasan/periode), total **54 fungsi test di internal/etl**, seluruh suite dw-service pass dengan ClickHouse + MinIO nyala.
+- **Smoke test end-to-end lewat gateway sungguhan**: 2 karyawan di departemen berbeda (Sales & Finance) dengan penilaian 2026-10 masing-masing 70 dan 95 → `POST /sync` → ringkasan **tanpa parameter period** mengembalikan `2026-10 | Finance | rata-rata 95` dan `2026-10 | Sales | rata-rata 70`, terurut dari rata-rata tertinggi. Data uji dibersihkan di Postgres dan ClickHouse; service serta container ClickHouse & MinIO di-stop.
+- Frontend: lint bersih, 29 test pass, build hijau.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Pemilih periode di chart departemen** belum ada di UI — backend sudah menerima `period`, tapi halaman selalu memakai periode terakhir.
+- **`fact_hr_overtime`** masih belum ada (lihat alasannya di bagian sebelumnya).
+- **Halaman BI sekarang punya 9 chart** dalam satu halaman panjang. Kalau bertambah lagi, sebaiknya dipecah per tema (Keuangan / Operasional / SDM) daripada terus memanjang.
+
+---
+
+## BI Dashboards — dipecah jadi 4 tab bertema + pemilih periode KPI (sesi 2026-08-21, lanjutan lagi)
+
+Menutup dua catatan terakhir sekaligus: halaman BI yang sudah memuat 9 grafik dalam satu kolom panjang, dan pemilih periode untuk chart KPI per departemen.
+
+### Pembagian tab
+
+Dipecah **per tema, bukan per sumber data** (mis. "real-time" vs "data warehouse"): yang membuka dashboard mencari jawaban tentang keuangan atau SDM-nya, bukan tentang dari service mana angkanya diambil.
+
+- **Ringkasan** — seluruh StatTile + tiga StatusBreakdown (Sales/Purchase/Work Order per status).
+- **Keuangan & Penjualan** — Revenue vs Expense, Sales Value per bulan, Pipeline CRM, Biaya Proyek.
+- **Operasional** — Stok Masuk vs Keluar, Pengiriman per bulan.
+- **SDM** — Hari Cuti, Sebaran Rating KPI, Rata-rata KPI per Departemen.
+
+Satu baris grafik lama harus dipecah untuk ini: `Revenue vs Expense | Stok | Sales Value` berada dalam satu `row` yang sama padahal isinya dua tema berbeda — stok pindah ke Operasional, dua sisanya tinggal di Keuangan.
+
+**Data tetap diambil sekali saat halaman dibuka, bukan per tab.** Berpindah tab harus terasa seketika, dan payload-nya memang kecil (satu baris per bulan/periode). Ada test yang menjaga ini: jumlah pemanggilan `apiClient.get` tidak bertambah setelah pindah tab.
+
+### Pemilih periode KPI per departemen
+
+`<select>` kecil di kepala kartu, isinya periode yang punya penilaian disetujui (diambil dari data chart Sebaran Rating yang sudah dimuat, bukan endpoint baru). Pilihan default **"Periode terakhir"** mengirim permintaan TANPA parameter `period` — biar backend yang menentukan periode final terakhir, supaya UI tidak perlu menebak.
+
+### Verifikasi
+
+- **5 test komponen baru** (`BIDashboardsPage.test.jsx`), total **34 test frontend**, semua pass. Yang dijaga: tab Ringkasan terbuka lebih dulu, grafik SDM tidak ikut terender saat tab lain aktif (dan sebaliknya), data dimuat sekali di awal, dan pemilih periode benar-benar mengirim ulang permintaan dengan `period` yang dipilih (permintaan pertama tanpa `period`).
+- Ini sekaligus jawaban untuk keterbatasan sesi-sesi lalu: pemeriksaan visual di browser terblokir izin ekstensi Chrome, tapi hal yang ingin dibuktikan — grafik mana muncul di tab mana — justru bisa diuji langsung dengan Testing Library, dan build hijau saja tidak akan menangkapnya.
+- `@testing-library/user-event` ditambahkan sebagai devDependency (klik tab & pilih opsi select).
+- Lint bersih, build hijau.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Tab tidak tersimpan di URL** — reload selalu kembali ke Ringkasan, dan tab tertentu tidak bisa di-bookmark/dibagikan. Kalau nanti dibutuhkan, `useSearchParams` cukup.
+- **Grafik lain belum punya pemilih periode/rentang** — hanya KPI per departemen yang punya; sisanya menampilkan seluruh riwayat.
+- **`fact_hr_overtime`** masih belum ada (alasannya di bagian sebelumnya).
+
+---
+
+## CRM — Status Aktif/Nonaktif untuk Account & Contact (sesi 2026-08-21, lanjutan lagi)
+
+Hasil audit "fitur/menu yang belum dibuat" (lihat ringkasannya di bawah) menemukan bahwa **Account & Contact adalah satu-satunya master data di seluruh platform yang tidak bisa dihapus DAN tidak punya cara dinonaktifkan** — 14 master lain (customers, suppliers, products, vehicles, devices, dst.) semuanya sudah punya `status`/`is_active` sejak awal. User memilih ini untuk dikerjakan.
+
+### `002_account_contact_status.sql`
+
+Kolom `status` (`ACTIVE`/`INACTIVE`, DEFAULT `ACTIVE`) di `accounts` & `contacts` + index `(company_id, status)`. **Dinonaktifkan, bukan dihapus**, karena keduanya hampir selalu sudah terlanjur dirujuk opportunity dan activity — menghapusnya meninggalkan riwayat penjualan yang menunjuk ke nama yang hilang.
+
+### Aturan yang dipasang
+
+1. **Status kosong di payload update = TIDAK DIUBAH** (`COALESCE(NULLIF($n,''), status)`), pola yang sama dengan `updateUser` di auth-service. Menyunting nomor telepon tidak boleh diam-diam mengaktifkan kembali account yang sengaja dinonaktifkan. Ada test-nya.
+2. **Menonaktifkan account ditahan kalau masih ada opportunity terbuka** (bukan WON/LOST), dengan pesan yang menyebut jumlahnya. Alasannya: pipeline-nya masih hidup, tapi account-nya tidak akan bisa dipilih lagi di form mana pun — pekerjaan yang sedang berjalan jadi tersembunyi. Tutup dulu opportunity-nya.
+3. **Yang nonaktif tidak bisa dipakai untuk data BARU**: contact baru, opportunity baru, dan activity baru semuanya ditolak 409. Untuk activity, pemeriksaannya lewat `referenceIsInactive` yang **hanya berlaku untuk ACCOUNT & CONTACT** — LEAD & OPPORTUNITY punya alur status sendiri (converted/won/lost) yang tidak berarti "tidak boleh disentuh".
+4. **Data lama tetap utuh dan terbaca.** Contact yang sudah menempel di account nonaktif tidak ikut hilang dari daftar; ada test yang menjaganya.
+5. **Filter `status` di list** bersifat opsional. Tanpa filter, seluruh data ikut terbawa — halaman master memang perlu melihat yang nonaktif untuk bisa mengaktifkannya kembali.
+
+### Frontend
+
+Kolom **Status** + tombol **Nonaktifkan/Aktifkan** di AccountsPage & ContactsPage. Yang lebih halus ada di tiga halaman lain: dropdown Account/Contact di Contacts, Opportunities, dan Activities sekarang **hanya menawarkan yang aktif** — tapi daftar lengkapnya tetap dimuat, karena kolom "Account"/"Terkait" di tabel harus tetap menampilkan nama, bukan tanda hubung. Pilihan yang **sedang dipakai** oleh data yang diedit tetap ditampilkan (ditandai "(nonaktif)"); tanpa itu, menyimpan perubahan kecil apa pun akan diam-diam melepas kaitannya.
+
+### Verifikasi
+
+- **10 test baru** (`status_test.go`), total **63 fungsi test di crm-service**, semua pass.
+- **Smoke test end-to-end lewat gateway sungguhan** (7 tahap): account baru default ACTIVE → penonaktifan ditolak *"masih punya 1 opportunity yang belum ditutup"* → setelah opportunity di-LOST, penonaktifan berhasil → contact/opportunity/activity baru ke account itu semuanya **409** → edit nama tanpa mengirim status membuat statusnya tetap INACTIVE → filter `status=ACTIVE` tidak lagi memuat account itu → diaktifkan kembali. Data uji dibersihkan, service di-teardown.
+- Frontend: lint bersih, 34 test pass, build hijau.
+
+### Hasil audit lain yang belum dikerjakan
+
+Dari audit yang sama (menu, route, endpoint, roadmap):
+- **Semua 59 menu RBAC sudah punya halaman sungguhan** — nol PlaceholderPage. Dari 226 endpoint backend, semuanya terpakai kecuali `POST /warehouse/stock-movements/batch` yang memang dipanggil service lain, bukan UI.
+- **`backend/modules/ai-service` & `bi-service` hanya berisi README "Planned"** padahal fungsinya sudah dijalankan `ai-bi-service` — dokumen yang menyesatkan, layak dihapus/diperbarui.
+- **8 dari 16 fact table belum punya endpoint analitik**: payroll_details, purchasing_order_lines, production_work_orders, qc_inspections, asset_maintenance, iot_readings, ticketing_tickets, ecommerce_order_lines.
+- **Penegakan hak akses di backend** masih terbuka (UI-only, sesuai pilihan sesi sebelumnya).
+- **Reset password oleh admin**, **Silver/Gold data lake**, dan **AI/ML yang lebih dari regresi linear + z-score** semuanya masih di daftar.
+
+---
+
+## Bersih-bersih placeholder + 4 endpoint analitik baru (chart 10-13), sesi 2026-08-21 lanjutan lagi
+
+Dua item teratas dari hasil audit dikerjakan.
+
+### 1. `ai-service` & `bi-service` dihapus
+
+Keduanya hanya berisi README "Fase 2 — belum di-scaffold" sejak commit pertama, padahal lingkupnya sudah lama dikerjakan `ai-bi-service` (dashboard, forecasting, anomaly detection). `backend/modules/README.md` juga masih menyebut seluruh folder "placeholder, belum di-scaffold" padahal 16 modul sudah berjalan — sekarang ditulis ulang jadi daftar modul yang benar beserta cakupannya, plus catatan sejarah kenapa dua folder itu hilang (dan kapan memisahkannya kembali jadi masuk akal: kalau model serving butuh siklus rilis atau resource yang berbeda dari penyajian dashboard).
+
+### 2. Empat fact table yang menganggur akhirnya punya ringkasan
+
+Dari 8 fact table tanpa endpoint analitik, 4 dikerjakan sesi ini:
+
+- **`GET /analytics/qc-monthly-summary`** — cacah hasil (PASS/PARTIAL/FAIL) DAN kuantitasnya, karena keduanya menjawab pertanyaan berbeda: berapa banyak inspeksi yang bermasalah, versus berapa banyak barang yang benar-benar gagal. Satu inspeksi PARTIAL atas 1.000 unit bukan hal yang sama dengan satu FAIL atas 2 unit. `defect_rate_pct` karena itu dihitung dari **kuantitas**, bukan cacah inspeksi.
+- **`GET /analytics/production-monthly-summary`** — rencana vs realisasi. Realisasi **hanya dari WO COMPLETED** (quantity_produced pada WO berjalan belum final, NULL untuk yang belum mulai), sementara rencana dari SELURUH WO bulan itu — yang belum selesai tetap rencana yang sudah dijanjikan.
+- **`GET /analytics/purchasing-supplier-summary`** — belanja per supplier, **hanya PO RECEIVED/INVOICED** (yang masih DRAFT/CONFIRMED baru rencana; mencampurnya membuat angka tidak bisa dipakai negosiasi). `order_count` memakai `uniqExact(purchase_order_id)` — satu PO dengan 10 baris tetap SATU order.
+- **`GET /analytics/ticketing-monthly-summary`** — cacah + rata-rata lama penyelesaian. `open_count` didefinisikan sebagai "belum punya `resolved_at`", bukan daftar status tertentu: status bisa bertambah kelak, tapi "belum selesai" akan tetap berarti belum ada waktu penyelesaiannya.
+
+### Jebakan ClickHouse keempat
+
+Setelah `sumIf` atas Int16 → Int64, `avg` atas Decimal → Float64, dan `min/max` atas Decimal → tetap Decimal, yang keempat lebih halus: **alias agregat tidak boleh sama dengan nama kolomnya**. `sum(inspected_quantity) AS inspected_quantity` membuat referensi `inspected_quantity` berikutnya menunjuk ke ALIAS (yang sudah agregat), dan ClickHouse menolaknya dengan *"Aggregate function ... is found inside another aggregate function"*. Alias diganti jadi `inspected_total`/`planned_total`, dan ada komentarnya di kedua query.
+
+### Frontend (chart 10-13)
+
+Ditempatkan sesuai tema tab: **Operasional** dapat QC, Produksi, dan Tiket; **Keuangan & Penjualan** dapat Belanja per Supplier. Angka yang satuannya berbeda (tingkat cacat %, pencapaian %, rata-rata jam) tetap ditampilkan sebagai teks di bawah judul, bukan seri batang tambahan — konsisten dengan `avg_delivery_hours` di fleet.
+
+### Verifikasi
+
+- **6 test ClickHouse baru**, seluruh suite dw-service pass. Yang dijaga antara lain: defect rate dari kuantitas (4,72%) bukan dari cacah inspeksi (66%), realisasi produksi mengabaikan WO IN_PROGRESS, satu PO dua baris tetap satu order, dan rata-rata penyelesaian tiket 1,5 jam (bukan 1 jam seperti kalau `dateDiff('hour')` dipakai).
+- **1 test frontend baru** memastikan keempat kartu mendarat di tab yang benar (35 test frontend, semua pass).
+- **Smoke test end-to-end lewat gateway** dengan data dev yang sudah ada: QC Juli (1 PASS/1 FAIL/1 PARTIAL, cacat 27,8%), produksi 10/10 = 100%, SUP-01 belanja 50.000 dari 1 order, tiket Agustus 1 belum selesai dengan `avg_resolve_hours: null` (bukan 0). Endpoint tanpa `company_id` → 400.
+- Lint & build frontend hijau; ClickHouse container di-stop lagi di akhir.
+
+### Sisa dari daftar audit
+
+- **4 fact table masih tanpa endpoint**: `hr_payroll_details`, `asset_maintenance`, `iot_readings`, `ecommerce_order_lines`.
+- Penegakan hak akses di backend, reset password oleh admin, Silver/Gold data lake, dan AI/ML yang lebih dari regresi linear + z-score.
+
+---
+
+## dw-service — SELURUH 16 fact table punya endpoint analitik (chart 14-17), sesi 2026-08-21 lanjutan lagi
+
+Empat fact table terakhir yang menganggur ikut dikerjakan, jadi tidak ada lagi data di warehouse yang tidak pernah dilihat siapa pun.
+
+- **`GET /analytics/payroll-period-summary`** — hanya run **POSTED**: itu satu-satunya status yang angkanya sudah masuk jurnal GL dan tidak akan berubah. Run DRAFT bisa dihapus & diproses ulang, jadi memasukkannya membuat "biaya gaji bulan ini" berubah-ubah tiap kali HR mencoba lagi. `attendance_pct` dihitung dari **total hari** (hadir/kerja seluruh karyawan), bukan rata-rata persentase per orang — karyawan yang baru masuk pertengahan bulan tidak menarik turun angka perusahaan sebesar karyawan penuh.
+- **`GET /analytics/asset-maintenance-summary`** — `overdue_count` dihitung **saat query** (`today()`), bukan dibekukan di ETL: keterlambatan bertambah dengan sendirinya walau sync tidak jalan. `avg_delay_days` hanya dari yang sudah selesai, dan boleh negatif kalau dikerjakan lebih awal.
+- **`GET /analytics/iot-device-summary`** — dikelompokkan per **(device, reading_type)**, bukan per device: satu device bisa mengirim suhu dan kelembapan sekaligus, dan merata-ratakan keduanya menghasilkan angka yang tidak berarti apa-apa. Pembacaan non-numerik (status ON/OFF) dibuang. `last_read_at` ikut dikembalikan karena pertanyaan pertama tentang sensor biasanya "masih hidup atau tidak".
+- **`GET /analytics/ecommerce-monthly-summary`** — CANCELLED dibuang (tidak pernah dikirim), PENDING tetap dihitung (penjualan yang sedang berjalan; membuangnya membuat bulan berjalan selalu terlihat sepi). `avg_order_value` dihitung per **ORDER**, bukan per baris — rata-rata per baris hanya menjawab "berapa harga satu jenis barang", bukan "berapa besar satu keranjang".
+
+### Frontend
+
+Chart 14-17 masuk sesuai tema: **SDM** dapat Payroll, **Operasional** dapat Perawatan Aset + tabel Sensor IoT, **Keuangan & Penjualan** dapat Penjualan Online. Sensor sengaja **tabel, bukan grafik**: satuan tiap jenis pembacaan berbeda (derajat, persen, ppm), jadi satu sumbu Y bersama akan menyesatkan.
+
+### Verifikasi
+
+- **4 test ClickHouse baru** (total **64 fungsi test di internal/etl**), seluruh suite dw-service pass; 1 test frontend baru (36 test, semua pass); lint & build hijau.
+- Jebakan tipe ClickHouse yang sama muncul lagi di IoT (`min()`/`max()` atas Decimal tetap Decimal sementara `avg()` jadi Float64) — sudah diperbaiki dan dikomentari.
+- **Smoke test lewat gateway**: perawatan aset Juli (1 selesai, selisih 2 hari) & Agustus (1 terjadwal), sensor `DEV-VERIFY-TEMP` 22 pembacaan rata-rata 27,42, penjualan online Agustus 2 order Rp60.000 dengan rata-rata Rp30.000/order.
+- **Payroll mengembalikan 0 baris** — dan itu memang benar: satu-satunya baris payroll di warehouse dev berstatus DRAFT (dicek langsung ke ClickHouse: `run_status DRAFT = 1`), sementara endpoint ini sengaja hanya menghitung POSTED. Perilaku POSTED-nya sendiri terbukti lewat unit test.
+
+### Sisa daftar audit
+
+Yang tersisa tinggal empat, semuanya butuh keputusan atau pekerjaan besar:
+- **Penegakan hak akses di backend** (UI-only sesuai pilihan sebelumnya).
+- **Reset password oleh admin** — butuh keputusan alur (password sementara vs token email).
+- **Silver/Gold data lake** — butuh Spark atau dbt.
+- **AI/ML di luar regresi linear + z-score** — seasonal decomposition, adaptive threshold, model versioning.
+
+---
+
+## ai-bi-service — Forecasting sadar musim & anomali tahan outlier (sesi 2026-08-21, lanjutan lagi)
+
+Dari empat sisa daftar audit, ini satu-satunya yang tidak butuh keputusan arsitektur — dan `11_AI_and_Machine_Learning.md` memang sudah mencatat keduanya sebagai "ekstensi potensial".
+
+### Forecasting: dekomposisi musiman aditif + interval kepercayaan
+
+Sebelumnya regresi linear polos. Sekarang dua lapis:
+
+1. **Tren** — regresi linear atas seluruh histori (tidak berubah).
+2. **Pola musiman** — kalau histori mencakup **minimal 2 siklus penuh (24 bulan)**, residu tren dirata-ratakan per BULAN KALENDER lalu dipusatkan ke nol. Desember yang selalu tinggi tidak lagi terbaca sebagai "tren naik" yang diteruskan ke Januari.
+
+Kalau historinya lebih pendek, hasilnya persis seperti dulu — ditandai `method: "linear"` supaya bedanya kelihatan di UI, bukan disembunyikan. `seasonalIndices` mengembalikan nil (jatuh ke tren saja) kalau ada bulan kalender yang tidak punya satu pun titik data: indeks setengah lengkap membuat sebagian bulan proyeksi memakai pola dan sebagian tidak.
+
+**Interval 95%** (`lower`/`upper` per titik) dihitung dari sebaran residu model terhadap historinya sendiri, dipotong di nol untuk besaran yang tidak bisa negatif. Data yang persis linear menghasilkan rentang nol — ada test-nya, sekaligus membuktikan lebarnya memang dari residu, bukan angka tetap.
+
+Di UI: pita terang di belakang garis putus-putus (skalanya ikut memperhitungkan batas atas pita — kalau tidak, pitanya terpotong dan justru terbaca seperti proyeksi mentok), rentang muncul di tooltip, dan metodenya ditulis di bawah judul.
+
+### Anomali: modified z-score (median/MAD)
+
+Sebelumnya z klasik dengan mean & stddev — keduanya **ikut tertarik oleh outlier yang justru sedang dicari**. Satu transaksi 100x lebih besar menggelembungkan stddev sedemikian rupa sehingga dirinya sendiri tidak lagi melewati ambang: *masking effect*.
+
+Sekarang `describeValues` menghitung mean/stddev DAN median/MAD, lalu `score()` memakai modified z (`0.6745 × (x − median) / MAD`) kalau MAD > 0, dan jatuh ke klasik kalau MAD = 0 (terjadi saat lebih dari separuh nilainya identik — median tidak bisa membedakan apa pun di situ). Metodenya ikut dikembalikan per anomali (`method`) dan tampil sebagai badge di tabel, bersama `median` & `mad`.
+
+Test-nya membuktikan masking-nya nyata, bukan teori: 10 nilai ~100 + 5 outlier 5000 → z klasik untuk outlier hanya ~1,4 (di bawah ambang 2,0, jadi cara lama melewatkan semuanya), sementara modified z menandai kelimanya.
+
+### Dua kesalahan rancangan test yang perlu diingat
+
+Keduanya kegagalan test saya sendiri, bukan kodenya:
+
+1. **Lonjakan musiman harus ditaruh SIMETRIS di tengah histori.** Percobaan pertama menaruhnya di dua titik paling awal → regresi membacanya sebagai tren menurun tajam, proyeksinya terpotong di nol, dan pola musimannya tidak sempat kelihatan.
+2. **Nilai dasar untuk test masking harus BERVARIASI.** Dengan 12 nilai identik, MAD = 0 dan jalurnya justru pindah ke klasik — kebalikan dari yang mau dibuktikan.
+
+### Verifikasi
+
+- **7 test baru**, total **23 fungsi test di ai-bi-service**, semua pass; vet & gofmt bersih; frontend lint/build/36 test hijau.
+- **Smoke test lewat gateway** (auth + sales + warehouse + purchasing + ai-bi + gateway): histori 6 bulan → `method=linear` dengan rentang 95% yang lebar (data dev memang berisik); histori 24 bulan → `method=seasonal`; anomaly scan mengembalikan 5 temuan dengan `method=modified`, `median`, dan `mad` terisi.
+- **Catatan angka**: modified z bisa sangat besar kalau MAD-nya kecil (di data dev muncul z ≈ 224.828 untuk order 5 juta di tengah order-order kecil). Itu benar secara matematis, tapi kalau nanti mengganggu di layar, tampilkan sebagai ">1000" alih-alih angka penuh.
+
+### Sisa daftar audit (semua butuh keputusan)
+
+- **Penegakan hak akses di backend** — gateway vs tiap service modul.
+- **Reset password oleh admin** — password sementara vs token lewat email.
+- **Silver/Gold data lake** — butuh Spark atau dbt.
+
+---
+
+## auth-service — Reset password oleh admin (sesi 2026-08-21, lanjutan lagi)
+
+Item ini ada di daftar audit dengan catatan "butuh keputusan alur: password sementara vs token lewat email". **Keputusannya sebenarnya sudah ditentukan lingkungan**: tidak ada satu pun komponen surat-menyurat di seluruh stack — tidak ada SMTP/mailer di service mana pun maupun di `infra/docker-compose.yml` (sudah dicek). Alur token-email berarti menambah dependency baru sekaligus satu jalur kegagalan baru, jadi yang dikerjakan adalah **admin menetapkan password sementara**.
+
+### `003_must_change_password.sql` + `POST /users/{id}/reset-password`
+
+Konsekuensi jalur ini: password sementara **sempat diketahui admin**. Itulah yang ditutup kolom `must_change_password` — user wajib menggantinya sendiri di login berikutnya, sehingga password yang akhirnya berlaku hanya diketahui pemiliknya.
+
+Satu panggilan melakukan tiga hal, dan ketiganya perlu:
+1. **Password diganti** — body `new_password` opsional; kosong berarti server yang membuatkan (`Reset-` + 12 hex). Password buatan orang cenderung pendek dan mudah ditebak justru pada saat paling rawan.
+2. **`must_change_password` dinyalakan**, dimatikan lagi oleh `POST /change-password` saat user benar-benar menggantinya.
+3. **Seluruh refresh token dicabut** — alasan paling umum sebuah reset diminta adalah akun yang sedang dipakai orang lain; sesi itu harus putus saat itu juga.
+
+Password sementara dikembalikan **sekali** di response (hanya kalau server yang membuatkannya) dan tidak pernah disimpan sebagai plaintext.
+
+### Frontend
+
+Tombol **Reset Password** di User Management → modal yang menampilkan password sementara dengan peringatan bahwa nilainya tidak bisa dilihat lagi setelah ditutup. Di sisi user: login yang membawa `must_change_password` diarahkan langsung ke `/profile` (bukan ke halaman tujuan semula), dan `ProfilePage` menampilkan peringatan kenapa harus diganti.
+
+### Satu test lama harus dipertajam
+
+`TestUserResponsesNeverExposeCredentials` memeriksa body tidak mengandung kata "password" — dan langsung gagal begitu field sah `must_change_password` muncul. Pemeriksaannya diganti menyasar **kredensial**, bukan kata: `"password"` sebagai key, `"password_hash"`, nilai password itu sendiri, dan prefiks hash bcrypt (`$2a$`/`$2b$`). Versi barunya lebih ketat sekaligus tidak gagal palsu.
+
+### Verifikasi
+
+- **6 test baru**, seluruh suite auth-service pass (`internal/httpapi` + `internal/jwtutil`); frontend lint & build hijau.
+- **Smoke test end-to-end lewat gateway**: user baru `must_change_password=false` → admin reset (dapat `Reset-6adfbe6f0932`) → login password lama **401**, refresh sesi lama **401** → login password sementara berhasil dengan `must_change_password=true` → user ganti sendiri → login berikutnya `must_change_password=false`. Data uji dibersihkan, service di-teardown.
+
+### Sisa daftar audit (dua, keduanya butuh keputusan Anda)
+
+- **Penegakan hak akses di backend** — gateway (satu titik, tapi gateway jadi tahu domain semua modul) vs tiap service modul (akurat per endpoint, tapi 20 service + dependency runtime baru).
+- **Silver/Gold data lake** — butuh Spark atau dbt, dependency & cara kerja baru di luar pola Go yang dipakai sekarang.
+
+---
+
+## api-gateway — Penegakan hak akses di backend (sesi 2026-08-22)
+
+Dari dua sisa daftar audit, ini yang dipilih: sampai sekarang gating hanya di UI, jadi siapa pun yang punya token valid bisa memanggil endpoint modul apa pun langsung lewat curl — menyembunyikan tombol tidak menahan apa-apa. Pilihannya **gateway**, bukan tiap service modul: gateway sudah jadi satu-satunya jalan masuk dari browser, tidak ada dependency runtime baru di 20 service, dan panggilan antar-service (sales → warehouse dst) memang langsung ke service tujuan sehingga tidak ikut terkena.
+
+### rbac-service: `GET /access` — sumber kebenaran untuk gateway
+
+Endpoint baru, terpisah dari `GET /user-permissions` yang dipakai UI, karena tiga kebutuhan yang berbeda:
+
+1. **Kuncinya PATH menu, bukan `menu_id`.** Gateway memetakan endpoint ke halaman (`POST /api/finance/invoices` → `/finance/invoices`), dan path adalah satu-satunya identitas menu yang stabil lintas environment — `menu_id` di-generate ulang setiap database di-seed dari nol.
+2. **Hanya menu yang punya hak yang dikirim.** Gateway memperlakukan "tidak ada di map" sebagai tidak boleh, jadi jawaban untuk user biasa jauh lebih kecil dan murah di-cache.
+3. **Ada `member`.** Company yang dikirim client tidak bisa dipercaya begitu saja — tanpa pemeriksaan ini, user bisa menyebut company mana pun yang override "cabut akses"-nya kebetulan tidak ada, lalu mendapatkan kembali hak yang sengaja dicabut.
+
+Aturan penggabungannya **dipakai bersama** `/user-permissions` (`resolveEffective`), bukan disalin: kalau tidak, tombol yang terlihat di UI dan yang benar-benar diizinkan gateway akan pelan-pelan berbeda. Sekalian, penugasan role yang kedaluwarsa (`valid_to` lewat) atau belum berlaku sekarang tidak dihitung — kolomnya memang belum bisa diisi lewat API mana pun, tapi menghormatinya sejak awal berarti hak yang habis masa berlakunya berhenti dengan sendirinya, bukan tetap hidup sampai ada yang ingat mencabutnya.
+
+### Tiga aturan yang membentuk tabel kebijakan (`internal/authz/policy.go`, ~200 endpoint)
+
+1. **Data acuan boleh diakses dari halaman mana pun yang memakainya.** `GET /api/warehouse/products` bukan hanya milik Master Barang — form Work Order, Inspeksi QC, Stock Opname dan lainnya mengisi dropdown-nya dari situ. Daftar menu di tiap `viewAny(...)` diambil dari pemakaian nyata di frontend, bukan dikira-kira.
+2. **Aksi yang menyentuh buku besar atau stok butuh `approve`, bukan `update`.** Posting jurnal/invoice/payroll, menerima PO, fulfill SO, posting opname, konfirmasi transfer, menyelesaikan Work Order, kirim order e-commerce, posting biaya proyek. Perpindahan status yang tidak menghasilkan angka (submit, kirim penawaran, mulai produksi, batal, tutup tiket) cukup `update`. Inilah yang membuat pemisahan tugas — yang membuat invoice bukan yang memposting — benar-benar berlaku.
+3. **Endpoint yang tidak ada di tabel DITOLAK**, bukan diteruskan diam-diam. Kebalikannya membuat endpoint baru berdiri tanpa penjagaan dan tidak ada yang tahu sampai ada yang mencarinya.
+
+Dua kategori di luar hak menu: **`authenticated`** (ganti password sendiri, daftar company untuk switcher, menu-tree untuk sidebar — menuntut hak menu di situ membuat aplikasi tidak bisa digambar sama sekali) dan **`internal`** (`POST /api/warehouse/stock-movements/batch` yang dipanggil 4 service secara langsung, dan `GET /api/rbac/access` itu sendiri — ditolak bahkan untuk super admin, karena yang dibatasi jalurnya, bukan tinggi haknya).
+
+### Company mana yang dipakai untuk menilai
+
+Urutannya: **query `company_id` → field `company_id` di body JSON → header `X-Company-Id`**. Yang disebut request sendiri selalu menang atas header — kalau tidak, user yang punya hak penuh di company A bisa memasang header company A lalu menyentuh data company B lewat query. Header tetap dibutuhkan karena ada endpoint yang tidak menyebut company di mana pun (`DELETE /api/hr/holidays/{id}`), jadi `apiClient` sekarang mengirimkannya di setiap request; header itu pelengkap, bukan sumber kebenaran. Body dibaca lalu **dikembalikan utuh** (bagian yang terbaca disambung di depan sisanya), jadi payload sebesar apa pun tetap sampai ke service tujuan.
+
+### Dua batas waktu di cache, bukan satu
+
+Tanpa cache, satu halaman yang memuat 4-5 daftar sekaligus menghasilkan 4-5 query RBAC tambahan — rbac-service berubah dari layanan administrasi yang jarang dipanggil jadi jalur terpanas di platform. Karena itu:
+
+- **TTL 30 detik** — selama itu jawaban dipakai apa adanya. Harganya: pencabutan hak baru berlaku paling lama setelah 30 detik. Request bersamaan untuk user yang sama digabung jadi satu panggilan (mutex per key), bukan sebanyak jumlah request.
+- **Stale grace 5 menit** — kalau rbac-service *tidak bisa dihubungi*, jawaban lama masih dipakai sampai sebatas ini; setelah lewat, request dijawab **503**, bukan diloloskan. 503 dan bukan 403 karena yang gagal adalah pemeriksaannya, bukan haknya — menjawab 403 membuat gangguan terlihat seperti hak yang dicabut dan orang akan mencari masalahnya di tempat salah.
+
+`AUTHZ_ENFORCE=false` ada sebagai jalan keluar darurat (mengembalikan perilaku lama: token valid = boleh apa saja) dan menulis peringatan di log saat startup. `AUTHZ_CACHE_TTL` & `AUTHZ_STALE_GRACE` juga bisa di-override lewat env.
+
+### Frontend ikut dirapikan supaya tidak berbohong
+
+Sebelumnya hanya tombol "tambah" yang digating; tombol alur kerja (Confirm, Fulfill, Post ke GL, Terima Barang, Ship, ...) dan tombol Edit sama sekali tidak. Dibiarkan begitu, backend akan menolak tindakan yang UI-nya sendiri tawarkan. Sekarang **25 tombol Edit** memakai `can('update')` dan tombol alur kerja memakai aksi yang **sama persis** dengan yang diminta tabel kebijakan — "Post ke GL" `can('approve')`, "Confirm" `can('update')`, dan seterusnya. Pesan gagal di Dashboard juga dibedakan: 403 dari audit log sekarang berbunyi "Anda tidak punya akses ke Audit Log", bukan "audit-service tidak bisa dihubungi" yang mengirim orang memeriksa service yang sebenarnya sehat.
+
+### Satu jebakan JSX yang sempat kena
+
+Skrip pertama membungkus tombol dengan `{can('update') && (...)}` di semua tempat. Itu benar kalau tombolnya anak langsung sebuah elemen JSX, tapi **salah** kalau tombolnya berada di dalam `{cond && ( ... )}` — di situ isinya adalah ekspresi JS, bukan children, jadi kurung kurawal tambahan jadi syntax error. Untuk tiga halaman (Leads, Surat Jalan, Proyek) syaratnya digabung jadi `{cond && can('update') && (` sebagai gantinya.
+
+### Verifikasi
+
+- **5 test rbac-service baru** untuk `/access` (seluruh suite pass), **20 test api-gateway baru** — 11 di `internal/authz` (termasuk cakupan tabel & perilaku cache/stale) dan 9 end-to-end lewat gateway dengan rbac-service palsu. `go vet` & `gofmt` bersih.
+- **`TestPolicyCoversEveryRegisteredRoute`** membaca `mux.HandleFunc` dari source seluruh 20 service dan memastikan tiap route punya kebijakan; pasangannya memastikan tidak ada rule yang menjaga endpoint yang sudah tidak ada. Keduanya punya penjaga sendiri (gagal kalau menemukan < 150 route, yang berarti pembacaannya rusak dan test-nya "lulus" tanpa menjaga apa pun).
+- **2 test frontend baru** (PayrollPage: "Post ke GL" muncul dengan `approve`, hilang kalau user hanya punya `create`) — total 38 test frontend, lint & build hijau.
+- **Smoke test end-to-end** dengan auth/company/rbac/finance/gateway yang benar-benar jalan, memakai user baru yang hanya diberi `view+create` pada menu Invoices di satu company:
+
+  | Percobaan | Hasil |
+  |---|---|
+  | `GET /api/finance/invoices` (punya view) | 200 |
+  | `GET /api/finance/journal-entries` (tanpa hak) | 403 |
+  | `POST /api/finance/invoices/{id}/post` (butuh approve) | 403 |
+  | `GET /api/finance/invoices` di company yang tidak ditugaskan | 403 |
+  | header company A + query company B | 403 |
+  | `GET /api/rbac/access` (internal) | 403 |
+  | `POST /api/warehouse/stock-movements/batch` (internal) | 403, bukan 502 — ditolak sebelum diproxy |
+  | `GET /api/auth/users` (admin) | 403 |
+  | `GET /api/company/companies`, `menu-tree`, hak diri sendiri | 200 |
+  | hak user LAIN | 403 |
+  | `POST /api/finance/invoices` (company hanya di body) | lolos gateway, ditolak finance-service karena payload kurang lengkap — pembacaan company dari body terbukti jalan |
+  | super admin `GET /api/finance/journal-entries` | 200 |
+
+  Data uji (user + role) dibersihkan, seluruh service di-teardown.
+- README api-gateway ditulis ulang — sebelumnya masih menyebut dirinya "Fase 1 — skeleton service", port 8080, dan tiga folder `internal/` yang isinya kosong sejak commit pertama (folder kosongnya ikut dihapus).
+
+### Sisa daftar audit
+
+Tinggal satu: **Silver/Gold data lake** — butuh Spark atau dbt, cara kerja & dependency baru di luar pola Go yang dipakai sekarang.
+
+### Catatan untuk sesi berikutnya
+
+Endpoint baru mana pun sekarang **wajib** didaftarkan di `backend/services/api-gateway/internal/authz/policy.go`. Kalau lupa, `TestPolicyCoversEveryRegisteredRoute` yang gagal lebih dulu — bukan pengguna yang menemukan 403 tanpa sebab.
