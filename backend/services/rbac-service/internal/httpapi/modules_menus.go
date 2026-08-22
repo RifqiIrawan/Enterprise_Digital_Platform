@@ -92,19 +92,42 @@ func (h *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 			WHERE m.is_active = true
 			ORDER BY mod.sort_order ASC, m.sort_order ASC`)
 	} else {
+		// company_id opsional: kalau diisi, override permission per user untuk
+		// company itu ikut diperhitungkan -- override bisa MENAMBAH menu yang
+		// role-nya tidak punya, dan bisa MENCABUT menu yang role-nya punya
+		// (can_view = false). Tanpa company_id, hasilnya persis seperti dulu:
+		// murni hak dari role. Lihat catatan di user_overrides.go soal kenapa
+		// hak role sendiri tetap tidak di-scope per company.
+		companyID := r.URL.Query().Get("company_id")
 		rows, err = h.pool.Query(r.Context(), `
 			SELECT m.id, m.parent_id, m.name, m.path, m.icon, m.sort_order,
 			       mod.id, mod.name, mod.sort_order
 			FROM menus m
 			JOIN modules mod ON mod.id = m.module_id
 			WHERE m.is_active = true
-			  AND m.id IN (
-			    SELECT DISTINCT rmp.menu_id
-			    FROM user_roles ur
-			    JOIN role_menu_permissions rmp ON rmp.role_id = ur.role_id
-			    WHERE ur.user_id = $1 AND rmp.can_view = true
+			  AND (
+			    (
+			      m.id IN (
+			        SELECT DISTINCT rmp.menu_id
+			        FROM user_roles ur
+			        JOIN role_menu_permissions rmp ON rmp.role_id = ur.role_id
+			        WHERE ur.user_id = $1 AND rmp.can_view = true
+			      )
+			      AND NOT EXISTS (
+			        SELECT 1 FROM user_menu_permission_overrides o
+			        WHERE o.user_id = $1 AND $2 <> '' AND o.company_id = $2::uuid
+			          AND o.menu_id = m.id AND o.can_view = false
+			          AND o.branch_id IS NULL AND o.department_id IS NULL
+			      )
+			    )
+			    OR EXISTS (
+			      SELECT 1 FROM user_menu_permission_overrides o
+			      WHERE o.user_id = $1 AND $2 <> '' AND o.company_id = $2::uuid
+			        AND o.menu_id = m.id AND o.can_view = true
+			        AND o.branch_id IS NULL AND o.department_id IS NULL
+			    )
 			  )
-			ORDER BY mod.sort_order ASC, m.sort_order ASC`, userID)
+			ORDER BY mod.sort_order ASC, m.sort_order ASC`, userID, companyID)
 	}
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat menu-tree")
@@ -113,6 +136,11 @@ func (h *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	moduleOrder := []string{}
+	// menuOrder menahan urutan hasil query (mod.sort_order, m.sort_order).
+	// Tanpa ini, perakitan pohon di bawah harus mengiterasi nodeByID, dan
+	// iterasi map Go SENGAJA diacak -- ORDER BY di query jadi terbuang dan
+	// urutan menu sidebar berubah-ubah tiap request.
+	menuOrder := []string{}
 	moduleByID := map[string]*moduleTreeItem{}
 	nodeByID := map[string]*menuTreeItem{}
 	parentOf := map[string]*string{}
@@ -135,6 +163,7 @@ func (h *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 		}
 		node := &menuTreeItem{ID: menuID, Name: name, Path: path, Icon: icon, Children: []*menuTreeItem{}}
 		nodeByID[menuID] = node
+		menuOrder = append(menuOrder, menuID)
 		parentOf[menuID] = parentID
 		moduleOfNode[menuID] = modID
 	}
@@ -143,7 +172,8 @@ func (h *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for menuID, node := range nodeByID {
+	for _, menuID := range menuOrder {
+		node := nodeByID[menuID]
 		parentID := parentOf[menuID]
 		if parentID != nil {
 			if parent, ok := nodeByID[*parentID]; ok {

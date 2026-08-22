@@ -73,6 +73,20 @@ func (h *Handler) assignUserRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Role diperiksa lebih dulu supaya role yang tidak ada jadi 404, bukan 500
+	// dari pelanggaran foreign key user_roles.role_id -> roles.id. Pola yang
+	// sama dipakai deleteRole & getRolePermissions.
+	var roleExists bool
+	if err := h.pool.QueryRow(r.Context(),
+		`SELECT EXISTS(SELECT 1 FROM roles WHERE id = $1)`, req.RoleID).Scan(&roleExists); err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memeriksa role")
+		return
+	}
+	if !roleExists {
+		writeError(w, http.StatusNotFound, "Role tidak ditemukan")
+		return
+	}
+
 	assignedBy := r.Header.Get("X-User-Id")
 	var assignedByPtr *string
 	if assignedBy != "" {

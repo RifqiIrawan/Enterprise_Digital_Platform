@@ -36,6 +36,13 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /roles/{id}/permissions", h.getRolePermissions)
 	mux.HandleFunc("PUT /roles/{id}/permissions", h.putRolePermissions)
 
+	mux.HandleFunc("GET /user-permissions", h.userPermissions)
+	// Dipakai api-gateway untuk menegakkan hak akses, bukan oleh UI -- lihat access.go.
+	mux.HandleFunc("GET /access", h.access)
+	mux.HandleFunc("GET /user-overrides", h.listUserOverrides)
+	mux.HandleFunc("PUT /user-overrides", h.putUserOverride)
+	mux.HandleFunc("DELETE /user-overrides/{id}", h.deleteUserOverride)
+
 	mux.HandleFunc("GET /user-roles", h.listUserRoles)
 	mux.HandleFunc("POST /user-roles", h.assignUserRole)
 	mux.HandleFunc("DELETE /user-roles/{id}", h.revokeUserRole)

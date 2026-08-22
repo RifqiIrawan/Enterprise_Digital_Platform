@@ -44,7 +44,12 @@ func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Payload tidak valid")
 		return
 	}
-	req.Code = strings.TrimSpace(strings.ToLower(strings.ReplaceAll(req.Code, " ", "_")))
+	// Fields+Join, bukan TrimSpace(ReplaceAll(...)): mengganti spasi jadi
+	// underscore lebih dulu membuat spasi di ujung berubah jadi underscore
+	// sehingga TrimSpace tidak lagi punya yang bisa dipangkas -- code "  Gudang
+	// Malam " jadi "__gudang_malam_", dan code yang isinya spasi semua jadi
+	// "___" yang lolos pemeriksaan "wajib diisi" di bawah.
+	req.Code = strings.ToLower(strings.Join(strings.Fields(req.Code), "_"))
 	req.Name = strings.TrimSpace(req.Name)
 	if req.Code == "" || req.Name == "" {
 		writeError(w, http.StatusBadRequest, "Code dan nama wajib diisi")
