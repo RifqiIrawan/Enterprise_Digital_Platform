@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type AuditLog struct {
 	ID            string    `json:"id" db:"id"`
@@ -14,7 +17,11 @@ type AuditLog struct {
 	Action        string    `json:"action" db:"action"`
 	EntityType    string    `json:"entity_type" db:"entity_type"`
 	EntityID      string    `json:"entity_id" db:"entity_id"`
-	Payload       []byte    `json:"payload" db:"payload"`
+	// json.RawMessage, BUKAN []byte: Go meng-encode []byte sebagai string
+	// base64, jadi konsumen API (halaman Audit Log) akan menerima
+	// "eyJpZCI6..." alih-alih objek JSON-nya. RawMessage diteruskan apa adanya.
+	// Kolomnya JSONB sehingga isinya dijamin JSON yang valid.
+	Payload json.RawMessage `json:"payload" db:"payload"`
 	OccurredAt    time.Time `json:"occurred_at" db:"occurred_at"`
 	RecordedAt    time.Time `json:"recorded_at" db:"recorded_at"`
 }

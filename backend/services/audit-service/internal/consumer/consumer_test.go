@@ -146,3 +146,56 @@ func TestTopicsFollowNamingConvention(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Test: pemilihan topic yang siap dikonsumsi (pendingTopics)
+//
+// Ini inti dari perbaikan "jangan JoinGroup untuk topic yang belum ada".
+// Kalau seleksinya salah dan consumer tetap dijalankan untuk topic yang belum
+// ada, gejalanya bukan error yang kelihatan melainkan consumer yang diam
+// selamanya — persis kegagalan yang perbaikan ini tutup.
+// ---------------------------------------------------------------------------
+
+func TestPendingTopicsOnlyReturnsExistingAndNotYetStarted(t *testing.T) {
+	started := map[string]bool{Topics[0]: true}
+	existing := map[string]bool{Topics[0]: true, Topics[1]: true}
+
+	got := pendingTopics(started, existing)
+
+	if len(got) != 1 || got[0] != Topics[1] {
+		t.Fatalf("expected hanya %q, got %v", Topics[1], got)
+	}
+}
+
+func TestPendingTopicsSkipsTopicsMissingFromBroker(t *testing.T) {
+	// Broker kosong (mis. Kafka baru saja start): tidak boleh ada satu pun
+	// consumer yang dijalankan, karena justru di situlah group-nya rusak.
+	if got := pendingTopics(map[string]bool{}, map[string]bool{}); len(got) != 0 {
+		t.Fatalf("broker kosong seharusnya tidak menjalankan consumer apa pun, got %v", got)
+	}
+}
+
+func TestPendingTopicsIgnoresUnknownTopicsOnBroker(t *testing.T) {
+	// Broker berisi topic milik service lain (dw-service, dsb). Topic di luar
+	// daftar Topics tidak boleh ikut dikonsumsi.
+	existing := map[string]bool{"topic.tidak.dikenal": true, Topics[0]: true}
+
+	got := pendingTopics(map[string]bool{}, existing)
+
+	if len(got) != 1 || got[0] != Topics[0] {
+		t.Fatalf("expected hanya %q, got %v", Topics[0], got)
+	}
+}
+
+func TestPendingTopicsEmptyWhenEverythingAlreadyStarted(t *testing.T) {
+	started := make(map[string]bool, len(Topics))
+	existing := make(map[string]bool, len(Topics))
+	for _, topic := range Topics {
+		started[topic] = true
+		existing[topic] = true
+	}
+
+	if got := pendingTopics(started, existing); len(got) != 0 {
+		t.Fatalf("tidak boleh ada consumer dobel untuk topic yang sudah jalan, got %v", got)
+	}
+}

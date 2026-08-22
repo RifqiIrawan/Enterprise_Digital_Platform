@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"context"
+	"errors"
 	"log"
 	"strings"
 	"time"
@@ -18,7 +19,11 @@ var Topics = []string{
 	"company.company.created",
 	"company.company.updated",
 	"company.branch.created",
+	"company.branch.updated",
+	"company.branch.deleted",
 	"company.department.created",
+	"company.department.updated",
+	"company.department.deleted",
 	"rbac.role.created",
 	"rbac.role.updated",
 	"rbac.role.deleted",
@@ -140,30 +145,124 @@ var Topics = []string{
 const (
 	retryBaseDelay = 3 * time.Second
 	retryMaxDelay  = 30 * time.Second
+
+	// topicPollInterval: jarak antar pengecekan metadata broker selagi masih
+	// ada topic yang belum muncul. Satu panggilan metadata melayani SELURUH
+	// daftar Topics, jadi ini tidak ikut membesar seiring bertambahnya modul.
+	topicPollInterval = 15 * time.Second
+	metadataDialTimeout = 5 * time.Second
 )
 
-// Start menjalankan satu goroutine per topic. Setiap goroutine membuat
-// kafka.Reader BARU saat error — ini adalah perbedaan kunci dari implementasi
-// lama yang hanya me-retry ReadMessage pada reader yang sama.
+// Start menunggu sebuah topic benar-benar ADA di broker sebelum menjalankan
+// consumer untuknya, lalu satu goroutine per topic yang membuat kafka.Reader
+// baru setiap kali error.
 //
-// Kenapa recreate Reader (bukan cuma retry ReadMessage)?
-// Saat audit-service start sebelum sebuah topic pernah ada di Kafka, reader
-// melakukan JoinGroup/SyncGroup consumer-group pada topic yang belum ada.
-// Kafka biasanya auto-create topic kosong saat itu, tapi reader bisa masuk
-// state internal yang korup (partition assignment kosong, offset stale) karena
-// metadata topic belum sepenuhnya terpropagasi. Retry ReadMessage pada reader
-// yang sama tidak menyembuhkan state ini — reader terus stuck sampai proses
-// di-restart manual (Known Issue #2 di NEXT_SESSION.md).
+// Kenapa harus menunggu topic-nya ada dulu?
+// Seluruh 100+ reader ini berbagi SATU consumer group. Kalau audit-service
+// start saat Kafka masih kosong (mis. `docker compose up` menyalakan keduanya
+// bersamaan), semua reader melakukan JoinGroup untuk topic yang belum ada
+// sekaligus. Yang terjadi kemudian bukan error yang bisa ditangani: kafka-go
+// memblokir di dalam ReadMessage sambil retry sendiri TANPA pernah
+// mengembalikan error, jadi loop recreate di bawah — yang sepenuhnya digerakkan
+// oleh error — tidak pernah terpicu. Gejalanya di lapangan: log consumer diam
+// total, `kafka-consumer-groups --describe` menunjukkan partisi tanpa anggota
+// aktif dan lag yang tidak pernah turun, dan satu-satunya jalan keluar adalah
+// restart proses secara manual.
 //
-// Dengan recreate Reader, setiap error memaksa fresh JoinGroup baru. Begitu
-// topic sudah benar-benar ada (event pertama dipublikasikan oleh service lain),
-// iterasi berikutnya akan berhasil mendapatkan partition assignment yang valid.
+// Menunggu metadata lebih dulu menutup jalur itu di sumbernya: tidak ada
+// anggota group yang pernah dibuat untuk topic yang belum ada, sehingga group-
+// nya tidak pernah masuk keadaan tersebut. Loop recreate berbasis error tetap
+// dipertahankan sebagai penanganan gangguan biasa (broker restart, network
+// blip) setelah reader-nya berhasil jalan.
 func Start(ctx context.Context, brokers, groupID string, handler func(topic string, value []byte)) {
-	brokerList := strings.Split(brokers, ",")
-	for _, topic := range Topics {
-		go consumeTopic(ctx, brokerList, groupID, topic, handler)
+	go superviseTopics(ctx, strings.Split(brokers, ","), groupID, handler)
+}
+
+// superviseTopics memeriksa metadata broker secara berkala dan menjalankan
+// consumer untuk tiap topic BEGITU topic itu muncul. Berhenti sendiri setelah
+// seluruh Topics punya consumer, jadi tidak ada polling yang berjalan selamanya
+// pada deployment yang sehat.
+func superviseTopics(ctx context.Context, brokers []string, groupID string, handler func(topic string, value []byte)) {
+	started := make(map[string]bool, len(Topics))
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		existing, err := listTopics(ctx, brokers)
+		if err != nil {
+			log.Printf("consumer: gagal membaca metadata topic dari broker, coba lagi dalam %s: %v", topicPollInterval, err)
+		} else {
+			for _, topic := range pendingTopics(started, existing) {
+				started[topic] = true
+				go consumeTopic(ctx, brokers, groupID, topic, handler)
+			}
+			if len(started) == len(Topics) {
+				log.Printf("consumer: seluruh %d topic sudah ada dan punya consumer", len(Topics))
+				return
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(topicPollInterval):
+		}
 	}
 }
+
+// pendingTopics memilih topic yang sudah ada di broker tapi belum punya
+// consumer. Dipisah sebagai fungsi murni supaya bisa diuji tanpa Kafka.
+func pendingTopics(started, existing map[string]bool) []string {
+	var out []string
+	for _, topic := range Topics {
+		if !started[topic] && existing[topic] {
+			out = append(out, topic)
+		}
+	}
+	return out
+}
+
+// listTopics mengembalikan himpunan topic yang diketahui broker.
+//
+// ReadPartitions dipanggil TANPA argumen dengan sengaja: memberi nama topic
+// membuatnya jadi permintaan metadata untuk topic tersebut, dan broker dengan
+// `auto.create.topics.enable=true` (default, termasuk di infra/docker-compose)
+// akan membuat topic itu saat itu juga. Kalau itu terjadi, pengecekan ini
+// selalu bernilai benar dan tidak menyaring apa pun — sekaligus mengotori
+// broker dengan 100+ topic kosong yang dibuat oleh consumer, bukan producer.
+func listTopics(ctx context.Context, brokers []string) (map[string]bool, error) {
+	dialer := &kafka.Dialer{Timeout: metadataDialTimeout}
+	var lastErr error
+
+	for _, broker := range brokers {
+		conn, err := dialer.DialContext(ctx, "tcp", strings.TrimSpace(broker))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		partitions, err := conn.ReadPartitions()
+		conn.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		topics := make(map[string]bool, len(partitions))
+		for _, p := range partitions {
+			topics[p.Topic] = true
+		}
+		return topics, nil
+	}
+
+	if lastErr == nil {
+		lastErr = errNoBrokers
+	}
+	return nil, lastErr
+}
+
+var errNoBrokers = errors.New("tidak ada broker Kafka yang bisa dihubungi")
 
 // consumeTopic membuat Reader baru di setiap iterasi retry. Delay antar retry
 // menggunakan exponential backoff (3s → 6s → 12s → ... → 30s maks) dan
