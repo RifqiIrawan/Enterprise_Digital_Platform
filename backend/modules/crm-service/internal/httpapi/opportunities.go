@@ -119,6 +119,14 @@ func (h *Handler) createOpportunity(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat account")
 		return
 	}
+
+	// Opportunity baru selalu pekerjaan yang akan datang -- account yang sudah
+	// dinonaktifkan tidak boleh menerimanya. Opportunity LAMA milik account itu
+	// tetap bisa dilanjutkan sampai ditutup (lihat pagar di updateAccount).
+	if account.Status != "ACTIVE" {
+		writeError(w, http.StatusConflict, "Account tersebut nonaktif, tidak bisa dipakai untuk opportunity baru")
+		return
+	}
 	if req.ContactID != nil && *req.ContactID != "" {
 		var contact model.Contact
 		err = scanContact(tx.QueryRow(ctx, `SELECT `+contactColumns+` FROM contacts WHERE id = $1 AND company_id = $2`, *req.ContactID, req.CompanyID), &contact)
@@ -127,6 +135,10 @@ func (h *Handler) createOpportunity(w http.ResponseWriter, r *http.Request) {
 			return
 		} else if err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal memuat contact")
+			return
+		}
+		if contact.Status != "ACTIVE" {
+			writeError(w, http.StatusConflict, "Contact tersebut nonaktif, tidak bisa dipakai untuk opportunity baru")
 			return
 		}
 	} else {

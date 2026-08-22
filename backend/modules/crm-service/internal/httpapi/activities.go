@@ -47,6 +47,24 @@ func referenceExists(ctx context.Context, pool *pgxpool.Pool, referenceType, ref
 	return exists, nil
 }
 
+// referenceIsInactive khusus untuk ACCOUNT & CONTACT, dua referensi yang punya
+// status aktif/nonaktif. Activity BARU tidak boleh dikaitkan ke keduanya kalau
+// sudah nonaktif -- activity adalah catatan pekerjaan yang sedang berjalan,
+// sementara nonaktif berarti "sudah tidak dikerjakan lagi". LEAD & OPPORTUNITY
+// tidak lewat sini: keduanya punya alur status sendiri (converted/won/lost)
+// yang tidak berarti "tidak boleh disentuh".
+func referenceIsInactive(ctx context.Context, pool *pgxpool.Pool, referenceType, referenceID string) (bool, error) {
+	table, ok := map[string]string{"ACCOUNT": "accounts", "CONTACT": "contacts"}[referenceType]
+	if !ok {
+		return false, nil
+	}
+	var status string
+	if err := pool.QueryRow(ctx, `SELECT status FROM `+table+` WHERE id = $1`, referenceID).Scan(&status); err != nil {
+		return false, err
+	}
+	return status != "ACTIVE", nil
+}
+
 func (h *Handler) listActivities(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("company_id")
 	if companyID == "" {
@@ -130,6 +148,15 @@ func (h *Handler) createActivity(w http.ResponseWriter, r *http.Request) {
 	}
 	if !exists {
 		writeError(w, http.StatusNotFound, "Reference tidak ditemukan")
+		return
+	}
+	inactive, err := referenceIsInactive(ctx, h.pool, req.ReferenceType, req.ReferenceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memeriksa status reference")
+		return
+	}
+	if inactive {
+		writeError(w, http.StatusConflict, "Reference tersebut sudah nonaktif, tidak bisa ditambahi activity baru")
 		return
 	}
 

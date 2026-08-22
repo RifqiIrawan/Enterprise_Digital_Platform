@@ -191,6 +191,8 @@ func mustSetLeadStatus(t *testing.T, srv *httptest.Server, leadID, status string
 type accountFixture struct {
 	ID          string `json:"id"`
 	AccountCode string `json:"account_code"`
+	Name        string `json:"name"`
+	Status      string `json:"status"`
 }
 
 func mustSeedAccount(t *testing.T, srv *httptest.Server, companyID string) accountFixture {
@@ -206,7 +208,9 @@ func mustSeedAccount(t *testing.T, srv *httptest.Server, companyID string) accou
 }
 
 type contactFixture struct {
-	ID string `json:"id"`
+	ID        string `json:"id"`
+	FirstName string `json:"first_name"`
+	Status    string `json:"status"`
 }
 
 func mustSeedContact(t *testing.T, srv *httptest.Server, companyID, accountID string) contactFixture {

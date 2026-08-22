@@ -11,10 +11,10 @@ import (
 	"github.com/enterprise-digital-platform/crm-service/internal/model"
 )
 
-const contactColumns = `id, company_id, branch_id, account_id, first_name, last_name, job_title, email, phone, is_primary, notes, created_at, updated_at`
+const contactColumns = `id, company_id, branch_id, account_id, first_name, last_name, job_title, email, phone, is_primary, status, notes, created_at, updated_at`
 
 func scanContact(row pgx.Row, c *model.Contact) error {
-	return row.Scan(&c.ID, &c.CompanyID, &c.BranchID, &c.AccountID, &c.FirstName, &c.LastName, &c.JobTitle, &c.Email, &c.Phone, &c.IsPrimary, &c.Notes, &c.CreatedAt, &c.UpdatedAt)
+	return row.Scan(&c.ID, &c.CompanyID, &c.BranchID, &c.AccountID, &c.FirstName, &c.LastName, &c.JobTitle, &c.Email, &c.Phone, &c.IsPrimary, &c.Status, &c.Notes, &c.CreatedAt, &c.UpdatedAt)
 }
 
 func (h *Handler) listContacts(w http.ResponseWriter, r *http.Request) {
@@ -32,6 +32,14 @@ func (h *Handler) listContacts(w http.ResponseWriter, r *http.Request) {
 	if branchID := r.URL.Query().Get("branch_id"); branchID != "" {
 		args = append(args, branchID)
 		query += ` AND (branch_id = $` + strconv.Itoa(len(args)) + ` OR branch_id IS NULL)`
+	}
+	if status := strings.ToUpper(r.URL.Query().Get("status")); status != "" {
+		if !validAccountStatuses[status] {
+			writeError(w, http.StatusBadRequest, "status harus ACTIVE atau INACTIVE")
+			return
+		}
+		args = append(args, status)
+		query += ` AND status = $` + strconv.Itoa(len(args))
 	}
 	query += ` ORDER BY first_name ASC`
 
@@ -89,6 +97,13 @@ func (h *Handler) createContact(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, "Gagal memuat account")
 			return
 		}
+		// Account nonaktif tidak boleh jadi induk contact BARU. Contact yang
+		// terlanjur menempel di account itu dibiarkan apa adanya -- riwayatnya
+		// tetap perlu terbaca.
+		if a.Status != "ACTIVE" {
+			writeError(w, http.StatusConflict, "Account tersebut nonaktif, tidak bisa dipakai untuk contact baru")
+			return
+		}
 	} else {
 		req.AccountID = nil
 	}
@@ -117,7 +132,9 @@ type updateContactRequest struct {
 	Email     string  `json:"email"`
 	Phone     string  `json:"phone"`
 	IsPrimary bool    `json:"is_primary"`
-	Notes     string  `json:"notes"`
+	// Status kosong = tidak diubah, sama seperti di account.
+	Status string `json:"status"`
+	Notes  string `json:"notes"`
 }
 
 func (h *Handler) updateContact(w http.ResponseWriter, r *http.Request) {
@@ -132,13 +149,19 @@ func (h *Handler) updateContact(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "first_name wajib diisi")
 		return
 	}
+	req.Status = strings.ToUpper(strings.TrimSpace(req.Status))
+	if req.Status != "" && !validAccountStatuses[req.Status] {
+		writeError(w, http.StatusBadRequest, "status harus ACTIVE atau INACTIVE")
+		return
+	}
 
 	var c model.Contact
 	err := scanContact(h.pool.QueryRow(r.Context(), `
-		UPDATE contacts SET account_id = $1, first_name = $2, last_name = $3, job_title = $4, email = $5, phone = $6, is_primary = $7, notes = $8, updated_at = now()
-		WHERE id = $9
+		UPDATE contacts SET account_id = $1, first_name = $2, last_name = $3, job_title = $4, email = $5, phone = $6, is_primary = $7,
+		    status = COALESCE(NULLIF($8, ''), status), notes = $9, updated_at = now()
+		WHERE id = $10
 		RETURNING `+contactColumns,
-		req.AccountID, req.FirstName, req.LastName, req.JobTitle, req.Email, req.Phone, req.IsPrimary, req.Notes, id,
+		req.AccountID, req.FirstName, req.LastName, req.JobTitle, req.Email, req.Phone, req.IsPrimary, req.Status, req.Notes, id,
 	), &c)
 	if err == pgx.ErrNoRows {
 		writeError(w, http.StatusNotFound, "Contact tidak ditemukan")

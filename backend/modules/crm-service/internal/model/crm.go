@@ -36,6 +36,7 @@ type Account struct {
 	Email       string    `json:"email" db:"email"`
 	Address     string    `json:"address" db:"address"`
 	AccountType string    `json:"account_type" db:"account_type"`
+	Status      string    `json:"status" db:"status"` // ACTIVE | INACTIVE
 	OwnerUserID *string   `json:"owner_user_id" db:"owner_user_id"`
 	Notes       string    `json:"notes" db:"notes"`
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
@@ -53,6 +54,7 @@ type Contact struct {
 	Email     string    `json:"email" db:"email"`
 	Phone     string    `json:"phone" db:"phone"`
 	IsPrimary bool      `json:"is_primary" db:"is_primary"`
+	Status    string    `json:"status" db:"status"` // ACTIVE | INACTIVE
 	Notes     string    `json:"notes" db:"notes"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
