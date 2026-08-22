@@ -10,6 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 
+	"github.com/enterprise-digital-platform/api-gateway/internal/authz"
 	"github.com/enterprise-digital-platform/api-gateway/internal/config"
 	"github.com/enterprise-digital-platform/api-gateway/internal/metrics"
 )
@@ -57,6 +58,10 @@ func New(cfg *config.Config) http.Handler {
 		{prefix: "/api/project", proxy: newProxy(cfg.ProjectServiceURL, "/api/project")},
 	}
 
+	// Satu enforcer dipakai bersama seluruh route: cache hak akses di dalamnya
+	// hanya berguna kalau semua request memakai instance yang sama.
+	enforcer := authz.NewEnforcer(authz.NewClient(cfg.RBACServiceURL, cfg.AuthzCacheTTL, cfg.AuthzStaleGrace))
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -68,7 +73,7 @@ func New(cfg *config.Config) http.Handler {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		for _, rt := range routes {
 			if strings.HasPrefix(r.URL.Path, rt.prefix+"/") || r.URL.Path == rt.prefix {
-				handleRoute(cfg, rt, w, r)
+				handleRoute(cfg, enforcer, rt, w, r)
 				return
 			}
 		}
@@ -118,7 +123,7 @@ func newProxy(target, stripPrefix string) *httputil.ReverseProxy {
 	return proxy
 }
 
-func handleRoute(cfg *config.Config, rt route, w http.ResponseWriter, r *http.Request) {
+func handleRoute(cfg *config.Config, enforcer *authz.Enforcer, rt route, w http.ResponseWriter, r *http.Request) {
 	if !publicRoutes[requestKey(r)] {
 		claims, err := authenticate(cfg.JWTSecret, r)
 		if err != nil {
@@ -131,6 +136,20 @@ func handleRoute(cfg *config.Config, rt route, w http.ResponseWriter, r *http.Re
 			r.Header.Set("X-Is-Super-Admin", "true")
 		} else {
 			r.Header.Set("X-Is-Super-Admin", "false")
+		}
+
+		// Penegakan hak akses menyusul autentikasi, bukan menggantikannya:
+		// header identitas di atas sudah terpasang lebih dulu supaya service
+		// tujuan tetap menerima identitas yang sama seperti sebelumnya, dan
+		// supaya log penolakan di bawah menyebut user yang benar.
+		if cfg.AuthzEnforce {
+			id := authz.Identity{UserID: claims.Subject, IsSuperAdmin: claims.IsSuperAdmin}
+			if result := enforcer.Authorize(r, id); !result.Allowed() {
+				log.Printf("request_id=%s authz_denied user=%s method=%s path=%s status=%d",
+					r.Header.Get(requestIDHeader), claims.Subject, r.Method, r.URL.Path, result.Status)
+				writeJSONError(w, result.Status, result.Message)
+				return
+			}
 		}
 	}
 	rt.proxy.ServeHTTP(w, r)
@@ -175,7 +194,11 @@ func withCORS(allowedOrigin string, next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		// X-Company-Id ikut diizinkan karena penegakan hak akses memakainya
+		// untuk endpoint yang tidak menyebut company di query maupun body
+		// (lihat authz.companyID); tanpa baris ini browser memblokir header
+		// itu sebelum request sempat berangkat.
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Company-Id, X-Request-Id")
 		w.Header().Set("Vary", "Origin")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

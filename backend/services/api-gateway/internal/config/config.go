@@ -3,6 +3,8 @@ package config
 import (
 	"log"
 	"os"
+	"strconv"
+	"time"
 )
 
 type Config struct {
@@ -31,6 +33,11 @@ type Config struct {
 	JWTSecret            string
 	CORSAllowedOrigin    string
 	OTLPEndpoint         string
+
+	// Penegakan hak akses (lihat internal/authz).
+	AuthzEnforce    bool
+	AuthzCacheTTL   time.Duration
+	AuthzStaleGrace time.Duration
 }
 
 func Load() *Config {
@@ -60,6 +67,18 @@ func Load() *Config {
 		JWTSecret:            getEnv("JWT_SECRET", "change-me"),
 		CORSAllowedOrigin:    getEnv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 		OTLPEndpoint:         getEnv("OTLP_ENDPOINT", "localhost:4318"),
+
+		// Default menyala. AUTHZ_ENFORCE=false hanya ada sebagai jalan keluar
+		// darurat kalau sebuah endpoint baru terlanjur diluncurkan tanpa
+		// terdaftar di tabel kebijakan dan seluruh halaman ikut terkunci --
+		// mematikannya mengembalikan platform ke keadaan sebelum penegakan
+		// ada, yaitu token valid = boleh apa saja.
+		AuthzEnforce:    getBool("AUTHZ_ENFORCE", true),
+		AuthzCacheTTL:   getDuration("AUTHZ_CACHE_TTL", 30*time.Second),
+		AuthzStaleGrace: getDuration("AUTHZ_STALE_GRACE", 5*time.Minute),
+	}
+	if !cfg.AuthzEnforce {
+		log.Print("api-gateway: PERINGATAN -- AUTHZ_ENFORCE=false, hak akses TIDAK ditegakkan; setiap token valid boleh memanggil endpoint apa pun")
 	}
 	// api-gateway verifies incoming JWTs with this same secret (must match
 	// auth-service) -- see the matching guard/comment in
@@ -69,6 +88,32 @@ func Load() *Config {
 		log.Fatalf("api-gateway: JWT_SECRET wajib diset eksplisit saat APP_ENV=%s (tidak boleh memakai default 'change-me')", cfg.AppEnv)
 	}
 	return cfg
+}
+
+func getBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		log.Printf("api-gateway: nilai %s=%q tidak terbaca sebagai boolean, memakai %v", key, v, fallback)
+		return fallback
+	}
+	return parsed
+}
+
+func getDuration(key string, fallback time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	parsed, err := time.ParseDuration(v)
+	if err != nil {
+		log.Printf("api-gateway: nilai %s=%q tidak terbaca sebagai durasi, memakai %v", key, v, fallback)
+		return fallback
+	}
+	return parsed
 }
 
 func getEnv(key, fallback string) string {
