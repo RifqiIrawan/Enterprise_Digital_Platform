@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { product_name: '', description: '', quantity: 1, estimated_price: '' }
 const emptyForm = {
@@ -26,6 +27,7 @@ const STATUS_BADGE = {
 
 function RequisitionsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [suppliers, setSuppliers] = useState([])
   const [requisitions, setRequisitions] = useState([])
   const [loading, setLoading] = useState(true)
@@ -173,12 +175,16 @@ function RequisitionsPage() {
           )}
           {pr.status === 'SUBMITTED' && (
             <>
-              <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === pr.id} onClick={() => handleAction(pr.id, 'approve')}>
-                Approve
-              </button>
-              <button type="button" className="btn btn-sm btn-outline-danger" disabled={actingId === pr.id} onClick={() => handleAction(pr.id, 'reject')}>
-                Reject
-              </button>
+              {can('approve') && (
+                <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === pr.id} onClick={() => handleAction(pr.id, 'approve')}>
+                  Approve
+                </button>
+              )}
+              {can('approve') && (
+                <button type="button" className="btn btn-sm btn-outline-danger" disabled={actingId === pr.id} onClick={() => handleAction(pr.id, 'reject')}>
+                  Reject
+                </button>
+              )}
             </>
           )}
           {pr.status === 'APPROVED' && (
@@ -198,10 +204,12 @@ function RequisitionsPage() {
           <h2 className="edp-page-title">Purchase Requisitions</h2>
           <div className="text-secondary small">Permintaan pembelian internal, dikonversi menjadi Purchase Order setelah disetujui.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Requisition
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Requisition
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

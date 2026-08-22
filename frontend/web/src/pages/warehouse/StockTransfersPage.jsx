@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { product_id: '', quantity: 1 }
 const emptyForm = { from_warehouse_id: '', to_warehouse_id: '', transfer_date: new Date().toISOString().slice(0, 10), notes: '', lines: [{ ...emptyLine }] }
@@ -15,6 +16,7 @@ const STATUS_BADGE = {
 
 function StockTransfersPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
   const [transfers, setTransfers] = useState([])
@@ -125,7 +127,7 @@ function StockTransfersPage() {
       className: 'text-end',
       cellClassName: 'text-end',
       render: (t) =>
-        t.status === 'DRAFT' && (
+        can('approve') && t.status === 'DRAFT' && (
           <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === t.id} onClick={() => handleConfirm(t.id)}>
             Konfirmasi
           </button>
@@ -140,10 +142,12 @@ function StockTransfersPage() {
           <h2 className="edp-page-title">Mutasi Antar Gudang</h2>
           <div className="text-secondary small">Pindahkan stok antar gudang/branch. Stok baru berpindah setelah dikonfirmasi.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Mutasi
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Mutasi
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

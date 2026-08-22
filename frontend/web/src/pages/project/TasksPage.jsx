@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = {
   project_id: '',
@@ -37,6 +38,7 @@ const OPEN_PROJECT_STATUSES = ['PLANNING', 'ACTIVE', 'ON_HOLD']
 
 function TasksPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [tasks, setTasks] = useState([])
   const [projects, setProjects] = useState([])
   const [employees, setEmployees] = useState([])
@@ -175,7 +177,7 @@ function TasksPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (t) => (
+      render: (t) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(t)}>
           <i className="bi bi-pencil" />
         </button>
@@ -194,15 +196,17 @@ function TasksPage() {
             Proyek tidak bisa ditutup selagi masih ada tugas berstatus TODO atau IN_PROGRESS.
           </div>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={!companyId || openProjects.length === 0}
-          onClick={openCreate}
-        >
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Tugas
-        </button>
+        {can('create') && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!companyId || openProjects.length === 0}
+            onClick={openCreate}
+          >
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Tugas
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { account_id: '', description: '', quantity: 1, unit_price: '' }
 const emptyForm = {
@@ -28,7 +29,7 @@ const STATUS_BADGE = {
   CANCELLED: 'text-bg-danger',
 }
 
-function invoiceColumns(postingId, handlePost) {
+function invoiceColumns(postingId, handlePost, can) {
   return [
     { key: 'invoice_number', label: 'No. Invoice', render: (inv) => <code>{inv.invoice_number}</code> },
     {
@@ -64,7 +65,7 @@ function invoiceColumns(postingId, handlePost) {
       className: 'text-end',
       cellClassName: 'text-end',
       render: (inv) =>
-        inv.status === 'DRAFT' && (
+        inv.status === 'DRAFT' && can('approve') && (
           <button
             type="button"
             className="btn btn-sm btn-outline-success"
@@ -80,6 +81,7 @@ function invoiceColumns(postingId, handlePost) {
 
 function InvoicesPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [accounts, setAccounts] = useState([])
   const [invoices, setInvoices] = useState([])
   const [typeFilter, setTypeFilter] = useState('all')
@@ -181,10 +183,12 @@ function InvoicesPage() {
           <h2 className="edp-page-title">Invoices</h2>
           <div className="text-secondary small">Invoice AR (piutang customer) &amp; AP (hutang vendor).</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Invoice
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Invoice
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
@@ -204,7 +208,7 @@ function InvoicesPage() {
           ))}
         </ul>
         <DataTable
-          columns={invoiceColumns(postingId, handlePost)}
+          columns={invoiceColumns(postingId, handlePost, can)}
           data={filtered}
           loading={loading}
           searchPlaceholder="Cari no. invoice atau partner..."

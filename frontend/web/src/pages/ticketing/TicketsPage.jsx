@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { category_id: '', subject: '', description: '', requester_name: '', requester_email: '', notes: '' }
 
@@ -24,6 +25,7 @@ const PRIORITY_BADGE = {
 
 function TicketsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [categories, setCategories] = useState([])
   const [tickets, setTickets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -176,7 +178,7 @@ function TicketsPage() {
       cellClassName: 'text-end',
       render: (t) => (
         <div className="d-flex gap-1 justify-content-end">
-          {OPEN_STATUSES.includes(t.status) && (
+          {can('update') && OPEN_STATUSES.includes(t.status) && (
             <>
               <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === t.id} onClick={() => handleClose(t.id)}>
                 Close
@@ -186,7 +188,7 @@ function TicketsPage() {
               </button>
             </>
           )}
-          {t.status === 'CLOSED' && (
+          {can('update') && t.status === 'CLOSED' && (
             <button type="button" className="btn btn-sm btn-outline-warning" disabled={actingId === t.id} onClick={() => handleReopen(t.id)}>
               Reopen
             </button>
@@ -203,10 +205,12 @@ function TicketsPage() {
           <h2 className="edp-page-title">Tickets</h2>
           <div className="text-secondary small">Tiket dukungan pelanggan, dari dibuka sampai selesai.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || categories.length === 0} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Ticket
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || categories.length === 0} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Ticket
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

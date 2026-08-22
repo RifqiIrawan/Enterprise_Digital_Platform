@@ -3,11 +3,13 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { standard_code: '', name: '', product_id: '', criteria: '' }
 
 function QualityStandardsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [products, setProducts] = useState([])
   const [standards, setStandards] = useState([])
   const [loading, setLoading] = useState(true)
@@ -103,7 +105,7 @@ function QualityStandardsPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (s) => (
+      render: (s) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(s)}>
           <i className="bi bi-pencil" />
         </button>
@@ -118,10 +120,12 @@ function QualityStandardsPage() {
           <h2 className="edp-page-title">Standar Mutu</h2>
           <div className="text-secondary small">Kriteria pass/fail per produk yang jadi acuan inspeksi kualitas.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Standar
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Standar
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

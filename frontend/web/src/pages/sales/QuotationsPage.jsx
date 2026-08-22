@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { product_name: '', description: '', quantity: 1, unit_price: '' }
 const emptyForm = {
@@ -29,6 +30,7 @@ const STATUS_BADGE = {
 
 function QuotationsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [customers, setCustomers] = useState([])
   const [quotations, setQuotations] = useState([])
   const [loading, setLoading] = useState(true)
@@ -149,22 +151,26 @@ function QuotationsPage() {
       cellClassName: 'text-end',
       render: (q) => (
         <div className="d-flex gap-1 justify-content-end">
-          {q.status === 'DRAFT' && (
+          {can('update') && q.status === 'DRAFT' && (
             <button type="button" className="btn btn-sm btn-outline-info" disabled={actingId === q.id} onClick={() => handleAction(q.id, 'send')}>
               Kirim
             </button>
           )}
           {q.status === 'SENT' && (
             <>
-              <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === q.id} onClick={() => handleAction(q.id, 'accept')}>
-                Accept
-              </button>
-              <button type="button" className="btn btn-sm btn-outline-danger" disabled={actingId === q.id} onClick={() => handleAction(q.id, 'reject')}>
-                Reject
-              </button>
+              {can('approve') && (
+                <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === q.id} onClick={() => handleAction(q.id, 'accept')}>
+                  Accept
+                </button>
+              )}
+              {can('approve') && (
+                <button type="button" className="btn btn-sm btn-outline-danger" disabled={actingId === q.id} onClick={() => handleAction(q.id, 'reject')}>
+                  Reject
+                </button>
+              )}
             </>
           )}
-          {q.status === 'ACCEPTED' && (
+          {can('update') && q.status === 'ACCEPTED' && (
             <button
               type="button"
               className="btn btn-sm btn-outline-primary"
@@ -186,10 +192,12 @@ function QuotationsPage() {
           <h2 className="edp-page-title">Quotations</h2>
           <div className="text-secondary small">Penawaran ke customer, bisa dikonversi menjadi Sales Order setelah diterima.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Quotation
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Quotation
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

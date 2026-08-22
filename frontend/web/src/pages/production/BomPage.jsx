@@ -3,12 +3,14 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { component_product_id: '', quantity_per_unit: 1 }
 const emptyForm = { bom_code: '', name: '', product_id: '', lines: [{ ...emptyLine }] }
 
 function BomPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [products, setProducts] = useState([])
   const [boms, setBoms] = useState([])
   const [loading, setLoading] = useState(true)
@@ -126,7 +128,7 @@ function BomPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (b) => (
+      render: (b) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(b)}>
           <i className="bi bi-pencil" />
         </button>
@@ -141,10 +143,12 @@ function BomPage() {
           <h2 className="edp-page-title">Bill of Material</h2>
           <div className="text-secondary small">Resep komponen untuk tiap produk jadi yang diproduksi.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat BOM
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat BOM
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

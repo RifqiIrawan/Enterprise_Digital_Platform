@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = {
   project_id: '',
@@ -28,6 +29,7 @@ const currency = (v) => new Intl.NumberFormat('id-ID', { style: 'currency', curr
 
 function TimesheetsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [timesheets, setTimesheets] = useState([])
   const [projects, setProjects] = useState([])
   const [tasks, setTasks] = useState([])
@@ -185,7 +187,7 @@ function TimesheetsPage() {
       // finance-service, koreksinya lewat jurnal balik di modul Finance.
       render: (t) => (
         <div className="d-flex gap-1 justify-content-end">
-          {t.status === 'DRAFT' && (
+          {can('approve') && t.status === 'DRAFT' && (
             <button
               type="button"
               className="btn btn-sm btn-outline-primary"
@@ -196,7 +198,7 @@ function TimesheetsPage() {
               Setujui
             </button>
           )}
-          {(t.status === 'DRAFT' || t.status === 'APPROVED') && (
+          {can('approve') && (t.status === 'DRAFT' || t.status === 'APPROVED') && (
             <button
               type="button"
               className="btn btn-sm btn-outline-danger"
@@ -224,15 +226,17 @@ function TimesheetsPage() {
             Timesheet APPROVED diposting ke GL secara kolektif per proyek dari menu Proyek.
           </div>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={!companyId || activeProjects.length === 0}
-          onClick={openCreate}
-        >
-          <i className="bi bi-plus-lg me-1" />
-          Catat Jam Kerja
-        </button>
+        {can('create') && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!companyId || activeProjects.length === 0}
+            onClick={openCreate}
+          >
+            <i className="bi bi-plus-lg me-1" />
+            Catat Jam Kerja
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

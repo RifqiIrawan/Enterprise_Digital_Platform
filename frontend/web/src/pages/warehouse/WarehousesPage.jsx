@@ -3,11 +3,13 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { code: '', name: '', address: '', is_active: true }
 
 function WarehousesPage() {
   const { companyId } = useCompany()
+  const { can } = usePagePermission()
   const [warehouses, setWarehouses] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -101,7 +103,7 @@ function WarehousesPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (wh) => (
+      render: (wh) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(wh)}>
           <i className="bi bi-pencil" />
         </button>
@@ -116,10 +118,12 @@ function WarehousesPage() {
           <h2 className="edp-page-title">Master Gudang</h2>
           <div className="text-secondary small">Daftar gudang/lokasi penyimpanan stok per branch.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Gudang
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Gudang
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

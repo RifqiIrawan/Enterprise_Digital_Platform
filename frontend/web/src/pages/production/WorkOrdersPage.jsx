@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { bom_id: '', warehouse_id: '', quantity_planned: 1, planned_start_date: new Date().toISOString().slice(0, 10), planned_end_date: '', notes: '' }
 
@@ -15,6 +16,7 @@ const STATUS_BADGE = {
 
 function WorkOrdersPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [boms, setBoms] = useState([])
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
@@ -157,12 +159,12 @@ function WorkOrdersPage() {
       cellClassName: 'text-end',
       render: (o) => (
         <div className="d-flex gap-1 justify-content-end">
-          {o.status === 'DRAFT' && (
+          {can('update') && o.status === 'DRAFT' && (
             <button type="button" className="btn btn-sm btn-outline-info" disabled={actingId === o.id} onClick={() => handleStart(o.id)}>
               Mulai
             </button>
           )}
-          {o.status === 'IN_PROGRESS' && (
+          {can('approve') && o.status === 'IN_PROGRESS' && (
             <button type="button" className="btn btn-sm btn-outline-success" onClick={() => openComplete(o)}>
               Selesaikan
             </button>
@@ -179,10 +181,12 @@ function WorkOrdersPage() {
           <h2 className="edp-page-title">Work Order</h2>
           <div className="text-secondary small">Jalankan produksi berdasarkan BOM; menyelesaikan WO otomatis memutasi stok komponen &amp; produk jadi.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || boms.length === 0} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Work Order
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || boms.length === 0} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Work Order
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

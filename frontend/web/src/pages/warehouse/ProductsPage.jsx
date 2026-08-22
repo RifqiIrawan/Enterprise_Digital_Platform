@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { sku: '', name: '', unit: 'pcs', category: '', cost_price: '', is_active: true }
 
@@ -12,6 +13,7 @@ function formatMoney(n) {
 
 function ProductsPage() {
   const { companyId } = useCompany()
+  const { can } = usePagePermission()
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -124,7 +126,7 @@ function ProductsPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (p) => (
+      render: (p) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(p)}>
           <i className="bi bi-pencil" />
         </button>
@@ -139,10 +141,12 @@ function ProductsPage() {
           <h2 className="edp-page-title">Master Barang</h2>
           <div className="text-secondary small">Daftar produk yang dilacak stoknya di seluruh gudang.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Produk
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Produk
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { product_name: '', description: '', quantity: 1, unit_price: '' }
 const emptyForm = { customer_id: '', order_date: new Date().toISOString().slice(0, 10), lines: [{ ...emptyLine }] }
@@ -21,6 +22,7 @@ const STATUS_BADGE = {
 
 function SalesOrdersPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [customers, setCustomers] = useState([])
   const [accounts, setAccounts] = useState([])
   const [warehouses, setWarehouses] = useState([])
@@ -192,17 +194,17 @@ function SalesOrdersPage() {
       cellClassName: 'text-end',
       render: (o) => (
         <div className="d-flex gap-1 justify-content-end">
-          {o.status === 'DRAFT' && (
+          {can('update') && o.status === 'DRAFT' && (
             <button type="button" className="btn btn-sm btn-outline-info" disabled={actingId === o.id} onClick={() => handleAction(o.id, 'confirm')}>
               Confirm
             </button>
           )}
-          {o.status === 'CONFIRMED' && (
+          {can('approve') && o.status === 'CONFIRMED' && (
             <button type="button" className="btn btn-sm btn-outline-warning" disabled={actingId === o.id} onClick={() => openFulfill(o)}>
               Fulfill
             </button>
           )}
-          {(o.status === 'CONFIRMED' || o.status === 'FULFILLED') && (
+          {can('approve') && (o.status === 'CONFIRMED' || o.status === 'FULFILLED') && (
             <button type="button" className="btn btn-sm btn-outline-success" onClick={() => openInvoice(o)}>
               Buat Invoice
             </button>
@@ -219,10 +221,12 @@ function SalesOrdersPage() {
           <h2 className="edp-page-title">Sales Orders</h2>
           <div className="text-secondary small">Order dari customer, bisa dibuat langsung atau hasil konversi quotation.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Sales Order
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Sales Order
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

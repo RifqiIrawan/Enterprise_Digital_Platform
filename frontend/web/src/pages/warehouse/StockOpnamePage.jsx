@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { product_id: '', counted_quantity: 0 }
 const emptyForm = { warehouse_id: '', opname_date: new Date().toISOString().slice(0, 10), notes: '', lines: [{ ...emptyLine }] }
@@ -14,6 +15,7 @@ const STATUS_BADGE = {
 
 function StockOpnamePage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
   const [opnames, setOpnames] = useState([])
@@ -143,10 +145,12 @@ function StockOpnamePage() {
           <h2 className="edp-page-title">Stock Opname</h2>
           <div className="text-secondary small">Catat hasil hitung fisik gudang; selisih baru diterapkan ke saldo saat di-post.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Stock Opname
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Stock Opname
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
@@ -271,7 +275,7 @@ function StockOpnamePage() {
           title={`Stock Opname ${viewing.opname_number}`}
           onClose={() => setViewing(null)}
           footer={
-            viewing.status === 'DRAFT' && (
+            can('approve') && viewing.status === 'DRAFT' && (
               <>
                 <button type="button" className="btn btn-outline-secondary" onClick={() => setViewing(null)}>
                   Tutup

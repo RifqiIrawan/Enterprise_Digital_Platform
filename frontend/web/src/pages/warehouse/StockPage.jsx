@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { product_id: '', movement_type: 'IN', quantity: '', notes: '', movement_date: new Date().toISOString().slice(0, 10) }
 
@@ -21,6 +22,7 @@ const REFERENCE_LABEL = {
 
 function StockPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [warehouses, setWarehouses] = useState([])
   const [products, setProducts] = useState([])
   const [warehouseId, setWarehouseId] = useState('')
@@ -148,10 +150,12 @@ function StockPage() {
               <option key={wh.id} value={wh.id}>{wh.code} - {wh.name}</option>
             ))}
           </select>
-          <button type="button" className="btn btn-primary btn-sm" disabled={!warehouseId} onClick={openCreate}>
-            <i className="bi bi-plus-lg me-1" />
-            Catat Mutasi Manual
-          </button>
+          {can('create') && (
+            <button type="button" className="btn btn-primary btn-sm" disabled={!warehouseId} onClick={openCreate}>
+              <i className="bi bi-plus-lg me-1" />
+              Catat Mutasi Manual
+            </button>
+          )}
         </div>
       </div>
 

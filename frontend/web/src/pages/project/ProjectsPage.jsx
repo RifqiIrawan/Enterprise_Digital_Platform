@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = {
   project_code: '',
@@ -47,6 +48,7 @@ const currency = (v) => new Intl.NumberFormat('id-ID', { style: 'currency', curr
 
 function ProjectsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [projects, setProjects] = useState([])
   const [employees, setEmployees] = useState([])
   const [accounts, setAccounts] = useState([])
@@ -236,18 +238,18 @@ function ProjectsPage() {
       cellClassName: 'text-end',
       render: (p) => (
         <div className="d-flex gap-1 justify-content-end flex-wrap">
-          {p.status !== 'COMPLETED' && p.status !== 'CANCELLED' && (
+          {p.status !== 'COMPLETED' && p.status !== 'CANCELLED' && can('update') && (
             <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(p)}>
               <i className="bi bi-pencil" />
             </button>
           )}
-          {p.status === 'ACTIVE' && (
+          {can('approve') && p.status === 'ACTIVE' && (
             <button type="button" className="btn btn-sm btn-outline-dark" onClick={() => openPost(p)}>
               <i className="bi bi-journal-arrow-up me-1" />
               Posting Biaya
             </button>
           )}
-          {(STATUS_ACTIONS[p.status] ?? []).map((a) => (
+          {can('update') && (STATUS_ACTIONS[p.status] ?? []).map((a) => (
             <button
               key={a.action}
               type="button"
@@ -273,10 +275,12 @@ function ProjectsPage() {
             Realisasi biaya hanya bertambah lewat posting timesheet yang sudah disetujui ke GL.
           </div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Proyek
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Proyek
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

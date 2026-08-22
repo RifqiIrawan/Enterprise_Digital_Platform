@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { product_id: '', unit_price: '', quantity: 1 }
 const emptyForm = {
@@ -28,6 +29,7 @@ const STATUS_BADGE = {
 
 function OrdersPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [products, setProducts] = useState([])
   const [warehouses, setWarehouses] = useState([])
   const [orders, setOrders] = useState([])
@@ -191,22 +193,22 @@ function OrdersPage() {
           <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openView(o)}>
             Lihat Item
           </button>
-          {o.status === 'PENDING' && (
+          {can('update') && o.status === 'PENDING' && (
             <button type="button" className="btn btn-sm btn-outline-info" disabled={actingId === o.id} onClick={() => handleAction(o.id, 'pay')}>
               Pay
             </button>
           )}
-          {o.status === 'PAID' && (
+          {can('approve') && o.status === 'PAID' && (
             <button type="button" className="btn btn-sm btn-outline-warning" disabled={actingId === o.id} onClick={() => openShip(o)}>
               Ship
             </button>
           )}
-          {o.status === 'SHIPPED' && (
+          {can('update') && o.status === 'SHIPPED' && (
             <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === o.id} onClick={() => handleAction(o.id, 'deliver')}>
               Deliver
             </button>
           )}
-          {(o.status === 'PENDING' || o.status === 'PAID') && (
+          {can('update') && (o.status === 'PENDING' || o.status === 'PAID') && (
             <button type="button" className="btn btn-sm btn-outline-danger" disabled={actingId === o.id} onClick={() => handleAction(o.id, 'cancel')}>
               Cancel
             </button>
@@ -223,10 +225,12 @@ function OrdersPage() {
           <h2 className="edp-page-title">Orders</h2>
           <div className="text-secondary small">Order online (checkout) yang produknya diambil dari katalog warehouse-service.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Order
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Order
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

@@ -3,11 +3,13 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { customer_code: '', name: '', email: '', phone: '', address: '', tax_id: '', is_active: true }
 
 function CustomersPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [customers, setCustomers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -117,7 +119,7 @@ function CustomersPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (c) => (
+      render: (c) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(c)}>
           <i className="bi bi-pencil" />
         </button>
@@ -132,10 +134,12 @@ function CustomersPage() {
           <h2 className="edp-page-title">Customers</h2>
           <div className="text-secondary small">Master customer untuk quotation &amp; sales order.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Customer
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Customer
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

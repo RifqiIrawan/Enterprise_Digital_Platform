@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { account_code: '', name: '', industry: '', website: '', phone: '', email: '', address: '', notes: '' }
 
@@ -15,6 +16,7 @@ const TYPE_BADGE = {
 
 function AccountsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -25,6 +27,7 @@ function AccountsPage() {
   const [accountType, setAccountType] = useState('PROSPECT')
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [togglingId, setTogglingId] = useState(null)
 
   function loadAccounts(cid, bid) {
     setLoading(true)
@@ -108,6 +111,33 @@ function AccountsPage() {
     }
   }
 
+  // Menonaktifkan account ditolak backend kalau masih ada opportunity terbuka --
+  // pesannya ditampilkan apa adanya karena sudah menyebut jumlahnya.
+  async function toggleStatus(a) {
+    const next = a.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
+    if (next === 'INACTIVE' && !window.confirm(`Nonaktifkan account "${a.name}"?`)) return
+    setTogglingId(a.id)
+    try {
+      await apiClient.put(`/api/crm/accounts/${a.id}`, {
+        name: a.name,
+        industry: a.industry,
+        website: a.website,
+        phone: a.phone,
+        email: a.email,
+        address: a.address,
+        account_type: a.account_type,
+        owner_user_id: a.owner_user_id,
+        notes: a.notes,
+        status: next,
+      })
+      loadAccounts(companyId, branchId)
+    } catch (err) {
+      window.alert(err.response?.data?.error ?? 'Gagal mengubah status account')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
   const columns = [
     { key: 'account_code', label: 'Kode', render: (a) => <code>{a.account_code}</code> },
     {
@@ -127,15 +157,40 @@ function AccountsPage() {
       render: (a) => <span className={`badge ${TYPE_BADGE[a.account_type] ?? 'text-bg-secondary'}`}>{a.account_type}</span>,
     },
     {
+      key: 'status',
+      label: 'Status',
+      render: (a) =>
+        a.status === 'ACTIVE' ? (
+          <span className="badge text-bg-success">Aktif</span>
+        ) : (
+          <span className="badge text-bg-secondary">Nonaktif</span>
+        ),
+      sortValue: (a) => (a.status === 'ACTIVE' ? 1 : 0),
+    },
+    {
       key: 'actions',
       label: 'Aksi',
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
       render: (a) => (
-        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(a)}>
-          <i className="bi bi-pencil" />
-        </button>
+        <div className="d-flex gap-1 justify-content-end">
+          {can('update') && (
+            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(a)}>
+              <i className="bi bi-pencil" />
+            </button>
+          )}
+          {can('update') && (
+            <button
+              type="button"
+              className={`btn btn-sm ${a.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'}`}
+              disabled={togglingId === a.id}
+              onClick={() => toggleStatus(a)}
+            >
+              {a.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}
+            </button>
+          )}
+        </div>
       ),
     },
   ]
@@ -147,10 +202,12 @@ function AccountsPage() {
           <h2 className="edp-page-title">Accounts</h2>
           <div className="text-secondary small">Organisasi yang berhubungan dengan perusahaan (prospek, customer, partner).</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Account
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Account
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

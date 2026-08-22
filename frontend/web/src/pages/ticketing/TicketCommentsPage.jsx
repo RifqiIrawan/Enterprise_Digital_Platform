@@ -3,11 +3,13 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { ticket_id: '', comment_text: '' }
 
 function TicketCommentsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [tickets, setTickets] = useState([])
   const [comments, setComments] = useState([])
   const [loading, setLoading] = useState(true)
@@ -105,10 +107,12 @@ function TicketCommentsPage() {
           <h2 className="edp-page-title">Ticket Comments</h2>
           <div className="text-secondary small">Komentar/timeline per tiket, termasuk catatan internal.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || tickets.length === 0} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Comment
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || tickets.length === 0} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Comment
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

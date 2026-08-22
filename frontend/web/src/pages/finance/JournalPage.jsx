@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyLine = { account_id: '', debit_amount: '', credit_amount: '', description: '' }
 const emptyForm = { entry_date: new Date().toISOString().slice(0, 10), description: '', lines: [{ ...emptyLine }, { ...emptyLine }] }
@@ -17,7 +18,7 @@ const STATUS_BADGE = {
   REVERSED: 'text-bg-danger',
 }
 
-function journalColumns(postingId, handlePost) {
+function journalColumns(postingId, handlePost, can) {
   return [
     { key: 'entry_number', label: 'No. Jurnal', render: (e) => <code>{e.entry_number}</code> },
     {
@@ -54,7 +55,7 @@ function journalColumns(postingId, handlePost) {
       className: 'text-end',
       cellClassName: 'text-end',
       render: (e) =>
-        e.status === 'DRAFT' && (
+        e.status === 'DRAFT' && can('approve') && (
           <button
             type="button"
             className="btn btn-sm btn-outline-success"
@@ -70,6 +71,7 @@ function journalColumns(postingId, handlePost) {
 
 function JournalPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [accounts, setAccounts] = useState([])
   const [entries, setEntries] = useState([])
   const [loading, setLoading] = useState(true)
@@ -164,17 +166,19 @@ function JournalPage() {
           <h2 className="edp-page-title">General Ledger / Jurnal</h2>
           <div className="text-secondary small">Jurnal manual double-entry. Debit harus sama dengan credit.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Jurnal
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setCreating(true)}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Jurnal
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
 
       <div className="card p-3">
         <DataTable
-          columns={journalColumns(postingId, handlePost)}
+          columns={journalColumns(postingId, handlePost, can)}
           data={entries}
           loading={loading}
           searchPlaceholder="Cari no. jurnal atau deskripsi..."

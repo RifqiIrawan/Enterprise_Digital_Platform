@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = {
   vehicle_id: '',
@@ -38,6 +39,7 @@ const STATUS_ACTIONS = {
 
 function DeliveryOrdersPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [deliveries, setDeliveries] = useState([])
   const [vehicles, setVehicles] = useState([])
   const [drivers, setDrivers] = useState([])
@@ -212,12 +214,12 @@ function DeliveryOrdersPage() {
       cellClassName: 'text-end',
       render: (d) => (
         <div className="d-flex gap-1 justify-content-end">
-          {d.status === 'PENDING' && (
+          {d.status === 'PENDING' && can('update') && (
             <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(d)}>
               <i className="bi bi-pencil" />
             </button>
           )}
-          {(STATUS_ACTIONS[d.status] ?? []).map((a) => (
+          {can('update') && (STATUS_ACTIONS[d.status] ?? []).map((a) => (
             <button
               key={a.action}
               type="button"
@@ -244,10 +246,12 @@ function DeliveryOrdersPage() {
             Penugasan pengiriman. Surat jalan yang terhubung ke order e-commerce otomatis menandai order itu DELIVERED saat diselesaikan.
           </div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Buat Surat Jalan
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Buat Surat Jalan
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

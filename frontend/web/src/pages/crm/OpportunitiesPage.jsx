@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { account_id: '', contact_id: '', name: '', amount: '', probability: '10', expected_close_date: '' }
 
@@ -23,6 +24,7 @@ function formatMoney(n) {
 
 function OpportunitiesPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [accounts, setAccounts] = useState([])
   const [contacts, setContacts] = useState([])
   const [opportunities, setOpportunities] = useState([])
@@ -55,6 +57,11 @@ function OpportunitiesPage() {
     apiClient.get('/api/crm/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
     apiClient.get('/api/crm/contacts', { params: { company_id: companyId } }).then(({ data }) => setContacts(data))
   }, [companyId, branchId])
+
+  // Sama seperti di Contacts: yang nonaktif tidak ditawarkan untuk opportunity
+  // baru (backend juga menolaknya), tapi pilihan yang sedang dipakai tetap ada.
+  const selectableAccounts = (currentID) =>
+    accounts.filter((a) => a.status === 'ACTIVE' || a.id === currentID)
 
   const accountName = (id) => {
     if (!id) return '—'
@@ -172,7 +179,7 @@ function OpportunitiesPage() {
       cellClassName: 'text-end',
       render: (o) => (
         <div className="d-flex gap-1 justify-content-end">
-          {OPEN_STAGES.includes(o.stage) && (
+          {can('update') && OPEN_STAGES.includes(o.stage) && (
             <>
               <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === o.id} onClick={() => handleWin(o.id)}>
                 Won
@@ -197,10 +204,12 @@ function OpportunitiesPage() {
           <h2 className="edp-page-title">Opportunities</h2>
           <div className="text-secondary small">Pipeline penjualan per account, dari prospek sampai deal menang/kalah.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || accounts.length === 0} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Opportunity
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || accounts.length === 0} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Opportunity
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
@@ -250,8 +259,11 @@ function OpportunitiesPage() {
                   required
                 >
                   <option value="">Pilih account...</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.account_code} - {a.name}</option>
+                  {selectableAccounts(form.account_id).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.account_code} - {a.name}
+                      {a.status !== 'ACTIVE' ? ' (nonaktif)' : ''}
+                    </option>
                   ))}
                 </select>
               </div>

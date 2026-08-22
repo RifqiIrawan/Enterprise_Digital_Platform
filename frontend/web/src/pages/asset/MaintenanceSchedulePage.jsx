@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { asset_id: '', maintenance_type: '', scheduled_date: new Date().toISOString().slice(0, 10), notes: '' }
 
@@ -20,6 +21,7 @@ function isOverdue(schedule) {
 
 function MaintenanceSchedulePage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [assets, setAssets] = useState([])
   const [schedules, setSchedules] = useState([])
   const [loading, setLoading] = useState(true)
@@ -126,7 +128,7 @@ function MaintenanceSchedulePage() {
       className: 'text-end',
       cellClassName: 'text-end',
       render: (m) =>
-        m.status === 'SCHEDULED' && (
+        can('update') && m.status === 'SCHEDULED' && (
           <div className="d-flex gap-1 justify-content-end">
             <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === m.id} onClick={() => handleAction(m.id, 'complete')}>
               Selesai
@@ -146,10 +148,12 @@ function MaintenanceSchedulePage() {
           <h2 className="edp-page-title">Maintenance Schedule</h2>
           <div className="text-secondary small">Jadwal perawatan rutin/insidental per aset.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || assets.length === 0} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Jadwalkan Maintenance
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || assets.length === 0} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Jadwalkan Maintenance
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

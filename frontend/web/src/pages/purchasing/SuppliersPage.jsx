@@ -3,11 +3,13 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { supplier_code: '', name: '', email: '', phone: '', address: '', tax_id: '', is_active: true }
 
 function SuppliersPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -117,7 +119,7 @@ function SuppliersPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (s) => (
+      render: (s) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(s)}>
           <i className="bi bi-pencil" />
         </button>
@@ -132,10 +134,12 @@ function SuppliersPage() {
           <h2 className="edp-page-title">Suppliers</h2>
           <div className="text-secondary small">Master supplier untuk purchase requisition &amp; purchase order.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Supplier
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Supplier
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

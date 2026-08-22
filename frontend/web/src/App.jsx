@@ -7,6 +7,11 @@ import RoleListPage from './pages/admin/roles/RoleListPage.jsx'
 import RoleCreatePage from './pages/admin/roles/RoleCreatePage.jsx'
 import RolePermissionMatrixPage from './pages/admin/roles/RolePermissionMatrixPage.jsx'
 import UserRoleAssignmentPage from './pages/admin/users/UserRoleAssignmentPage.jsx'
+import ProfilePage from './pages/account/ProfilePage.jsx'
+import CompanyListPage from './pages/admin/companies/CompanyListPage.jsx'
+import BranchListPage from './pages/admin/branches/BranchListPage.jsx'
+import DepartmentListPage from './pages/admin/departments/DepartmentListPage.jsx'
+import AuditLogPage from './pages/admin/audit/AuditLogPage.jsx'
 import ChartOfAccountsPage from './pages/finance/ChartOfAccountsPage.jsx'
 import JournalPage from './pages/finance/JournalPage.jsx'
 import InvoicesPage from './pages/finance/InvoicesPage.jsx'
@@ -14,6 +19,12 @@ import ArApPage from './pages/finance/ArApPage.jsx'
 import EmployeesPage from './pages/hr/EmployeesPage.jsx'
 import AttendancePage from './pages/hr/AttendancePage.jsx'
 import PayrollPage from './pages/hr/PayrollPage.jsx'
+import LeavePage from './pages/hr/LeavePage.jsx'
+import OvertimePage from './pages/hr/OvertimePage.jsx'
+import HolidaysPage from './pages/hr/HolidaysPage.jsx'
+import LeaveQuotaPage from './pages/hr/LeaveQuotaPage.jsx'
+import KpiIndicatorsPage from './pages/hr/KpiIndicatorsPage.jsx'
+import KpiReviewsPage from './pages/hr/KpiReviewsPage.jsx'
 import CustomersPage from './pages/sales/CustomersPage.jsx'
 import QuotationsPage from './pages/sales/QuotationsPage.jsx'
 import SalesOrdersPage from './pages/sales/SalesOrdersPage.jsx'
@@ -80,6 +91,11 @@ function App() {
         <Route path="/admin/roles/new" element={<RoleCreatePage />} />
         <Route path="/admin/roles/:roleId/permissions" element={<RolePermissionMatrixPage />} />
         <Route path="/admin/users" element={<UserRoleAssignmentPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/admin/companies" element={<CompanyListPage />} />
+        <Route path="/admin/branches" element={<BranchListPage />} />
+        <Route path="/admin/departments" element={<DepartmentListPage />} />
+        <Route path="/admin/audit-logs" element={<AuditLogPage />} />
         <Route path="/finance/accounts" element={<ChartOfAccountsPage />} />
         <Route path="/finance/journal" element={<JournalPage />} />
         <Route path="/finance/invoices" element={<InvoicesPage />} />
@@ -87,6 +103,12 @@ function App() {
         <Route path="/hr/employees" element={<EmployeesPage />} />
         <Route path="/hr/attendance" element={<AttendancePage />} />
         <Route path="/hr/payroll" element={<PayrollPage />} />
+        <Route path="/hr/leave" element={<LeavePage />} />
+        <Route path="/hr/overtime" element={<OvertimePage />} />
+        <Route path="/hr/holidays" element={<HolidaysPage />} />
+        <Route path="/hr/leave-quota" element={<LeaveQuotaPage />} />
+        <Route path="/hr/kpi-indicators" element={<KpiIndicatorsPage />} />
+        <Route path="/hr/kpi-reviews" element={<KpiReviewsPage />} />
         <Route path="/sales/customers" element={<CustomersPage />} />
         <Route path="/sales/quotations" element={<QuotationsPage />} />
         <Route path="/sales/orders" element={<SalesOrdersPage />} />

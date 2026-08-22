@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { asset_code: '', name: '', category: '', warehouse_id: '', acquisition_date: '', acquisition_cost: '', notes: '' }
 
@@ -18,6 +19,7 @@ const STATUS_BADGE = {
 
 function AssetRegisterPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [warehouses, setWarehouses] = useState([])
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -143,7 +145,7 @@ function AssetRegisterPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (a) => (
+      render: (a) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(a)}>
           <i className="bi bi-pencil" />
         </button>
@@ -158,10 +160,12 @@ function AssetRegisterPage() {
           <h2 className="edp-page-title">Pendataan Aset</h2>
           <div className="text-secondary small">Daftar aset fisik perusahaan (mesin, kendaraan, peralatan, dst).</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Aset
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Aset
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

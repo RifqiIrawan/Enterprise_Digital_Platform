@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const DEVICE_TYPES = ['TEMPERATURE', 'HUMIDITY', 'VIBRATION', 'RFID', 'GPS', 'BARCODE']
 const NUMERIC_TYPES = ['TEMPERATURE', 'HUMIDITY', 'VIBRATION']
@@ -25,6 +26,7 @@ const emptyForm = {
 
 function DevicesPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [warehouses, setWarehouses] = useState([])
   const [devices, setDevices] = useState([])
   const [loading, setLoading] = useState(true)
@@ -142,7 +144,7 @@ function DevicesPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (d) => (
+      render: (d) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(d)}>
           <i className="bi bi-pencil" />
         </button>
@@ -157,10 +159,12 @@ function DevicesPage() {
           <h2 className="edp-page-title">IoT Devices</h2>
           <div className="text-secondary small">Pendataan sensor/alat simulasi (temperature, humidity, vibration, RFID, GPS, barcode).</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Device
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Device
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

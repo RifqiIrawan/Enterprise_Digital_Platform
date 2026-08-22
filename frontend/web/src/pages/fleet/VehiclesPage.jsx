@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { vehicle_code: '', plate_number: '', name: '', capacity_kg: '', notes: '' }
 
@@ -20,6 +21,7 @@ const EDITABLE_STATUSES = ['AVAILABLE', 'MAINTENANCE']
 
 function VehiclesPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [vehicles, setVehicles] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -138,7 +140,7 @@ function VehiclesPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (v) => (
+      render: (v) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(v)}>
           <i className="bi bi-pencil" />
         </button>
@@ -153,10 +155,12 @@ function VehiclesPage() {
           <h2 className="edp-page-title">Kendaraan</h2>
           <div className="text-secondary small">Armada pengiriman. Status IN_USE diatur otomatis oleh surat jalan.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Kendaraan
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Kendaraan
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

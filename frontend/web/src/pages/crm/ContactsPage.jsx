@@ -3,11 +3,13 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { account_id: '', first_name: '', last_name: '', job_title: '', email: '', phone: '', notes: '' }
 
 function ContactsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [accounts, setAccounts] = useState([])
   const [contacts, setContacts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -19,6 +21,7 @@ function ContactsPage() {
   const [isPrimary, setIsPrimary] = useState(false)
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [togglingId, setTogglingId] = useState(null)
 
   function loadContacts(cid, bid) {
     setLoading(true)
@@ -37,6 +40,38 @@ function ContactsPage() {
     loadContacts(companyId, branchId)
     apiClient.get('/api/crm/accounts', { params: { company_id: companyId } }).then(({ data }) => setAccounts(data))
   }, [companyId, branchId])
+
+  // Account nonaktif tidak ditawarkan untuk data BARU, tapi kalau contact yang
+  // sedang diedit memang sudah menempel di sana, pilihannya tetap ditampilkan --
+  // kalau tidak, menyimpan perubahan kecil apa pun akan diam-diam melepas
+  // kaitannya. Daftar lengkapnya tetap dimuat supaya kolom "Account" di tabel
+  // tetap menampilkan nama, bukan tanda hubung.
+  async function toggleStatus(c) {
+    const next = c.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
+    if (next === 'INACTIVE' && !window.confirm(`Nonaktifkan contact "${c.first_name} ${c.last_name ?? ''}"?`)) return
+    setTogglingId(c.id)
+    try {
+      await apiClient.put(`/api/crm/contacts/${c.id}`, {
+        account_id: c.account_id,
+        first_name: c.first_name,
+        last_name: c.last_name,
+        job_title: c.job_title,
+        email: c.email,
+        phone: c.phone,
+        is_primary: c.is_primary,
+        notes: c.notes,
+        status: next,
+      })
+      loadContacts(companyId, branchId)
+    } catch (err) {
+      window.alert(err.response?.data?.error ?? 'Gagal mengubah status contact')
+    } finally {
+      setTogglingId(null)
+    }
+  }
+
+  const selectableAccounts = (currentID) =>
+    accounts.filter((a) => a.status === 'ACTIVE' || a.id === currentID)
 
   const accountName = (id) => {
     if (!id) return '—'
@@ -110,15 +145,40 @@ function ContactsPage() {
     { key: 'account_id', label: 'Account', render: (c) => accountName(c.account_id), sortValue: (c) => accountName(c.account_id) },
     { key: 'phone', label: 'Kontak', render: (c) => <div className="small">{c.phone}<br />{c.email}</div> },
     {
+      key: 'status',
+      label: 'Status',
+      render: (c) =>
+        c.status === 'ACTIVE' ? (
+          <span className="badge text-bg-success">Aktif</span>
+        ) : (
+          <span className="badge text-bg-secondary">Nonaktif</span>
+        ),
+      sortValue: (c) => (c.status === 'ACTIVE' ? 1 : 0),
+    },
+    {
       key: 'actions',
       label: 'Aksi',
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
       render: (c) => (
-        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(c)}>
-          <i className="bi bi-pencil" />
-        </button>
+        <div className="d-flex gap-1 justify-content-end">
+          {can('update') && (
+            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(c)}>
+              <i className="bi bi-pencil" />
+            </button>
+          )}
+          {can('update') && (
+            <button
+              type="button"
+              className={`btn btn-sm ${c.status === 'ACTIVE' ? 'btn-outline-danger' : 'btn-outline-success'}`}
+              disabled={togglingId === c.id}
+              onClick={() => toggleStatus(c)}
+            >
+              {c.status === 'ACTIVE' ? 'Nonaktifkan' : 'Aktifkan'}
+            </button>
+          )}
+        </div>
       ),
     },
   ]
@@ -130,10 +190,12 @@ function ContactsPage() {
           <h2 className="edp-page-title">Contacts</h2>
           <div className="text-secondary small">Orang-orang di dalam sebuah account (opsional, bisa berdiri sendiri tanpa account).</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Contact
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Contact
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
@@ -178,8 +240,11 @@ function ContactsPage() {
                 <label className="form-label">Account (opsional)</label>
                 <select className="form-select" value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })}>
                   <option value="">Tidak ditentukan</option>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.account_code} - {a.name}</option>
+                  {selectableAccounts(form.account_id).map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.account_code} - {a.name}
+                      {a.status !== 'ACTIVE' ? ' (nonaktif)' : ''}
+                    </option>
                   ))}
                 </select>
               </div>

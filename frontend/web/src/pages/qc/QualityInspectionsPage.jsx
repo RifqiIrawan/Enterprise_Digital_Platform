@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = {
   standard_id: '',
@@ -30,6 +31,7 @@ const REFERENCE_LABEL = {
 
 function QualityInspectionsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [standards, setStandards] = useState([])
   const [products, setProducts] = useState([])
   const [purchaseOrders, setPurchaseOrders] = useState([])
@@ -148,10 +150,12 @@ function QualityInspectionsPage() {
           <h2 className="edp-page-title">Inspeksi Kualitas</h2>
           <div className="text-secondary small">Catatan hasil pemeriksaan mutu, opsional terhubung ke Purchase Order atau Work Order.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || standards.length === 0} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Catat Inspeksi
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId || standards.length === 0} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Catat Inspeksi
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

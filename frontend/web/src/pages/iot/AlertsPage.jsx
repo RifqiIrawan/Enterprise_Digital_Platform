@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const STATUS_BADGE = {
   OPEN: 'text-bg-danger',
@@ -16,6 +17,7 @@ const SEVERITY_BADGE = {
 
 function AlertsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -73,12 +75,12 @@ function AlertsPage() {
       cellClassName: 'text-end',
       render: (a) => (
         <div className="d-flex gap-1 justify-content-end">
-          {a.status === 'OPEN' && (
+          {can('update') && a.status === 'OPEN' && (
             <button type="button" className="btn btn-sm btn-outline-warning" disabled={actingId === a.id} onClick={() => handleAction(a.id, 'acknowledge')}>
               Acknowledge
             </button>
           )}
-          {(a.status === 'OPEN' || a.status === 'ACKNOWLEDGED') && (
+          {can('update') && (a.status === 'OPEN' || a.status === 'ACKNOWLEDGED') && (
             <button type="button" className="btn btn-sm btn-outline-success" disabled={actingId === a.id} onClick={() => handleAction(a.id, 'resolve')}>
               Resolve
             </button>

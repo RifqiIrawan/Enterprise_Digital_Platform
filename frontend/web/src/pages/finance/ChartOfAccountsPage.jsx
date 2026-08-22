@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { account_code: '', account_name: '', account_type: 'ASSET' }
 const ACCOUNT_TYPES = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE']
@@ -17,6 +18,7 @@ const TYPE_BADGE = {
 
 function ChartOfAccountsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -91,15 +93,17 @@ function ChartOfAccountsPage() {
           <h2 className="edp-page-title">Chart of Accounts</h2>
           <div className="text-secondary small">Master akun untuk General Ledger &amp; Invoices.</div>
         </div>
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          disabled={!companyId}
-          onClick={() => setCreating(true)}
-        >
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Account
-        </button>
+        {can('create') && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={!companyId}
+            onClick={() => setCreating(true)}
+          >
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Account
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

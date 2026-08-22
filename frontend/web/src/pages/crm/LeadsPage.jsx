@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { first_name: '', last_name: '', company_name: '', email: '', phone: '', notes: '' }
 
@@ -28,6 +29,7 @@ const SOURCE_LABELS = {
 
 function LeadsPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -161,12 +163,12 @@ function LeadsPage() {
       cellClassName: 'text-end',
       render: (l) => (
         <div className="d-flex gap-1 justify-content-end">
-          {l.status === 'QUALIFIED' && (
+          {can('update') && l.status === 'QUALIFIED' && (
             <button type="button" className="btn btn-sm btn-outline-success" disabled={convertingId === l.id} onClick={() => handleConvert(l)}>
               {convertingId === l.id ? 'Memproses...' : 'Convert'}
             </button>
           )}
-          {OPEN_STATUSES.includes(l.status) && (
+          {OPEN_STATUSES.includes(l.status) && can('update') && (
             <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(l)}>
               <i className="bi bi-pencil" />
             </button>
@@ -183,10 +185,12 @@ function LeadsPage() {
           <h2 className="edp-page-title">Leads</h2>
           <div className="text-secondary small">Prospek awal -- kualifikasi lalu konversi menjadi Account, Contact, dan Opportunity.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Lead
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Lead
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const emptyForm = { reference_type: 'LEAD', reference_id: '', activity_type: 'CALL', subject: '', description: '', due_date: '' }
 
@@ -16,6 +17,7 @@ const ACTIVITY_TYPE_BADGE = {
 
 function ActivitiesPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [leads, setLeads] = useState([])
   const [accounts, setAccounts] = useState([])
   const [contacts, setContacts] = useState([])
@@ -60,9 +62,13 @@ function ActivitiesPage() {
       case 'LEAD':
         return leads.map((l) => ({ id: l.id, label: `${l.first_name} ${l.last_name} (${l.lead_number})` }))
       case 'ACCOUNT':
-        return accounts.map((a) => ({ id: a.id, label: a.name }))
+        return accounts.map((a) => ({ id: a.id, label: a.name, inactive: a.status !== 'ACTIVE' }))
       case 'CONTACT':
-        return contacts.map((c) => ({ id: c.id, label: `${c.first_name} ${c.last_name}` }))
+        return contacts.map((c) => ({
+          id: c.id,
+          label: `${c.first_name} ${c.last_name}`,
+          inactive: c.status !== 'ACTIVE',
+        }))
       case 'OPPORTUNITY':
         return opportunities.map((o) => ({ id: o.id, label: o.name }))
       default:
@@ -186,14 +192,16 @@ function ActivitiesPage() {
       cellClassName: 'text-end',
       render: (a) => (
         <div className="d-flex gap-1 justify-content-end">
-          {a.activity_type === 'TASK' && (
+          {can('update') && a.activity_type === 'TASK' && (
             <button type="button" className="btn btn-sm btn-outline-success" onClick={() => toggleDone(a)}>
               {a.is_done ? 'Buka Lagi' : 'Selesai'}
             </button>
           )}
-          <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(a)}>
-            <i className="bi bi-pencil" />
-          </button>
+          {can('update') && (
+            <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(a)}>
+              <i className="bi bi-pencil" />
+            </button>
+          )}
         </div>
       ),
     },
@@ -206,10 +214,12 @@ function ActivitiesPage() {
           <h2 className="edp-page-title">Activities</h2>
           <div className="text-secondary small">Log call/email/meeting/note/task terhadap lead, account, contact, atau opportunity.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Activity
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Activity
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
@@ -260,7 +270,12 @@ function ActivitiesPage() {
                       required
                     >
                       <option value="">Pilih...</option>
-                      {referenceOptionsFor(form.reference_type).map((opt) => (
+                      {referenceOptionsFor(form.reference_type)
+                        // Yang nonaktif tetap dipakai untuk MELABELI baris lama
+                        // di tabel (lewat referenceLabel), cuma tidak ditawarkan
+                        // lagi untuk activity baru -- backend juga menolaknya.
+                        .filter((opt) => !opt.inactive || opt.id === form.reference_id)
+                        .map((opt) => (
                         <option key={opt.id} value={opt.id}>{opt.label}</option>
                       ))}
                     </select>
