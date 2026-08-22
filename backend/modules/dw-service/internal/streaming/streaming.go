@@ -40,6 +40,16 @@ var topicHandlers = map[string]handlerFn{
 	// HR: payroll run di-post → extract semua details-nya
 	"hr.payroll.posted": handleHRPayrollPosted,
 
+	// HR cuti: seluruh keputusan atas pengajuan (disetujui/ditolak/dibatalkan)
+	// mengubah status yang ikut dianalisis, jadi ketiganya di-extract ulang.
+	"hr.leave.approved":  handleHRLeaveEvent,
+	"hr.leave.rejected":  handleHRLeaveEvent,
+	"hr.leave.cancelled": handleHRLeaveEvent,
+
+	// HR KPI: penilaian disetujui atau ditolak → nilai finalnya berubah arti
+	"hr.kpi_review.approved": handleHRKPIReviewEvent,
+	"hr.kpi_review.rejected": handleHRKPIReviewEvent,
+
 	// Purchasing: PO diterima atau di-invoice → status berubah, extract ulang lines
 	"purchasing.order.received": handlePurchasingOrderEvent,
 	"purchasing.order.invoiced": handlePurchasingOrderEvent,

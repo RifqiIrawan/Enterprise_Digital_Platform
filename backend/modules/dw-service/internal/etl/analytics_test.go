@@ -721,3 +721,255 @@ func TestFleetDeliveryMonthlySummary_SubHourDeliveryIsNotZero(t *testing.T) {
 		t.Errorf("avg_delivery_hours = %v, want 0.5 (30 minutes must not truncate to 0)", *summary[0].AvgDeliveryHours)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// HR — ringkasan cuti & KPI
+// ---------------------------------------------------------------------------
+
+func hrLeave(companyID uuid.UUID, leaveType, status string, days int16, start string) ch.HRLeaveRow {
+	d, err := time.Parse("2006-01-02", start)
+	if err != nil {
+		panic(err)
+	}
+	return ch.HRLeaveRow{
+		LeaveID: uuid.New(), CompanyID: companyID, EmployeeID: uuid.New(),
+		EmployeeCode: "EMP-X", EmployeeName: "Test", Department: "HR",
+		LeaveType: leaveType, Status: status, StartDate: d, EndDate: d.AddDate(0, 0, int(days)-1),
+		TotalDays: days, CreatedAt: d, UpdatedAt: d,
+	}
+}
+
+// Jumlah PENGAJUAN menghitung semua status (itu beban administrasi yang nyata),
+// tapi jumlah HARI hanya dari yang APPROVED -- cuti yang ditolak tidak pernah
+// benar-benar diambil.
+func TestHRLeaveMonthlySummary_CountsDaysFromApprovedOnly(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	rows := []ch.HRLeaveRow{
+		hrLeave(companyID, "ANNUAL", "APPROVED", 3, "2026-08-17"),
+		hrLeave(companyID, "SICK", "APPROVED", 2, "2026-08-10"),
+		hrLeave(companyID, "UNPAID", "APPROVED", 1, "2026-08-05"),
+		hrLeave(companyID, "MATERNITY", "APPROVED", 5, "2026-08-03"),
+		// Tidak boleh menambah hari, tapi tetap terhitung sebagai pengajuan.
+		hrLeave(companyID, "ANNUAL", "REJECTED", 4, "2026-08-20"),
+		hrLeave(companyID, "ANNUAL", "CANCELLED", 6, "2026-08-24"),
+		// Bulan lain.
+		hrLeave(companyID, "ANNUAL", "APPROVED", 2, "2026-09-07"),
+	}
+	if err := chClient.InsertHRLeaveRequests(ctx, rows, time.Now()); err != nil {
+		t.Fatalf("InsertHRLeaveRequests: %v", err)
+	}
+
+	summary, err := chClient.HRLeaveMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("HRLeaveMonthlySummary: %v", err)
+	}
+	if len(summary) != 2 {
+		t.Fatalf("expected 2 bulan, got %d (%+v)", len(summary), summary)
+	}
+
+	agustus := summary[0]
+	if agustus.TotalRequests != 6 {
+		t.Errorf("total_requests = %d, want 6 (semua status)", agustus.TotalRequests)
+	}
+	if agustus.ApprovedCount != 4 {
+		t.Errorf("approved_count = %d, want 4", agustus.ApprovedCount)
+	}
+	if agustus.AnnualDays != 3 {
+		t.Errorf("annual_days = %d, want 3 (yang REJECTED & CANCELLED tidak ikut)", agustus.AnnualDays)
+	}
+	if agustus.SickDays != 2 || agustus.UnpaidDays != 1 {
+		t.Errorf("sick/unpaid = %d/%d, want 2/1", agustus.SickDays, agustus.UnpaidDays)
+	}
+	// MATERNITY masuk "lainnya" -- kolomnya sengaja tidak dipecah per jenis
+	// langka supaya grafiknya tetap terbaca.
+	if agustus.OtherDays != 5 {
+		t.Errorf("other_days = %d, want 5 (MATERNITY)", agustus.OtherDays)
+	}
+}
+
+func TestHRLeaveMonthlySummary_NoDataReturnsEmpty(t *testing.T) {
+	summary, err := chClient.HRLeaveMonthlySummary(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("HRLeaveMonthlySummary: %v", err)
+	}
+	if len(summary) != 0 {
+		t.Fatalf("expected kosong untuk company yang tidak dikenal, got %d", len(summary))
+	}
+}
+
+func hrKPI(companyID uuid.UUID, period, status string, score float64, rating string) ch.HRKPIReviewRow {
+	return ch.HRKPIReviewRow{
+		ReviewID: uuid.New(), CompanyID: companyID, EmployeeID: uuid.New(),
+		EmployeeCode: "EMP-X", EmployeeName: "Test", Department: "Sales",
+		Period: period, Status: status, TotalScore: score, Rating: rating,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+}
+
+// Rata-rata & sebaran rating HANYA dari penilaian APPROVED: yang DRAFT belum
+// final dan yang REJECTED dinyatakan tidak sah oleh penyetujunya.
+func TestHRKPISummary_AveragesApprovedOnly(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	rows := []ch.HRKPIReviewRow{
+		hrKPI(companyID, "2026-08", "APPROVED", 90, "SANGAT BAIK"),
+		hrKPI(companyID, "2026-08", "APPROVED", 80, "BAIK"),
+		hrKPI(companyID, "2026-08", "DRAFT", 10, "PERLU PERBAIKAN"),
+		hrKPI(companyID, "2026-08", "REJECTED", 20, "PERLU PERBAIKAN"),
+	}
+	if err := chClient.InsertHRKPIReviews(ctx, rows, time.Now()); err != nil {
+		t.Fatalf("InsertHRKPIReviews: %v", err)
+	}
+
+	summary, err := chClient.HRKPISummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("HRKPISummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected 1 periode, got %d (%+v)", len(summary), summary)
+	}
+
+	p := summary[0]
+	if p.ReviewCount != 4 || p.ApprovedCount != 2 {
+		t.Errorf("review/approved = %d/%d, want 4/2", p.ReviewCount, p.ApprovedCount)
+	}
+	if p.AvgScore == nil {
+		t.Fatal("avg_score nil padahal ada 2 penilaian APPROVED")
+	}
+	if *p.AvgScore != 85 {
+		t.Errorf("avg_score = %v, want 85 (rata-rata 90 & 80, DRAFT/REJECTED diabaikan)", *p.AvgScore)
+	}
+	if p.SangatBaikCount != 1 || p.BaikCount != 1 {
+		t.Errorf("sebaran rating = %d/%d, want 1/1", p.SangatBaikCount, p.BaikCount)
+	}
+	if p.PerluPerbaikan != 0 {
+		t.Errorf("perlu_perbaikan = %d, want 0 (yang DRAFT & REJECTED tidak ikut)", p.PerluPerbaikan)
+	}
+}
+
+// Periode yang belum punya satu pun penilaian disetujui memang tidak punya
+// rata-rata -- nil, bukan 0 yang akan terbaca "semua orang nol".
+func TestHRKPISummary_AvgIsNullWhenNothingApproved(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	if err := chClient.InsertHRKPIReviews(ctx, []ch.HRKPIReviewRow{
+		hrKPI(companyID, "2026-10", "DRAFT", 70, "CUKUP"),
+	}, time.Now()); err != nil {
+		t.Fatalf("InsertHRKPIReviews: %v", err)
+	}
+
+	summary, err := chClient.HRKPISummary(ctx, companyID)
+	if err != nil {
+		t.Fatalf("HRKPISummary: %v", err)
+	}
+	if len(summary) != 1 {
+		t.Fatalf("expected 1 periode, got %d", len(summary))
+	}
+	if summary[0].AvgScore != nil {
+		t.Fatalf("expected avg_score nil, got %v", summary[0].AvgScore)
+	}
+}
+
+func hrKPIWithDept(companyID uuid.UUID, period, status, department string, score float64) ch.HRKPIReviewRow {
+	r := hrKPI(companyID, period, status, score, "BAIK")
+	r.Department = department
+	return r
+}
+
+// Perbandingan antar departemen hanya sah dalam SATU periode: target & bobot
+// indikator bisa berbeda antar periode.
+func TestHRKPIDepartmentSummary_GroupsOneePeriodOnly(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	rows := []ch.HRKPIReviewRow{
+		hrKPIWithDept(companyID, "2026-08", "APPROVED", "Sales", 90),
+		hrKPIWithDept(companyID, "2026-08", "APPROVED", "Sales", 70),
+		hrKPIWithDept(companyID, "2026-08", "APPROVED", "Finance", 85),
+		// Tidak boleh ikut: periode lain, status belum final, dan penilaian ditolak.
+		hrKPIWithDept(companyID, "2026-07", "APPROVED", "Sales", 10),
+		hrKPIWithDept(companyID, "2026-08", "DRAFT", "Sales", 10),
+		hrKPIWithDept(companyID, "2026-08", "REJECTED", "Finance", 10),
+	}
+	if err := chClient.InsertHRKPIReviews(ctx, rows, time.Now()); err != nil {
+		t.Fatalf("InsertHRKPIReviews: %v", err)
+	}
+
+	summary, err := chClient.HRKPIDepartmentSummary(ctx, companyID, "2026-08")
+	if err != nil {
+		t.Fatalf("HRKPIDepartmentSummary: %v", err)
+	}
+	if len(summary) != 2 {
+		t.Fatalf("expected 2 departemen, got %d (%+v)", len(summary), summary)
+	}
+
+	// ORDER BY avg_score DESC: Finance (85) di atas Sales (80).
+	if summary[0].Department != "Finance" || summary[1].Department != "Sales" {
+		t.Fatalf("urutan seharusnya Finance lalu Sales, got %s lalu %s", summary[0].Department, summary[1].Department)
+	}
+	sales := summary[1]
+	if sales.ApprovedCount != 2 || *sales.AvgScore != 80 {
+		t.Errorf("Sales: count/avg = %d/%v, want 2/80", sales.ApprovedCount, *sales.AvgScore)
+	}
+	// Min & max yang membedakan "80 karena semua 80" dari "80 karena 70 dan 90".
+	if !sales.MinScore.Equal(decimal.NewFromInt(70)) || !sales.MaxScore.Equal(decimal.NewFromInt(90)) {
+		t.Errorf("Sales: min/max = %v/%v, want 70/90", sales.MinScore, sales.MaxScore)
+	}
+}
+
+// Karyawan tanpa departemen dikelompokkan, bukan dibuang -- kalau dibuang,
+// jumlah orang di grafik tidak cocok dengan ringkasan periode yang sama.
+func TestHRKPIDepartmentSummary_KeepsEmptyDepartment(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	if err := chClient.InsertHRKPIReviews(ctx, []ch.HRKPIReviewRow{
+		hrKPIWithDept(companyID, "2026-08", "APPROVED", "", 65),
+	}, time.Now()); err != nil {
+		t.Fatalf("InsertHRKPIReviews: %v", err)
+	}
+
+	summary, err := chClient.HRKPIDepartmentSummary(ctx, companyID, "2026-08")
+	if err != nil {
+		t.Fatalf("HRKPIDepartmentSummary: %v", err)
+	}
+	if len(summary) != 1 || summary[0].Department != "(tanpa departemen)" {
+		t.Fatalf("expected kelompok '(tanpa departemen)', got %+v", summary)
+	}
+}
+
+// LatestKPIPeriod hanya melihat penilaian yang sudah disetujui: periode yang
+// baru berisi draft belum layak jadi default dashboard.
+func TestLatestKPIPeriod_IgnoresUnapprovedPeriods(t *testing.T) {
+	ctx := context.Background()
+	companyID := uuid.New()
+
+	if err := chClient.InsertHRKPIReviews(ctx, []ch.HRKPIReviewRow{
+		hrKPIWithDept(companyID, "2026-08", "APPROVED", "Sales", 80),
+		hrKPIWithDept(companyID, "2026-12", "DRAFT", "Sales", 95),
+	}, time.Now()); err != nil {
+		t.Fatalf("InsertHRKPIReviews: %v", err)
+	}
+
+	period, err := chClient.LatestKPIPeriod(ctx, companyID)
+	if err != nil {
+		t.Fatalf("LatestKPIPeriod: %v", err)
+	}
+	if period != "2026-08" {
+		t.Fatalf("expected 2026-08, got %q", period)
+	}
+}
+
+func TestLatestKPIPeriod_EmptyWhenNothingApproved(t *testing.T) {
+	period, err := chClient.LatestKPIPeriod(context.Background(), uuid.New())
+	if err != nil {
+		t.Fatalf("LatestKPIPeriod: %v", err)
+	}
+	if period != "" {
+		t.Fatalf("expected string kosong untuk company tanpa data, got %q", period)
+	}
+}

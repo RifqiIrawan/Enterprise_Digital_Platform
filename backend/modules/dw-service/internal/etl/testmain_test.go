@@ -168,6 +168,37 @@ CREATE TABLE IF NOT EXISTS payroll_details (
 	created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS leave_requests (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	employee_id UUID NOT NULL REFERENCES employees(id),
+	employee_name VARCHAR(200) NOT NULL,
+	leave_type VARCHAR(20) NOT NULL,
+	start_date DATE NOT NULL,
+	end_date DATE NOT NULL,
+	total_days SMALLINT NOT NULL DEFAULT 0,
+	status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+	decided_at TIMESTAMPTZ,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS kpi_reviews (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	employee_id UUID NOT NULL REFERENCES employees(id),
+	employee_name VARCHAR(200) NOT NULL,
+	period VARCHAR(7) NOT NULL,
+	status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+	total_score NUMERIC(6,2) NOT NULL DEFAULT 0,
+	rating VARCHAR(30) NOT NULL DEFAULT '',
+	decided_at TIMESTAMPTZ,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS suppliers (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	supplier_code VARCHAR(20) NOT NULL,

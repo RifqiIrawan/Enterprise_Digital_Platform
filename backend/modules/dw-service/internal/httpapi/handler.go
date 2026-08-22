@@ -33,6 +33,17 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /analytics/crm-pipeline-summary", h.crmPipelineSummary)
 	mux.HandleFunc("GET /analytics/project-cost-summary", h.projectCostSummary)
 	mux.HandleFunc("GET /analytics/fleet-delivery-monthly-summary", h.fleetDeliveryMonthlySummary)
+	mux.HandleFunc("GET /analytics/hr-leave-monthly-summary", h.hrLeaveMonthlySummary)
+	mux.HandleFunc("GET /analytics/hr-kpi-summary", h.hrKPISummary)
+	mux.HandleFunc("GET /analytics/hr-kpi-department-summary", h.hrKPIDepartmentSummary)
+	mux.HandleFunc("GET /analytics/qc-monthly-summary", h.qcMonthlySummary)
+	mux.HandleFunc("GET /analytics/production-monthly-summary", h.productionMonthlySummary)
+	mux.HandleFunc("GET /analytics/purchasing-supplier-summary", h.purchasingSupplierSummary)
+	mux.HandleFunc("GET /analytics/ticketing-monthly-summary", h.ticketingMonthlySummary)
+	mux.HandleFunc("GET /analytics/payroll-period-summary", h.payrollPeriodSummary)
+	mux.HandleFunc("GET /analytics/asset-maintenance-summary", h.assetMaintenanceSummary)
+	mux.HandleFunc("GET /analytics/iot-device-summary", h.iotDeviceSummary)
+	mux.HandleFunc("GET /analytics/ecommerce-monthly-summary", h.ecommerceMonthlySummary)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +90,18 @@ func RunSync(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake
 		results = append(results, syncResult{Fact: "hr_payroll_details", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "hr_payroll_details", Rows: n})
+	}
+
+	if n, err := etl.SyncHRLeave(ctx, sources.HR, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "hr_leave_requests", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "hr_leave_requests", Rows: n})
+	}
+
+	if n, err := etl.SyncHRKPI(ctx, sources.HR, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "hr_kpi_reviews", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "hr_kpi_reviews", Rows: n})
 	}
 
 	if n, err := etl.SyncPurchasing(ctx, sources.Purchasing, dest, lake); err != nil {

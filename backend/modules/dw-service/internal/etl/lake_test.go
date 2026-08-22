@@ -73,3 +73,118 @@ func TestSyncFinance_WritesToDataLake(t *testing.T) {
 		t.Errorf("line_id %s not found in latest lake object %s", lineID, latestKey)
 	}
 }
+
+// TestSyncHRKPI_WritesToDataLake adalah bukti yang sama untuk salah satu dari
+// dua fact table HR yang baru (cuti & KPI): dual-write ke bronze layer bukan
+// hanya "tidak menggagalkan sync" (lake error memang cuma di-log), tapi
+// benar-benar menulis barisnya. Guard MinIO-nya di dalam test, alasannya sama
+// seperti TestSyncFinance_WritesToDataLake di atas.
+func TestSyncHRKPI_WritesToDataLake(t *testing.T) {
+	ctx := context.Background()
+	lake, err := datalake.Connect(ctx, getEnv("DW_TEST_MINIO_ENDPOINT", "localhost:9004"),
+		getEnv("DW_TEST_MINIO_ACCESS_KEY", "minioadmin"),
+		getEnv("DW_TEST_MINIO_SECRET_KEY", "minioadmin"),
+		getEnv("DW_TEST_MINIO_BUCKET", "dw-lake-test"), false)
+	if err != nil {
+		t.Skipf("SKIP: datalake tests need a local MinIO: %v", err)
+	}
+
+	companyID := uuid.New()
+	reviewID := mustSeedKPIReview(t, companyID, "2026-11", "APPROVED", 77.5, "BAIK")
+
+	if _, err := SyncHRKPI(ctx, sourcePool, chClient, lake); err != nil {
+		t.Fatalf("SyncHRKPI: %v", err)
+	}
+
+	keys, err := lake.ListKeys(ctx, hrKPISourceTable+"/")
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
+	}
+	if len(keys) == 0 {
+		t.Fatalf("expected at least 1 object under %s/, got none", hrKPISourceTable)
+	}
+
+	latestKey := keys[len(keys)-1]
+	data, err := lake.Get(ctx, latestKey)
+	if err != nil {
+		t.Fatalf("Get %s: %v", latestKey, err)
+	}
+
+	found := false
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		var row struct {
+			ReviewID   uuid.UUID
+			Period     string
+			Rating     string
+			TotalScore float64
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatalf("unmarshal lake line %q: %v", line, err)
+		}
+		if row.ReviewID == reviewID {
+			found = true
+			if row.Period != "2026-11" || row.Rating != "BAIK" || row.TotalScore != 77.5 {
+				t.Errorf("baris di lake tidak sesuai: %+v", row)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("review_id %s tidak ada di object terbaru %s", reviewID, latestKey)
+	}
+}
+
+// Pasangannya untuk cuti, dengan pemeriksaan yang sedikit berbeda: yang dijaga
+// di sini adalah status non-APPROVED ikut sampai ke bronze layer, sama seperti
+// yang sampai ke ClickHouse.
+func TestSyncHRLeave_WritesToDataLake(t *testing.T) {
+	ctx := context.Background()
+	lake, err := datalake.Connect(ctx, getEnv("DW_TEST_MINIO_ENDPOINT", "localhost:9004"),
+		getEnv("DW_TEST_MINIO_ACCESS_KEY", "minioadmin"),
+		getEnv("DW_TEST_MINIO_SECRET_KEY", "minioadmin"),
+		getEnv("DW_TEST_MINIO_BUCKET", "dw-lake-test"), false)
+	if err != nil {
+		t.Skipf("SKIP: datalake tests need a local MinIO: %v", err)
+	}
+
+	companyID := uuid.New()
+	leaveID := mustSeedLeave(t, companyID, "UNPAID", "CANCELLED", 4)
+
+	if _, err := SyncHRLeave(ctx, sourcePool, chClient, lake); err != nil {
+		t.Fatalf("SyncHRLeave: %v", err)
+	}
+
+	keys, err := lake.ListKeys(ctx, hrLeaveSourceTable+"/")
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
+	}
+	if len(keys) == 0 {
+		t.Fatalf("expected at least 1 object under %s/, got none", hrLeaveSourceTable)
+	}
+
+	latestKey := keys[len(keys)-1]
+	data, err := lake.Get(ctx, latestKey)
+	if err != nil {
+		t.Fatalf("Get %s: %v", latestKey, err)
+	}
+
+	found := false
+	for _, line := range strings.Split(strings.TrimRight(string(data), "\n"), "\n") {
+		var row struct {
+			LeaveID   uuid.UUID
+			LeaveType string
+			Status    string
+		}
+		if err := json.Unmarshal([]byte(line), &row); err != nil {
+			t.Fatalf("unmarshal lake line %q: %v", line, err)
+		}
+		if row.LeaveID == leaveID {
+			found = true
+			if row.LeaveType != "UNPAID" || row.Status != "CANCELLED" {
+				t.Errorf("baris di lake tidak sesuai: %+v", row)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("leave_id %s tidak ada di object terbaru %s", leaveID, latestKey)
+	}
+}

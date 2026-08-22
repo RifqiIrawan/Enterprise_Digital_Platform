@@ -677,3 +677,88 @@ func syncProjectTimesheets(ctx context.Context, raw []byte, sources *sourcedb.Po
 	}
 	return insertAndLog(ctx, dest, lake, "timesheets", out, dest.InsertProjectTimesheets)
 }
+
+// ---------------------------------------------------------------------------
+// HR — cuti & penilaian KPI
+//
+// Keduanya cuma berubah lewat transisi status, jadi satu handler per entitas
+// cukup: baris yang sama di-extract ulang apa adanya dan ReplacingMergeTree
+// yang menggantikan versi lamanya. Cuti yang DITOLAK/DIBATALKAN pun ikut
+// dikirim -- fact_hr_leave_requests memang menyimpan seluruh status, dan
+// penyaringannya baru dilakukan di query ringkasan.
+// ---------------------------------------------------------------------------
+
+const hrLeaveSingleSQL = `
+	SELECT lr.id, lr.company_id, lr.branch_id, lr.employee_id, e.employee_code,
+	       lr.employee_name, COALESCE(e.department, ''), lr.leave_type, lr.status,
+	       lr.start_date, lr.end_date, lr.total_days, lr.decided_at,
+	       lr.created_at, lr.updated_at
+	FROM leave_requests lr
+	JOIN employees e ON e.id = lr.employee_id
+	WHERE lr.id = $1`
+
+func handleHRLeaveEvent(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) error {
+	id, err := parseEntityID(raw)
+	if err != nil {
+		return err
+	}
+	rows, err := sources.HR.Query(ctx, hrLeaveSingleSQL, id)
+	if err != nil {
+		return fmt.Errorf("query leave request %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	var out []ch.HRLeaveRow
+	for rows.Next() {
+		var r ch.HRLeaveRow
+		if err := rows.Scan(
+			&r.LeaveID, &r.CompanyID, &r.BranchID, &r.EmployeeID, &r.EmployeeCode,
+			&r.EmployeeName, &r.Department, &r.LeaveType, &r.Status,
+			&r.StartDate, &r.EndDate, &r.TotalDays, &r.DecidedAt, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return fmt.Errorf("scan hr leave row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate hr leave rows: %w", err)
+	}
+	return insertAndLog(ctx, dest, lake, "hr_leave_requests", out, dest.InsertHRLeaveRequests)
+}
+
+const hrKPISingleSQL = `
+	SELECT kr.id, kr.company_id, kr.branch_id, kr.employee_id, e.employee_code,
+	       kr.employee_name, COALESCE(e.department, ''), kr.period, kr.status,
+	       kr.total_score, kr.rating, kr.decided_at, kr.created_at, kr.updated_at
+	FROM kpi_reviews kr
+	JOIN employees e ON e.id = kr.employee_id
+	WHERE kr.id = $1`
+
+func handleHRKPIReviewEvent(ctx context.Context, raw []byte, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) error {
+	id, err := parseEntityID(raw)
+	if err != nil {
+		return err
+	}
+	rows, err := sources.HR.Query(ctx, hrKPISingleSQL, id)
+	if err != nil {
+		return fmt.Errorf("query kpi review %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	var out []ch.HRKPIReviewRow
+	for rows.Next() {
+		var r ch.HRKPIReviewRow
+		if err := rows.Scan(
+			&r.ReviewID, &r.CompanyID, &r.BranchID, &r.EmployeeID, &r.EmployeeCode,
+			&r.EmployeeName, &r.Department, &r.Period, &r.Status,
+			&r.TotalScore, &r.Rating, &r.DecidedAt, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return fmt.Errorf("scan hr kpi row: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate hr kpi rows: %w", err)
+	}
+	return insertAndLog(ctx, dest, lake, "hr_kpi_reviews", out, dest.InsertHRKPIReviews)
+}

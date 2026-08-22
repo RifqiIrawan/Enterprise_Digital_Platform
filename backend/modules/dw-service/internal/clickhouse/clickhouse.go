@@ -221,6 +221,23 @@ CREATE TABLE IF NOT EXISTS fact_project_timesheets (
 ) ENGINE = ReplacingMergeTree(synced_at)
 PARTITION BY toYYYYMM(work_date) ORDER BY (company_id, timesheet_id);
 
+CREATE TABLE IF NOT EXISTS fact_hr_leave_requests (
+    leave_id UUID, company_id UUID, branch_id Nullable(UUID),
+    employee_id UUID, employee_code String, employee_name String, department String,
+    leave_type String, status String, start_date Date, end_date Date,
+    total_days Int16, decided_at Nullable(DateTime),
+    created_at DateTime, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(start_date) ORDER BY (company_id, leave_id);
+
+CREATE TABLE IF NOT EXISTS fact_hr_kpi_reviews (
+    review_id UUID, company_id UUID, branch_id Nullable(UUID),
+    employee_id UUID, employee_code String, employee_name String, department String,
+    period String, status String, total_score Decimal(6,2), rating String,
+    decided_at Nullable(DateTime), created_at DateTime, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY period ORDER BY (company_id, review_id);
+
 CREATE TABLE IF NOT EXISTS etl_sync_state (
     source_table String, last_synced_at DateTime
 ) ENGINE = ReplacingMergeTree(last_synced_at) ORDER BY source_table;
@@ -598,6 +615,610 @@ func (c *Client) FleetDeliveryMonthlySummary(ctx context.Context, companyID uuid
 	return out, rows.Err()
 }
 
+type HRLeaveMonthlySummaryRow struct {
+	Month         string `json:"month"`
+	TotalRequests uint64 `json:"total_requests"`
+	ApprovedCount uint64 `json:"approved_count"`
+	// Int64, bukan uint64: sumIf() atas kolom Int16 di ClickHouse menghasilkan
+	// Int64, dan driver-nya menolak memindahkannya ke uint64.
+	AnnualDays int64 `json:"annual_days"`
+	SickDays   int64 `json:"sick_days"`
+	UnpaidDays int64 `json:"unpaid_days"`
+	OtherDays  int64 `json:"other_days"`
+}
+
+// HRLeaveMonthlySummary meringkas pengajuan cuti per bulan dari
+// fact_hr_leave_requests.
+//
+// Jumlah pengajuan menghitung SELURUH status (termasuk yang ditolak dan
+// dibatalkan) -- itu memang beban administrasi yang nyata. Sebaliknya jumlah
+// HARI hanya dihitung dari yang APPROVED: cuti yang ditolak tidak pernah
+// benar-benar diambil, dan menjumlahkannya akan membuat rekap "berapa hari
+// karyawan tidak masuk" jadi salah.
+//
+// Bulannya diambil dari start_date, bukan tanggal pengajuan: yang menarik untuk
+// dianalisis adalah kapan orangnya tidak masuk, bukan kapan formulirnya diisi.
+func (c *Client) HRLeaveMonthlySummary(ctx context.Context, companyID uuid.UUID) ([]HRLeaveMonthlySummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(start_date)) AS month,
+			count() AS total_requests,
+			countIf(status = 'APPROVED') AS approved_count,
+			sumIf(total_days, status = 'APPROVED' AND leave_type = 'ANNUAL') AS annual_days,
+			sumIf(total_days, status = 'APPROVED' AND leave_type = 'SICK') AS sick_days,
+			sumIf(total_days, status = 'APPROVED' AND leave_type = 'UNPAID') AS unpaid_days,
+			sumIf(total_days, status = 'APPROVED' AND leave_type NOT IN ('ANNUAL', 'SICK', 'UNPAID')) AS other_days
+		FROM fact_hr_leave_requests FINAL
+		WHERE company_id = ?
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query hr leave monthly summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []HRLeaveMonthlySummaryRow{}
+	for rows.Next() {
+		var r HRLeaveMonthlySummaryRow
+		if err := rows.Scan(&r.Month, &r.TotalRequests, &r.ApprovedCount,
+			&r.AnnualDays, &r.SickDays, &r.UnpaidDays, &r.OtherDays); err != nil {
+			return nil, fmt.Errorf("scan hr leave monthly summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type HRKPISummaryRow struct {
+	Period        string `json:"period"`
+	ReviewCount   uint64 `json:"review_count"`
+	ApprovedCount uint64 `json:"approved_count"`
+	// *float64, bukan *decimal.Decimal: avg() atas kolom Decimal menghasilkan
+	// Float64 di ClickHouse -- pola yang sama dengan AvgDeliveryHours di fleet.
+	AvgScore        *float64 `json:"avg_score"`
+	SangatBaikCount uint64   `json:"sangat_baik_count"`
+	BaikCount       uint64   `json:"baik_count"`
+	CukupCount      uint64   `json:"cukup_count"`
+	PerluPerbaikan  uint64   `json:"perlu_perbaikan_count"`
+}
+
+// HRKPISummary meringkas penilaian KPI per periode dari fact_hr_kpi_reviews.
+//
+// Rata-rata nilai DAN sebaran rating dihitung HANYA dari penilaian APPROVED.
+// Penilaian yang masih DRAFT nilainya belum final (angkanya berubah tiap kali
+// realisasi diisi ulang), dan yang REJECTED justru dinyatakan tidak sah oleh
+// penyetujunya -- memasukkan keduanya akan menggeser rata-rata perusahaan
+// dengan angka yang belum tentu pernah berlaku.
+//
+// AvgScore Nullable: periode yang belum punya satu pun penilaian disetujui
+// memang tidak punya rata-rata. 0 akan terbaca sebagai "semua orang nol",
+// bukan "belum ada yang final".
+func (c *Client) HRKPISummary(ctx context.Context, companyID uuid.UUID) ([]HRKPISummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			period,
+			count() AS review_count,
+			countIf(status = 'APPROVED') AS approved_count,
+			avgOrNullIf(total_score, status = 'APPROVED') AS avg_score,
+			countIf(status = 'APPROVED' AND rating = 'SANGAT BAIK') AS sangat_baik_count,
+			countIf(status = 'APPROVED' AND rating = 'BAIK') AS baik_count,
+			countIf(status = 'APPROVED' AND rating = 'CUKUP') AS cukup_count,
+			countIf(status = 'APPROVED' AND rating = 'PERLU PERBAIKAN') AS perlu_perbaikan_count
+		FROM fact_hr_kpi_reviews FINAL
+		WHERE company_id = ?
+		GROUP BY period
+		ORDER BY period
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query hr kpi summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []HRKPISummaryRow{}
+	for rows.Next() {
+		var r HRKPISummaryRow
+		if err := rows.Scan(&r.Period, &r.ReviewCount, &r.ApprovedCount, &r.AvgScore,
+			&r.SangatBaikCount, &r.BaikCount, &r.CukupCount, &r.PerluPerbaikan); err != nil {
+			return nil, fmt.Errorf("scan hr kpi summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type HRKPIDepartmentSummaryRow struct {
+	Period        string `json:"period"`
+	Department    string `json:"department"`
+	ApprovedCount uint64 `json:"approved_count"`
+	// Perhatikan bedanya: avg() atas kolom Decimal menghasilkan Float64,
+	// sementara min()/max() MEMPERTAHANKAN Decimal. Jadi tiga kolom yang
+	// secara konsep sama-sama "nilai" justru butuh dua tipe Go berbeda.
+	AvgScore *float64         `json:"avg_score"`
+	MinScore *decimal.Decimal `json:"min_score"`
+	MaxScore *decimal.Decimal `json:"max_score"`
+}
+
+// LatestKPIPeriod mengembalikan periode terakhir yang punya penilaian
+// APPROVED, atau "" kalau belum ada sama sekali. Dipakai supaya pemanggil
+// tidak perlu menebak periode mana yang sudah final.
+func (c *Client) LatestKPIPeriod(ctx context.Context, companyID uuid.UUID) (string, error) {
+	var period string
+	row := c.conn.QueryRow(ctx, `
+		SELECT max(period)
+		FROM fact_hr_kpi_reviews FINAL
+		WHERE company_id = ? AND status = 'APPROVED'
+	`, companyID)
+	if err := row.Scan(&period); err != nil {
+		return "", fmt.Errorf("query latest kpi period: %w", err)
+	}
+	return period, nil
+}
+
+// HRKPIDepartmentSummary membandingkan nilai KPI antar departemen pada SATU
+// periode. Perbandingan lintas departemen hanya masuk akal dalam periode yang
+// sama -- target dan bobot indikator bisa berbeda antar periode, jadi
+// menggabungkan beberapa periode dalam satu batang akan membandingkan angka
+// yang tidak sebanding.
+//
+// Min & max ikut dikembalikan, bukan hanya rata-rata: departemen dengan
+// rata-rata 80 yang isinya 79-81 sangat berbeda dari yang isinya 60-100, dan
+// perbedaan itu justru yang biasanya perlu ditindak.
+//
+// Karyawan tanpa departemen dikelompokkan sebagai "(tanpa departemen)" alih-alih
+// dibuang: kalau dibuang, jumlah orang di grafik tidak akan cocok dengan jumlah
+// penilaian di ringkasan periode yang sama.
+func (c *Client) HRKPIDepartmentSummary(ctx context.Context, companyID uuid.UUID, period string) ([]HRKPIDepartmentSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			period,
+			if(department = '', '(tanpa departemen)', department) AS dept,
+			count() AS approved_count,
+			avg(total_score) AS avg_score,
+			min(total_score) AS min_score,
+			max(total_score) AS max_score
+		FROM fact_hr_kpi_reviews FINAL
+		WHERE company_id = ? AND status = 'APPROVED' AND period = ?
+		GROUP BY period, dept
+		ORDER BY avg_score DESC
+	`, companyID, period)
+	if err != nil {
+		return nil, fmt.Errorf("query hr kpi department summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []HRKPIDepartmentSummaryRow{}
+	for rows.Next() {
+		var r HRKPIDepartmentSummaryRow
+		if err := rows.Scan(&r.Period, &r.Department, &r.ApprovedCount, &r.AvgScore, &r.MinScore, &r.MaxScore); err != nil {
+			return nil, fmt.Errorf("scan hr kpi department summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type QCMonthlySummaryRow struct {
+	Month          string          `json:"month"`
+	InspectionsQty uint64          `json:"inspection_count"`
+	PassCount      uint64          `json:"pass_count"`
+	FailCount      uint64          `json:"fail_count"`
+	PartialCount   uint64          `json:"partial_count"`
+	InspectedQty   decimal.Decimal `json:"inspected_quantity"`
+	FailedQty      decimal.Decimal `json:"failed_quantity"`
+	DefectRatePct  *float64        `json:"defect_rate_pct"`
+}
+
+// QCMonthlySummary meringkas inspeksi kualitas per bulan dari
+// fact_qc_inspections.
+//
+// Cacah hasil (PASS/FAIL/PARTIAL) DAN kuantitasnya sama-sama dikembalikan
+// karena keduanya menjawab pertanyaan berbeda: berapa banyak inspeksi yang
+// bermasalah, versus berapa banyak barang yang benar-benar gagal. Satu inspeksi
+// PARTIAL atas 1.000 unit bukan hal yang sama dengan satu inspeksi FAIL atas 2
+// unit.
+//
+// defect_rate_pct dihitung dari KUANTITAS (failed/inspected), bukan dari cacah
+// inspeksi, dan Nullable untuk bulan yang belum menginspeksi apa pun -- 0% akan
+// terbaca "tidak ada cacat", bukan "belum ada data".
+func (c *Client) QCMonthlySummary(ctx context.Context, companyID uuid.UUID) ([]QCMonthlySummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(inspection_date)) AS month,
+			count() AS inspection_count,
+			countIf(result = 'PASS') AS pass_count,
+			countIf(result = 'FAIL') AS fail_count,
+			countIf(result = 'PARTIAL') AS partial_count,
+			sum(inspected_quantity) AS inspected_total,
+			sum(failed_quantity) AS failed_total,
+			-- Alias TIDAK boleh sama dengan nama kolom: "sum(x) AS x" membuat
+			-- referensi x berikutnya menunjuk ke alias (yang sudah agregat), dan
+			-- ClickHouse menolaknya sebagai agregat di dalam agregat.
+			if(inspected_total > 0, toFloat64(failed_total) / toFloat64(inspected_total) * 100, NULL) AS defect_rate_pct
+		FROM fact_qc_inspections FINAL
+		WHERE company_id = ?
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query qc monthly summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []QCMonthlySummaryRow{}
+	for rows.Next() {
+		var r QCMonthlySummaryRow
+		if err := rows.Scan(&r.Month, &r.InspectionsQty, &r.PassCount, &r.FailCount, &r.PartialCount,
+			&r.InspectedQty, &r.FailedQty, &r.DefectRatePct); err != nil {
+			return nil, fmt.Errorf("scan qc monthly summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type ProductionMonthlySummaryRow struct {
+	Month           string          `json:"month"`
+	WorkOrderCount  uint64          `json:"work_order_count"`
+	CompletedCount  uint64          `json:"completed_count"`
+	QuantityPlanned decimal.Decimal `json:"quantity_planned"`
+	QuantityDone    decimal.Decimal `json:"quantity_produced"`
+	AchievementPct  *float64        `json:"achievement_pct"`
+}
+
+// ProductionMonthlySummary membandingkan rencana vs realisasi produksi per bulan
+// dari fact_production_work_orders.
+//
+// Realisasi dijumlahkan HANYA dari work order COMPLETED: quantity_produced pada
+// WO yang masih berjalan belum final (dan NULL untuk yang belum mulai), jadi
+// memasukkannya membuat pencapaian bulan berjalan terlihat lebih rendah dari
+// yang sebenarnya. Rencana sebaliknya dihitung dari SELURUH work order bulan itu
+// -- yang belum selesai tetap rencana yang sudah dijanjikan.
+//
+// Bulannya diambil dari planned_start_date: yang dibandingkan adalah rencana
+// bulan itu, bukan kapan barangnya akhirnya selesai.
+func (c *Client) ProductionMonthlySummary(ctx context.Context, companyID uuid.UUID) ([]ProductionMonthlySummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(planned_start_date)) AS month,
+			count() AS work_order_count,
+			countIf(status = 'COMPLETED') AS completed_count,
+			sum(quantity_planned) AS planned_total,
+			sumIf(ifNull(quantity_produced, toDecimal64(0, 2)), status = 'COMPLETED') AS produced_total,
+			-- Alias sengaja beda dari nama kolom, alasannya sama seperti di
+			-- QCMonthlySummary.
+			if(planned_total > 0, toFloat64(produced_total) / toFloat64(planned_total) * 100, NULL) AS achievement_pct
+		FROM fact_production_work_orders FINAL
+		WHERE company_id = ?
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query production monthly summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ProductionMonthlySummaryRow{}
+	for rows.Next() {
+		var r ProductionMonthlySummaryRow
+		if err := rows.Scan(&r.Month, &r.WorkOrderCount, &r.CompletedCount,
+			&r.QuantityPlanned, &r.QuantityDone, &r.AchievementPct); err != nil {
+			return nil, fmt.Errorf("scan production monthly summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type PurchasingSupplierSummaryRow struct {
+	SupplierCode string          `json:"supplier_code"`
+	SupplierName string          `json:"supplier_name"`
+	OrderCount   uint64          `json:"order_count"`
+	LineCount    uint64          `json:"line_count"`
+	TotalSpend   decimal.Decimal `json:"total_spend"`
+}
+
+// PurchasingSupplierSummary meringkas belanja per supplier dari
+// fact_purchasing_order_lines.
+//
+// Yang dihitung hanya PO berstatus RECEIVED atau INVOICED -- itu belanja yang
+// benar-benar terjadi. PO yang masih DRAFT/CONFIRMED baru rencana, dan
+// mencampurnya membuat "belanja ke supplier ini" jadi angka yang tidak bisa
+// dipakai untuk negosiasi.
+//
+// order_count memakai uniqExact atas purchase_order_id, bukan count() baris:
+// satu PO dengan 10 baris tetap SATU order.
+func (c *Client) PurchasingSupplierSummary(ctx context.Context, companyID uuid.UUID) ([]PurchasingSupplierSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			supplier_code,
+			any(supplier_name) AS supplier_name,
+			uniqExact(purchase_order_id) AS order_count,
+			count() AS line_count,
+			sum(amount) AS total_spend
+		FROM fact_purchasing_order_lines FINAL
+		WHERE company_id = ? AND order_status IN ('RECEIVED', 'INVOICED')
+		GROUP BY supplier_code
+		ORDER BY total_spend DESC
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query purchasing supplier summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []PurchasingSupplierSummaryRow{}
+	for rows.Next() {
+		var r PurchasingSupplierSummaryRow
+		if err := rows.Scan(&r.SupplierCode, &r.SupplierName, &r.OrderCount, &r.LineCount, &r.TotalSpend); err != nil {
+			return nil, fmt.Errorf("scan purchasing supplier summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type TicketingMonthlySummaryRow struct {
+	Month           string   `json:"month"`
+	TicketCount     uint64   `json:"ticket_count"`
+	ResolvedCount   uint64   `json:"resolved_count"`
+	OpenCount       uint64   `json:"open_count"`
+	UrgentCount     uint64   `json:"urgent_count"`
+	AvgResolveHours *float64 `json:"avg_resolve_hours"`
+}
+
+// TicketingMonthlySummary meringkas tiket per bulan dari fact_ticketing_tickets.
+//
+// Lama penyelesaian dihitung dari created_at ke resolved_at dalam MENIT lalu
+// dibagi 60 -- bukan dateDiff('hour', ...) yang memotong ke jam penuh sehingga
+// tiket yang selesai 45 menit terbaca 0 jam (jebakan yang sama pernah ketahuan
+// di fleet, lihat FleetDeliveryMonthlySummary).
+//
+// open_count memakai definisi "belum punya resolved_at", bukan daftar status
+// tertentu: status bisa bertambah kelak, tapi "belum selesai" akan tetap berarti
+// belum ada waktu penyelesaiannya.
+func (c *Client) TicketingMonthlySummary(ctx context.Context, companyID uuid.UUID) ([]TicketingMonthlySummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(created_at)) AS month,
+			count() AS ticket_count,
+			countIf(resolved_at IS NOT NULL) AS resolved_count,
+			countIf(resolved_at IS NULL) AS open_count,
+			countIf(priority = 'URGENT') AS urgent_count,
+			avgOrNullIf(dateDiff('minute', created_at, resolved_at) / 60, resolved_at IS NOT NULL) AS avg_resolve_hours
+		FROM fact_ticketing_tickets FINAL
+		WHERE company_id = ?
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query ticketing monthly summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []TicketingMonthlySummaryRow{}
+	for rows.Next() {
+		var r TicketingMonthlySummaryRow
+		if err := rows.Scan(&r.Month, &r.TicketCount, &r.ResolvedCount, &r.OpenCount,
+			&r.UrgentCount, &r.AvgResolveHours); err != nil {
+			return nil, fmt.Errorf("scan ticketing monthly summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type PayrollPeriodSummaryRow struct {
+	Period        string          `json:"period"`
+	EmployeeCount uint64          `json:"employee_count"`
+	TotalGross    decimal.Decimal `json:"total_gross"`
+	TotalDeducted decimal.Decimal `json:"total_deduction"`
+	TotalNet      decimal.Decimal `json:"total_net"`
+	AvgNet        *float64        `json:"avg_net"`
+	AttendancePct *float64        `json:"attendance_pct"`
+}
+
+// PayrollPeriodSummary meringkas payroll per periode dari
+// fact_hr_payroll_details.
+//
+// Hanya payroll run berstatus POSTED yang dihitung: itu satu-satunya status
+// yang angkanya sudah masuk jurnal GL dan tidak akan berubah lagi. Run yang
+// masih DRAFT bisa dihapus dan diproses ulang, jadi memasukkannya membuat
+// "biaya gaji bulan ini" berubah-ubah setiap kali HR mencoba ulang.
+//
+// attendance_pct = hari hadir / hari kerja seluruh karyawan pada periode itu,
+// bukan rata-rata dari persentase per orang: karyawan yang baru masuk di tengah
+// bulan tidak boleh menarik turun angka perusahaan sebanyak karyawan penuh.
+func (c *Client) PayrollPeriodSummary(ctx context.Context, companyID uuid.UUID) ([]PayrollPeriodSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			period,
+			count() AS employee_count,
+			sum(gross_salary) AS gross_total,
+			sum(total_deduction) AS deduction_total,
+			sum(net_salary) AS net_total,
+			avg(net_salary) AS avg_net,
+			if(sum(working_days) > 0, toFloat64(sum(present_days)) / toFloat64(sum(working_days)) * 100, NULL) AS attendance_pct
+		FROM fact_hr_payroll_details FINAL
+		WHERE company_id = ? AND run_status = 'POSTED'
+		GROUP BY period
+		ORDER BY period
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query payroll period summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []PayrollPeriodSummaryRow{}
+	for rows.Next() {
+		var r PayrollPeriodSummaryRow
+		if err := rows.Scan(&r.Period, &r.EmployeeCount, &r.TotalGross, &r.TotalDeducted,
+			&r.TotalNet, &r.AvgNet, &r.AttendancePct); err != nil {
+			return nil, fmt.Errorf("scan payroll period summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type AssetMaintenanceSummaryRow struct {
+	Month          string   `json:"month"`
+	ScheduledCount uint64   `json:"scheduled_count"`
+	CompletedCount uint64   `json:"completed_count"`
+	CancelledCount uint64   `json:"cancelled_count"`
+	OverdueCount   uint64   `json:"overdue_count"`
+	AvgDelayDays   *float64 `json:"avg_delay_days"`
+}
+
+// AssetMaintenanceSummary meringkas jadwal perawatan aset per bulan dari
+// fact_asset_maintenance.
+//
+// overdue_count memakai definisi "sudah lewat tanggalnya dan belum selesai atau
+// dibatalkan" -- dihitung SAAT QUERY (today()), bukan dibekukan di ETL. Kalau
+// dibekukan, angka "terlambat" akan berhenti bertambah setiap kali sync tidak
+// jalan, padahal keterlambatan justru bertambah dengan sendirinya.
+//
+// avg_delay_days hanya dari yang sudah selesai: selisih tanggal selesai dengan
+// tanggal jadwal, boleh negatif kalau dikerjakan lebih awal. Nullable untuk
+// bulan yang belum punya satu pun perawatan selesai.
+func (c *Client) AssetMaintenanceSummary(ctx context.Context, companyID uuid.UUID) ([]AssetMaintenanceSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(scheduled_date)) AS month,
+			count() AS scheduled_count,
+			countIf(status = 'COMPLETED') AS completed_count,
+			countIf(status = 'CANCELLED') AS cancelled_count,
+			countIf(status NOT IN ('COMPLETED', 'CANCELLED') AND scheduled_date < today()) AS overdue_count,
+			avgOrNullIf(toFloat64(dateDiff('day', scheduled_date, completed_date)), completed_date IS NOT NULL) AS avg_delay_days
+		FROM fact_asset_maintenance FINAL
+		WHERE company_id = ?
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query asset maintenance summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []AssetMaintenanceSummaryRow{}
+	for rows.Next() {
+		var r AssetMaintenanceSummaryRow
+		if err := rows.Scan(&r.Month, &r.ScheduledCount, &r.CompletedCount, &r.CancelledCount,
+			&r.OverdueCount, &r.AvgDelayDays); err != nil {
+			return nil, fmt.Errorf("scan asset maintenance summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type IoTDeviceSummaryRow struct {
+	DeviceCode   string `json:"device_code"`
+	DeviceType   string `json:"device_type"`
+	ReadingType  string `json:"reading_type"`
+	ReadingCount uint64 `json:"reading_count"`
+	// Lagi-lagi beda tipe untuk tiga kolom yang konsepnya sama: avg() atas
+	// Decimal menghasilkan Float64, min()/max() mempertahankan Decimal (jebakan
+	// yang sama sudah tercatat di HRKPIDepartmentSummaryRow).
+	AvgValue   *float64         `json:"avg_value"`
+	MinValue   *decimal.Decimal `json:"min_value"`
+	MaxValue   *decimal.Decimal `json:"max_value"`
+	LastReadAt string           `json:"last_read_at"`
+}
+
+// IoTDeviceSummary meringkas pembacaan sensor per device DAN per jenis
+// pembacaan dari fact_iot_readings.
+//
+// Dikelompokkan per (device, reading_type), bukan per device saja: satu device
+// bisa mengirim suhu dan kelembapan sekaligus, dan merata-ratakan keduanya
+// menghasilkan angka yang tidak berarti apa-apa.
+//
+// Hanya pembacaan numerik yang diringkas (value_numeric IS NOT NULL) --
+// pembacaan berbentuk teks (mis. status ON/OFF) tidak punya rata-rata.
+// last_read_at ikut dikembalikan karena pertanyaan pertama tentang sebuah
+// sensor biasanya "masih hidup atau tidak", bukan berapa nilainya.
+func (c *Client) IoTDeviceSummary(ctx context.Context, companyID uuid.UUID) ([]IoTDeviceSummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			device_code,
+			any(device_type) AS device_type,
+			reading_type,
+			count() AS reading_count,
+			avg(value_numeric) AS avg_value,
+			min(value_numeric) AS min_value,
+			max(value_numeric) AS max_value,
+			toString(max(recorded_at)) AS last_read_at
+		FROM fact_iot_readings FINAL
+		WHERE company_id = ? AND value_numeric IS NOT NULL
+		GROUP BY device_code, reading_type
+		ORDER BY device_code, reading_type
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query iot device summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []IoTDeviceSummaryRow{}
+	for rows.Next() {
+		var r IoTDeviceSummaryRow
+		if err := rows.Scan(&r.DeviceCode, &r.DeviceType, &r.ReadingType, &r.ReadingCount,
+			&r.AvgValue, &r.MinValue, &r.MaxValue, &r.LastReadAt); err != nil {
+			return nil, fmt.Errorf("scan iot device summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+type EcommerceMonthlySummaryRow struct {
+	Month        string          `json:"month"`
+	OrderCount   uint64          `json:"order_count"`
+	LineCount    uint64          `json:"line_count"`
+	ItemsSold    decimal.Decimal `json:"items_sold"`
+	Revenue      decimal.Decimal `json:"revenue"`
+	AvgOrderSize *float64        `json:"avg_order_value"`
+}
+
+// EcommerceMonthlySummary meringkas penjualan online per bulan dari
+// fact_ecommerce_order_lines.
+//
+// Order yang CANCELLED dibuang: barangnya tidak pernah dikirim dan uangnya
+// tidak pernah masuk. Yang masih PENDING tetap dihitung -- itu penjualan yang
+// sedang berjalan, dan membuangnya membuat bulan berjalan selalu terlihat sepi.
+//
+// avg_order_value dihitung per ORDER (revenue / jumlah order unik), bukan per
+// baris: rata-rata per baris hanya menjawab "berapa harga satu jenis barang",
+// bukan "berapa besar satu keranjang belanja".
+func (c *Client) EcommerceMonthlySummary(ctx context.Context, companyID uuid.UUID) ([]EcommerceMonthlySummaryRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(order_date)) AS month,
+			uniqExact(order_id) AS order_count,
+			count() AS line_count,
+			sum(quantity) AS items_sold,
+			sum(amount) AS revenue_total,
+			if(uniqExact(order_id) > 0, toFloat64(sum(amount)) / uniqExact(order_id), NULL) AS avg_order_value
+		FROM fact_ecommerce_order_lines FINAL
+		WHERE company_id = ? AND order_status <> 'CANCELLED'
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query ecommerce monthly summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []EcommerceMonthlySummaryRow{}
+	for rows.Next() {
+		var r EcommerceMonthlySummaryRow
+		if err := rows.Scan(&r.Month, &r.OrderCount, &r.LineCount, &r.ItemsSold,
+			&r.Revenue, &r.AvgOrderSize); err != nil {
+			return nil, fmt.Errorf("scan ecommerce monthly summary row: %w", err)
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 type ProjectCostSummaryRow struct {
 	ProjectCode    string          `json:"project_code"`
 	ProjectName    string          `json:"project_name"`
@@ -867,6 +1488,89 @@ func (c *Client) InsertHRPayrollDetails(ctx context.Context, rows []HRPayrollDet
 			r.WorkingDays, r.PresentDays, r.PostedAt, syncedAt,
 		); err != nil {
 			return fmt.Errorf("append hr payroll row %s: %w", r.DetailID, err)
+		}
+	}
+	return batch.Send()
+}
+
+// HRLeaveRow adalah satu pengajuan cuti di fact_hr_leave_requests. Seluruh
+// status ikut disalin (bukan hanya APPROVED) supaya analitik bisa membedakan
+// "diajukan" dari "disetujui" -- penyaringannya dilakukan di query ringkasan,
+// bukan dengan membuang data di ETL.
+type HRLeaveRow struct {
+	LeaveID      uuid.UUID
+	CompanyID    uuid.UUID
+	BranchID     *uuid.UUID
+	EmployeeID   uuid.UUID
+	EmployeeCode string
+	EmployeeName string
+	Department   string
+	LeaveType    string
+	Status       string
+	StartDate    time.Time
+	EndDate      time.Time
+	TotalDays    int16
+	DecidedAt    *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (c *Client) InsertHRLeaveRequests(ctx context.Context, rows []HRLeaveRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_hr_leave_requests")
+	if err != nil {
+		return fmt.Errorf("prepare hr leave batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.LeaveID, r.CompanyID, r.BranchID, r.EmployeeID, r.EmployeeCode, r.EmployeeName,
+			r.Department, r.LeaveType, r.Status, r.StartDate, r.EndDate, r.TotalDays,
+			r.DecidedAt, r.CreatedAt, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append hr leave row %s: %w", r.LeaveID, err)
+		}
+	}
+	return batch.Send()
+}
+
+// HRKPIReviewRow adalah satu penilaian KPI di fact_hr_kpi_reviews. Yang disalin
+// hanya kepala penilaiannya (nilai total & rating), bukan rincian per
+// indikator: bobot dan target indikator berbeda antar periode, jadi rincian
+// tidak bisa dibandingkan lintas periode tanpa konteksnya sendiri.
+type HRKPIReviewRow struct {
+	ReviewID     uuid.UUID
+	CompanyID    uuid.UUID
+	BranchID     *uuid.UUID
+	EmployeeID   uuid.UUID
+	EmployeeCode string
+	EmployeeName string
+	Department   string
+	Period       string
+	Status       string
+	TotalScore   float64
+	Rating       string
+	DecidedAt    *time.Time
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (c *Client) InsertHRKPIReviews(ctx context.Context, rows []HRKPIReviewRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_hr_kpi_reviews")
+	if err != nil {
+		return fmt.Errorf("prepare hr kpi batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.ReviewID, r.CompanyID, r.BranchID, r.EmployeeID, r.EmployeeCode, r.EmployeeName,
+			r.Department, r.Period, r.Status, toDecimal(r.TotalScore), r.Rating,
+			r.DecidedAt, r.CreatedAt, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append hr kpi row %s: %w", r.ReviewID, err)
 		}
 	}
 	return batch.Send()
