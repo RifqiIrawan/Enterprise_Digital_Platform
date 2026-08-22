@@ -30,13 +30,24 @@ jobs:
         working-directory: frontend/web
         run: npm ci
 
-      # `npm run lint` is intentionally not run here: the repo has never
-      # had an ESLint config file (checked full git history), so the
-      # existing `lint` script fails immediately with "couldn't find a
-      # configuration file" -- that's a pre-existing gap, not something
-      # this workflow should paper over or silently fix by adding new
-      # eslint-plugin-* dependencies. Flagged separately; add this step
-      # back once a config exists.
+      # Now enabled: .eslintrc.cjs finally exists (ESLint 8 style, matching
+      # the eslint 8 devDependency already in package.json). The rule set is
+      # deliberately small and correctness-only -- no formatting rules. It
+      # already earned its place by catching a real `can is not defined`
+      # ReferenceError that the build could not see, because the reference
+      # lived in a column factory rendered at runtime.
+      - name: Lint
+        working-directory: frontend/web
+        run: npm run lint
+
+      # Vitest + Testing Library (jsdom). Needs no backend at all: apiClient
+      # and CompanyContext are mocked, so this is purely the per-page
+      # permission-resolution logic -- including one canary on a real page
+      # (LeavePage) proving the button itself disappears when the create
+      # permission is revoked.
+      - name: Test
+        working-directory: frontend/web
+        run: npm test
 
       - name: Build
         working-directory: frontend/web

@@ -121,9 +121,12 @@ jobs:
         # the service container above via localhost:5432, matching each
         # TestMain's default admin URL (postgres://platform:platform@
         # localhost:5432/postgres) and creating their own {service}_test
-        # database. ai-bi-service and the Fase 1 services (auth/company/
-        # rbac/audit/api-gateway) don't touch Postgres in tests (or have
-        # none yet) -- `go test ./...` is a no-op pass for those. dw-service
+        # database. company-service (company_service_test), rbac-service
+        # (rbac_service_test) and auth-service (auth_service_test) follow the
+        # same pattern. api-gateway's tests need nothing external at all (its
+        # backends are httptest servers started by the test itself), and
+        # ai-bi-service and audit-service don't touch Postgres in tests (or
+        # have none yet). dw-service
         # is the odd one out: it needs Postgres (localhost:5432, same
         # as the other modules), the clickhouse service above
         # (localhost:9101) for its internal/etl tests -- see

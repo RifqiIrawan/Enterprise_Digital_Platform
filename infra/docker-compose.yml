@@ -676,6 +676,12 @@ services:
       PROJECT_SERVICE_URL: http://project-service:8100
       JWT_SECRET: ${JWT_SECRET:-change-me}
       CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+      # Penegakan hak akses per endpoint (lihat api-gateway/internal/authz).
+      # Ditulis eksplisit walau defaultnya sudah "true" supaya terlihat bahwa
+      # stack ini memang menegakkannya -- dan supaya mematikannya jadi
+      # perubahan yang kelihatan di diff, bukan variabel yang tidak pernah
+      # disebut di mana pun.
+      AUTHZ_ENFORCE: ${AUTHZ_ENFORCE:-true}
     depends_on:
       - auth-service
       - company-service
