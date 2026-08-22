@@ -1,24 +1,22 @@
-// Backend readiness snapshot (see backend/services vs backend/modules),
-// used by DashboardPage's module-status card. The sidebar itself no longer
-// reads a static list -- it renders whatever GET /api/rbac/menu-tree
-// returns for the logged-in user (see components/layout/Sidebar.jsx).
+// Service inti (backend/services) — dipakai kartu "Modul terpasang" di
+// DashboardPage sebagai pendamping daftar modul bisnis.
+//
+// Daftar modul BISNIS sengaja TIDAK ada di sini lagi. Dulu ada konstanta
+// BUSINESS_MODULES statis, dan dia tertinggal jauh dari kenyataan: masih
+// menyebut `ai` dan `bi` (dua folder di backend/modules yang tidak pernah
+// di-scaffold — lingkupnya dikerjakan ai-bi-service) sementara 7 modul yang
+// sudah jadi (iot, dw, crm, ticketing, ecommerce, fleet, project) tidak
+// terdaftar sama sekali. Sekarang Dashboard membacanya dari
+// `GET /api/rbac/modules`, sumber yang sama dengan menu sidebar, sehingga
+// tidak bisa lagi basi tanpa ketahuan.
+//
+// Service inti tetap statis karena dia bukan bagian dari registry menu RBAC:
+// api-gateway dan auth-service tidak punya menu, jadi tidak akan pernah muncul
+// di endpoint itu.
 export const CORE_SERVICES = [
   { key: 'api-gateway', label: 'API Gateway' },
   { key: 'auth', label: 'Auth' },
   { key: 'company', label: 'Company' },
   { key: 'rbac', label: 'RBAC' },
   { key: 'audit', label: 'Audit' },
-]
-
-export const BUSINESS_MODULES = [
-  { key: 'finance', label: 'Finance' },
-  { key: 'hr', label: 'HR' },
-  { key: 'sales', label: 'Sales' },
-  { key: 'purchasing', label: 'Purchasing' },
-  { key: 'warehouse', label: 'Warehouse' },
-  { key: 'production', label: 'Production' },
-  { key: 'qc', label: 'QC' },
-  { key: 'asset', label: 'Asset' },
-  { key: 'ai', label: 'AI' },
-  { key: 'bi', label: 'BI' },
 ]

@@ -3,11 +3,17 @@ import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import apiClient from '../../services/apiClient.js'
 import { isAuthenticated, setSession } from '../../utils/auth.js'
 
+// Kredensial Super Admin seed dev, diisi otomatis supaya login lokal cukup satu
+// klik. `import.meta.env.DEV` hanya true saat `npm run dev` -- di build produksi
+// (`npm run build`) konstanta ini ikut ter-tree-shake jadi string kosong.
+const DEV_EMAIL = import.meta.env.DEV ? 'admin@edp.local' : ''
+const DEV_PASSWORD = import.meta.env.DEV ? 'Admin@12345' : ''
+
 function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
+  const [email, setEmail] = useState(DEV_EMAIL)
+  const [password, setPassword] = useState(DEV_PASSWORD)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -22,6 +28,13 @@ function LoginPage() {
     try {
       const { data } = await apiClient.post('/api/auth/login', { email, password })
       setSession(data.access_token, data.user)
+      // Password yang ditetapkan admin sempat diketahui orang lain, jadi user
+      // diarahkan langsung ke halaman ganti password -- bukan ke halaman yang
+      // tadi dia tuju.
+      if (data.user?.must_change_password) {
+        navigate('/profile', { replace: true })
+        return
+      }
       navigate(location.state?.from ?? '/', { replace: true })
     } catch (err) {
       setError(err.response?.data?.error ?? 'Gagal terhubung ke server. Coba lagi.')

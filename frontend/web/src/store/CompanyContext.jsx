@@ -20,35 +20,59 @@ export function CompanyProvider({ children }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    apiClient
-      .get('/api/company/companies')
+  // reloadCompanies/reloadBranches dipakai halaman Company & Branch Management
+  // setelah menambah/mengubah/menghapus data. Tanpa ini, switcher di Topbar
+  // tetap menampilkan daftar hasil fetch pertama sampai halaman di-refresh
+  // penuh -- termasuk company yang baru saja dibuat (tidak muncul) atau branch
+  // yang baru saja dihapus (masih bisa dipilih).
+  const reloadCompanies = useCallback(
+    () =>
+      apiClient
+        .get('/api/company/companies')
+        .then(({ data }) => {
+          setCompanies(data)
+          setCompanyIdState((current) => {
+            if (current && data.some((c) => c.id === current)) return current
+            const savedId = localStorage.getItem(COMPANY_KEY)
+            return (savedId && data.some((c) => c.id === savedId) ? savedId : data[0]?.id) ?? ''
+          })
+        })
+        .catch(() => setError('Gagal memuat data company.')),
+    []
+  )
+
+  const reloadBranches = useCallback((id) => {
+    if (!id) {
+      setBranches([])
+      setBranchIdState('')
+      return Promise.resolve()
+    }
+    return apiClient
+      .get(`/api/company/companies/${id}/branches`)
       .then(({ data }) => {
-        setCompanies(data)
-        const savedId = localStorage.getItem(COMPANY_KEY)
-        const initial = (savedId && data.some((c) => c.id === savedId) ? savedId : data[0]?.id) ?? ''
-        setCompanyIdState(initial)
+        setBranches(data)
+        // Branch aktif yang sudah tidak ada lagi (dihapus) harus dilepas,
+        // kalau tidak form create di halaman lain akan mengirim branch_id
+        // yatim.
+        setBranchIdState((current) => {
+          if (current && data.some((b) => b.id === current)) return current
+          const savedBranch = localStorage.getItem(BRANCH_KEY)
+          if (data.some((b) => b.id === savedBranch)) return savedBranch
+          localStorage.removeItem(BRANCH_KEY)
+          return ''
+        })
       })
-      .catch(() => setError('Gagal memuat data company.'))
-      .finally(() => setLoading(false))
+      .catch(() => setBranches([]))
   }, [])
 
   useEffect(() => {
-    if (!companyId) {
-      setBranches([])
-      setBranchIdState('')
-      return
-    }
-    localStorage.setItem(COMPANY_KEY, companyId)
-    apiClient
-      .get(`/api/company/companies/${companyId}/branches`)
-      .then(({ data }) => {
-        setBranches(data)
-        const savedBranch = localStorage.getItem(BRANCH_KEY)
-        setBranchIdState(data.some((b) => b.id === savedBranch) ? savedBranch : '')
-      })
-      .catch(() => setBranches([]))
-  }, [companyId])
+    reloadCompanies().finally(() => setLoading(false))
+  }, [reloadCompanies])
+
+  useEffect(() => {
+    if (companyId) localStorage.setItem(COMPANY_KEY, companyId)
+    reloadBranches(companyId)
+  }, [companyId, reloadBranches])
 
   const setCompanyId = useCallback((id) => setCompanyIdState(id), [])
 
@@ -59,8 +83,19 @@ export function CompanyProvider({ children }) {
   }, [])
 
   const value = useMemo(
-    () => ({ companies, branches, companyId, branchId, setCompanyId, setBranchId, loading, error }),
-    [companies, branches, companyId, branchId, setCompanyId, setBranchId, loading, error]
+    () => ({
+      companies,
+      branches,
+      companyId,
+      branchId,
+      setCompanyId,
+      setBranchId,
+      reloadCompanies,
+      reloadBranches,
+      loading,
+      error,
+    }),
+    [companies, branches, companyId, branchId, setCompanyId, setBranchId, reloadCompanies, reloadBranches, loading, error]
   )
 
   return <CompanyContext.Provider value={value}>{children}</CompanyContext.Provider>

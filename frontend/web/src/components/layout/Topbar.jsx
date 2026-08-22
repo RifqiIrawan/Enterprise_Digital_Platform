@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { clearSession, getCurrentUser } from '../../utils/auth.js'
 import CompanySwitcher from './CompanySwitcher.jsx'
 
@@ -54,6 +54,12 @@ function Topbar({ title, onToggleSidebar }) {
             </li>
             <li>
               <hr className="dropdown-divider" />
+            </li>
+            <li>
+              <Link className="dropdown-item" to="/profile">
+                <i className="bi bi-person-gear me-2" />
+                Profil &amp; Password
+              </Link>
             </li>
             <li>
               <button type="button" className="dropdown-item" onClick={handleLogout}>

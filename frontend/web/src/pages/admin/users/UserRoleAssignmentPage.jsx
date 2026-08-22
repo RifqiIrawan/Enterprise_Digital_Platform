@@ -3,10 +3,13 @@ import apiClient from '../../../services/apiClient.js'
 import Modal from '../../../components/common/Modal.jsx'
 import DataTable, { TruncatedText } from '../../../components/common/DataTable.jsx'
 import RolePickerDropdown from '../../../components/common/RolePickerDropdown.jsx'
+import UserAccessModal from './UserAccessModal.jsx'
 import { colorFor, initials } from '../../../utils/avatarColor.js'
 import { useCompany } from '../../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../../store/PermissionContext.jsx'
 
 const emptyUserForm = { email: '', full_name: '', phone: '', password: '' }
+const emptyEditForm = { full_name: '', phone: '', status: 'active' }
 
 const STATUS_BADGE = {
   active: 'text-bg-success',
@@ -33,6 +36,7 @@ function formatLastLogin(value) {
 
 function UserRoleAssignmentPage() {
   const { companyId } = useCompany()
+  const { can } = usePagePermission()
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
   const [userRolesMap, setUserRolesMap] = useState({}) // userId -> UserRoleView[]
@@ -42,6 +46,15 @@ function UserRoleAssignmentPage() {
 
   const [managingUser, setManagingUser] = useState(null)
   const [assigning, setAssigning] = useState(false)
+
+  const [accessUser, setAccessUser] = useState(null)
+  const [resetResult, setResetResult] = useState(null)
+  const [resettingId, setResettingId] = useState(null)
+
+  const [editingUser, setEditingUser] = useState(null)
+  const [editForm, setEditForm] = useState(emptyEditForm)
+  const [editError, setEditError] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   const [creatingUser, setCreatingUser] = useState(false)
   const [userForm, setUserForm] = useState(emptyUserForm)
@@ -135,6 +148,43 @@ function UserRoleAssignmentPage() {
     }
   }
 
+  // Password sementara hanya bisa dibaca SEKALI (yang tersimpan cuma hash-nya),
+  // jadi hasilnya ditampilkan di modal sampai admin menutupnya sendiri.
+  async function handleResetPassword(u) {
+    if (!window.confirm(`Reset password ${u.full_name}? Sesi yang sedang berjalan akan diputus.`)) return
+    setResettingId(u.id)
+    try {
+      const { data } = await apiClient.post(`/api/auth/users/${u.id}/reset-password`, {})
+      setResetResult({ user: u, password: data.temporary_password })
+      loadAll()
+    } catch (err) {
+      window.alert(err.response?.data?.error ?? 'Gagal mereset password')
+    } finally {
+      setResettingId(null)
+    }
+  }
+
+  function openEditUser(u) {
+    setEditForm({ full_name: u.full_name, phone: u.phone ?? '', status: u.status })
+    setEditError('')
+    setEditingUser(u)
+  }
+
+  async function handleUpdateUser(e) {
+    e.preventDefault()
+    setSavingEdit(true)
+    setEditError('')
+    try {
+      await apiClient.put(`/api/auth/users/${editingUser.id}`, editForm)
+      setEditingUser(null)
+      loadAll()
+    } catch (err) {
+      setEditError(err.response?.data?.error ?? 'Gagal memperbarui user')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   async function handleCreateUser(e) {
     e.preventDefault()
     setSavingUser(true)
@@ -213,10 +263,38 @@ function UserRoleAssignmentPage() {
       className: 'text-end',
       cellClassName: 'text-end',
       render: (u) => (
-        <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => setManagingUser(u)}>
-          <i className="bi bi-shield-check me-1" />
-          Kelola Role
-        </button>
+        <div className="d-flex gap-1 justify-content-end">
+          <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEditUser(u)}>
+            <i className="bi bi-pencil me-1" />
+            Edit
+          </button>
+          <button type="button" className="btn btn-sm btn-outline-primary" onClick={() => setManagingUser(u)}>
+            <i className="bi bi-shield-check me-1" />
+            Kelola Role
+          </button>
+          {can('update') && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-warning"
+              disabled={resettingId === u.id}
+              onClick={() => handleResetPassword(u)}
+              title="Tetapkan password sementara & putus semua sesi"
+            >
+              <i className="bi bi-key me-1" />
+              Reset Password
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn btn-sm btn-outline-primary"
+            onClick={() => setAccessUser(u)}
+            disabled={!companyId}
+            title={companyId ? 'Hak akses per menu' : 'Pilih company dulu'}
+          >
+            <i className="bi bi-sliders me-1" />
+            Hak Akses
+          </button>
+        </div>
       ),
     },
   ]
@@ -228,10 +306,12 @@ function UserRoleAssignmentPage() {
           <h2 className="edp-page-title">User Management</h2>
           <div className="edp-page-subtitle">Kelola akun user beserta role yang ditugaskan ke masing-masing.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreatingUser(true)}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah User
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreatingUser(true)}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah User
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
@@ -298,15 +378,17 @@ function UserRoleAssignmentPage() {
                   return (
                     <span key={ur.id} className="edp-role-chip" style={{ background: bg, color: fg }}>
                       {ur.role_name}
-                      <button
-                        type="button"
-                        className="edp-role-chip-remove"
-                        style={{ color: fg }}
-                        onClick={() => handleRevoke(ur.id)}
-                        aria-label={`Cabut role ${ur.role_name}`}
-                      >
-                        <i className="bi bi-x" />
-                      </button>
+                      {can('delete') && (
+                        <button
+                          type="button"
+                          className="edp-role-chip-remove"
+                          style={{ color: fg }}
+                          onClick={() => handleRevoke(ur.id)}
+                          aria-label={`Cabut role ${ur.role_name}`}
+                        >
+                          <i className="bi bi-x" />
+                        </button>
+                      )}
                     </span>
                   )
                 })}
@@ -323,6 +405,100 @@ function UserRoleAssignmentPage() {
               />
             </div>
           </div>
+        </Modal>
+      )}
+
+      {resetResult && (
+        <Modal
+          title="Password Sementara"
+          onClose={() => setResetResult(null)}
+          footer={
+            <button type="button" className="btn btn-primary" onClick={() => setResetResult(null)}>
+              Sudah dicatat
+            </button>
+          }
+        >
+          <div className="d-flex flex-column gap-3">
+            <div>
+              Password sementara untuk <strong>{resetResult.user.full_name}</strong> ({resetResult.user.email}):
+            </div>
+            <div className="bg-body-secondary border rounded p-3 text-center">
+              <code className="fs-5">{resetResult.password}</code>
+            </div>
+            <div className="alert alert-warning py-2 small mb-0">
+              Nilai ini <strong>tidak bisa dilihat lagi</strong> setelah modal ditutup &mdash; yang tersimpan
+              hanya hash-nya. Sampaikan langsung ke yang bersangkutan; dia akan diminta menggantinya sendiri
+              saat login berikutnya, dan seluruh sesi lamanya sudah diputus.
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {accessUser && (
+        <UserAccessModal user={accessUser} companyId={companyId} onClose={() => setAccessUser(null)} />
+      )}
+
+      {editingUser && (
+        <Modal
+          title="Edit User"
+          onClose={() => setEditingUser(null)}
+          footer={
+            <>
+              <button type="button" className="btn btn-outline-secondary" onClick={() => setEditingUser(null)}>
+                Batal
+              </button>
+              <button type="submit" form="user-edit-form" className="btn btn-primary" disabled={savingEdit}>
+                {savingEdit ? 'Menyimpan...' : 'Simpan'}
+              </button>
+            </>
+          }
+        >
+          <form id="user-edit-form" onSubmit={handleUpdateUser} className="d-flex flex-column gap-3">
+            {editError && <div className="alert alert-danger py-2 small mb-0">{editError}</div>}
+            <div className="d-flex align-items-center gap-3">
+              <Avatar seed={editingUser.id} label={editingUser.full_name} size={44} />
+              <div>
+                <div className="fw-semibold">{editingUser.email}</div>
+                <div className="small text-secondary">
+                  Email &amp; username tidak bisa diubah &mdash; keduanya identitas login.
+                </div>
+              </div>
+            </div>
+            <div>
+              <label className="form-label">Nama Lengkap</label>
+              <input
+                type="text"
+                className="form-control"
+                value={editForm.full_name}
+                onChange={(e) => setEditForm({ ...editForm, full_name: e.target.value })}
+                required
+              />
+            </div>
+            <div>
+              <label className="form-label">Telepon</label>
+              <input
+                type="text"
+                className="form-control"
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="form-label">Status</label>
+              <select
+                className="form-select"
+                value={editForm.status}
+                onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+              >
+                <option value="active">active</option>
+                <option value="inactive">inactive</option>
+                <option value="locked">locked</option>
+              </select>
+              <div className="form-text">
+                Selain <code>active</code>, user tidak bisa login dan seluruh sesinya langsung dicabut.
+              </div>
+            </div>
+          </form>
         </Modal>
       )}
 

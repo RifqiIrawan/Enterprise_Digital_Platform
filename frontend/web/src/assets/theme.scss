@@ -171,6 +171,48 @@ h6 {
   color: var(--edp-ink-muted);
 }
 
+// Header grup accordion di sidebar. Dibuat sebagai <button> (bukan <div>
+// ber-onClick) supaya bisa difokus lewat keyboard dan dibacakan screen reader
+// bersama aria-expanded-nya.
+.edp-nav-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.5rem;
+  padding: 0.375rem 0.5rem;
+  background: transparent;
+  border: 0;
+  border-radius: 0.625rem;
+  text-align: left;
+
+  &:hover {
+    background: var(--edp-accent-soft);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--edp-accent);
+    outline-offset: 2px;
+  }
+
+  // Grup yang memuat halaman aktif tetap dikenali meski sedang ditutup --
+  // tanpa penanda ini, menutup grup akan menghilangkan satu-satunya petunjuk
+  // posisi pengguna berada di mana.
+  &.has-active .edp-nav-section-label {
+    color: var(--edp-accent);
+  }
+}
+
+.edp-nav-chevron {
+  font-size: 0.7rem;
+  color: var(--edp-ink-muted);
+  transition: transform 0.15s ease-in-out;
+
+  &.is-open {
+    transform: rotate(180deg);
+  }
+}
+
 .edp-nav-link {
   color: var(--edp-ink-secondary);
   border-radius: 0.625rem;

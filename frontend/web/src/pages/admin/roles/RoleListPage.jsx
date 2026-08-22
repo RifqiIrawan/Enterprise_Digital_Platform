@@ -3,10 +3,11 @@ import { Link, useNavigate } from 'react-router-dom'
 import apiClient from '../../../services/apiClient.js'
 import Modal from '../../../components/common/Modal.jsx'
 import DataTable from '../../../components/common/DataTable.jsx'
+import { usePagePermission } from '../../../store/PermissionContext.jsx'
 
 const emptyForm = { code: '', name: '', description: '' }
 
-function roleColumns(openEdit, handleDelete) {
+function roleColumns(openEdit, handleDelete, can) {
   return [
     { key: 'code', label: 'Code', render: (role) => <code>{role.code}</code> },
     { key: 'name', label: 'Nama' },
@@ -34,18 +35,22 @@ function roleColumns(openEdit, handleDelete) {
             <i className="bi bi-shield-check me-1" />
             Permission
           </Link>
-          <button type="button" className="btn btn-sm btn-outline-secondary me-1" onClick={() => openEdit(role)}>
-            <i className="bi bi-pencil" />
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-outline-danger"
-            disabled={role.is_system}
-            title={role.is_system ? 'Role sistem tidak boleh dihapus' : 'Hapus role'}
-            onClick={() => handleDelete(role)}
-          >
-            <i className="bi bi-trash" />
-          </button>
+          {can('update') && (
+            <button type="button" className="btn btn-sm btn-outline-secondary me-1" onClick={() => openEdit(role)}>
+              <i className="bi bi-pencil" />
+            </button>
+          )}
+          {can('delete') && (
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-danger"
+              disabled={role.is_system}
+              title={role.is_system ? 'Role sistem tidak boleh dihapus' : 'Hapus role'}
+              onClick={() => handleDelete(role)}
+            >
+              <i className="bi bi-trash" />
+            </button>
+          )}
         </>
       ),
     },
@@ -53,6 +58,7 @@ function roleColumns(openEdit, handleDelete) {
 }
 
 function RoleListPage() {
+  const { can } = usePagePermission()
   const navigate = useNavigate()
   const [roles, setRoles] = useState([])
   const [loading, setLoading] = useState(true)
@@ -111,17 +117,19 @@ function RoleListPage() {
           <h2 className="edp-page-title">Role Management</h2>
           <div className="text-secondary small">Master role &amp; hak akses menu per role.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/admin/roles/new')}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Role
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" onClick={() => navigate('/admin/roles/new')}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Role
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
 
       <div className="card p-3">
         <DataTable
-          columns={roleColumns(openEdit, handleDelete)}
+          columns={roleColumns(openEdit, handleDelete, can)}
           data={roles}
           loading={loading}
           searchPlaceholder="Cari code atau nama role..."

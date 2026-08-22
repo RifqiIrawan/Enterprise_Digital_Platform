@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import apiClient from '../../../services/apiClient.js'
 import PermissionMatrixEditor from '../../../components/admin/PermissionMatrixEditor.jsx'
+import { usePagePermission } from '../../../store/PermissionContext.jsx'
 
 function RolePermissionMatrixPage() {
+  const { can } = usePagePermission()
   const { roleId } = useParams()
   const [role, setRole] = useState(null)
   const [modules, setModules] = useState([])
@@ -66,14 +68,16 @@ function RolePermissionMatrixPage() {
           </Link>
           <h2 className="edp-page-title mt-1">Permission &mdash; {role?.name ?? roleId}</h2>
           <div className="text-secondary small">
-            Centang hak akses per menu. "Lihat" wajib aktif supaya menu muncul di sidebar.
+            Centang hak akses per menu. &quot;Lihat&quot; wajib aktif supaya menu muncul di sidebar.
           </div>
         </div>
         <div className="d-flex align-items-center gap-2">
           {savedAt && <span className="text-success small">Tersimpan {savedAt.toLocaleTimeString('id-ID')}</span>}
-          <button type="button" className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
-            {saving ? 'Menyimpan...' : 'Simpan Permission'}
-          </button>
+          {can('update') && (
+            <button type="button" className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>
+              {saving ? 'Menyimpan...' : 'Simpan Permission'}
+            </button>
+          )}
         </div>
       </div>
 

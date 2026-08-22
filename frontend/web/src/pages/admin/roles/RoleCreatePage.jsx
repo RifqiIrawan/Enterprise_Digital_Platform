@@ -2,10 +2,12 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import apiClient from '../../../services/apiClient.js'
 import PermissionMatrixEditor, { PERMISSION_ACTIONS } from '../../../components/admin/PermissionMatrixEditor.jsx'
+import { usePagePermission } from '../../../store/PermissionContext.jsx'
 
 const emptyActions = Object.fromEntries(PERMISSION_ACTIONS.map((a) => [a.key, false]))
 
 function RoleCreatePage() {
+  const { can } = usePagePermission()
   const navigate = useNavigate()
   const [modules, setModules] = useState([])
   const [menus, setMenus] = useState([])
@@ -73,9 +75,11 @@ function RoleCreatePage() {
             Isi info role, lalu centang menu &amp; aksi yang boleh diakses role ini.
           </div>
         </div>
-        <button type="submit" form="role-create-form" className="btn btn-primary btn-sm" disabled={saving}>
-          {saving ? 'Menyimpan...' : `Simpan Role${selectedCount > 0 ? ` (${selectedCount} menu)` : ''}`}
-        </button>
+        {can('create') && (
+          <button type="submit" form="role-create-form" className="btn btn-primary btn-sm" disabled={saving}>
+            {saving ? 'Menyimpan...' : `Simpan Role${selectedCount > 0 ? ` (${selectedCount} menu)` : ''}`}
+          </button>
+        )}
       </div>
 
       <form id="role-create-form" onSubmit={handleSubmit}>
