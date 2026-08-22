@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 const EMPLOYMENT_TYPES = ['PERMANENT', 'CONTRACT', 'INTERN', 'OUTSOURCE']
 const PTKP_STATUSES = ['TK/0', 'TK/1', 'TK/2', 'TK/3', 'K/0', 'K/1', 'K/2', 'K/3']
@@ -38,6 +39,7 @@ function formatMoney(n) {
 
 function EmployeesPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [employees, setEmployees] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -52,7 +54,15 @@ function EmployeesPage() {
     setLoading(true)
     apiClient
       .get('/api/hr/employees', { params: { company_id: cid, branch_id: bid } })
-      .then(({ data }) => setEmployees(data))
+      .then(({ data }) => {
+        setEmployees(data)
+        // Error WAJIB dibersihkan di jalur sukses. Tanpa ini, satu kegagalan
+        // sesaat (service sedang restart, jaringan putus sekejap) membuat
+        // banner-nya menetap selamanya -- muat ulang berikutnya yang berhasil
+        // tetap menampilkan "Pastikan hr-service aktif" padahal datanya sudah
+        // tampil di tabel.
+        setError('')
+      })
       .catch(() => setError('Gagal memuat data karyawan. Pastikan hr-service aktif.'))
       .finally(() => setLoading(false))
   }
@@ -183,7 +193,7 @@ function EmployeesPage() {
       sortable: false,
       className: 'text-end',
       cellClassName: 'text-end',
-      render: (e) => (
+      render: (e) => can('update') && (
         <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(e)}>
           <i className="bi bi-pencil" />
         </button>
@@ -198,10 +208,12 @@ function EmployeesPage() {
           <h2 className="edp-page-title">Data Karyawan</h2>
           <div className="text-secondary small">Master karyawan untuk absensi &amp; payroll.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
-          <i className="bi bi-plus-lg me-1" />
-          Tambah Karyawan
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={openCreate}>
+            <i className="bi bi-plus-lg me-1" />
+            Tambah Karyawan
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}

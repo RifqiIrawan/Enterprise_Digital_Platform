@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient.js'
 import Modal from '../../components/common/Modal.jsx'
 import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { usePagePermission } from '../../store/PermissionContext.jsx'
 
 function formatMoney(n) {
   return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(n ?? 0)
@@ -16,6 +17,7 @@ const STATUS_BADGE = { DRAFT: 'text-bg-secondary', POSTED: 'text-bg-success' }
 
 function PayrollPage() {
   const { companyId, branchId } = useCompany()
+  const { can } = usePagePermission()
   const [accounts, setAccounts] = useState([])
   const [runs, setRuns] = useState([])
   const [loading, setLoading] = useState(true)
@@ -143,7 +145,7 @@ function PayrollPage() {
           <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openView(r)}>
             Detail
           </button>
-          {r.status === 'DRAFT' && (
+          {can('approve') && r.status === 'DRAFT' && (
             <button type="button" className="btn btn-sm btn-outline-success" onClick={() => openPost(r)}>
               Post ke GL
             </button>
@@ -160,10 +162,12 @@ function PayrollPage() {
           <h2 className="edp-page-title">Payroll</h2>
           <div className="text-secondary small">Proses payroll bulanan &amp; posting ke General Ledger.</div>
         </div>
-        <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setProcessing(true)}>
-          <i className="bi bi-play-fill me-1" />
-          Proses Payroll
-        </button>
+        {can('create') && (
+          <button type="button" className="btn btn-primary btn-sm" disabled={!companyId} onClick={() => setProcessing(true)}>
+            <i className="bi bi-play-fill me-1" />
+            Proses Payroll
+          </button>
+        )}
       </div>
 
       {error && <div className="alert alert-danger py-2 small">{error}</div>}
@@ -197,6 +201,8 @@ function PayrollPage() {
             {processError && <div className="alert alert-danger py-2 small mb-0">{processError}</div>}
             <div className="text-secondary small">
               Payroll akan dihitung untuk seluruh karyawan berstatus ACTIVE, pro-rata terhadap absensi bulan berjalan.
+              Cuti dan lembur yang sudah <strong>disetujui</strong> di periode ini ikut terhitung; yang masih DRAFT
+              atau SUBMITTED diabaikan.
             </div>
             <div>
               <label className="form-label">Periode</label>
@@ -223,6 +229,8 @@ function PayrollPage() {
                   <tr>
                     <th>Karyawan</th>
                     <th className="text-end">Hadir</th>
+                    <th className="text-end">Cuti</th>
+                    <th className="text-end">Lembur</th>
                     <th className="text-end">Gross</th>
                     <th className="text-end">PPh21</th>
                     <th className="text-end">BPJS</th>
@@ -234,6 +242,29 @@ function PayrollPage() {
                     <tr key={d.id}>
                       <td>{d.employee_name}</td>
                       <td className="text-end text-secondary small">{d.present_days}/{d.working_days}</td>
+                      {/* Cuti berbayar sudah ikut terhitung di kolom Hadir; yang
+                          ditampilkan di sini adalah rinciannya, dengan cuti tanpa
+                          gaji dipisah karena itulah yang memotong gaji. */}
+                      <td className="text-end text-secondary small">
+                        {d.paid_leave_days || d.unpaid_leave_days ? (
+                          <>
+                            {d.paid_leave_days > 0 && <div>{d.paid_leave_days} dibayar</div>}
+                            {d.unpaid_leave_days > 0 && <div className="text-warning">{d.unpaid_leave_days} tanpa gaji</div>}
+                          </>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                      <td className="text-end text-secondary small">
+                        {d.overtime_hours > 0 ? (
+                          <>
+                            <div>{d.overtime_hours} jam</div>
+                            <div>{formatMoney(d.overtime_pay)}</div>
+                          </>
+                        ) : (
+                          '-'
+                        )}
+                      </td>
                       <td className="text-end">{formatMoney(d.gross_salary)}</td>
                       <td className="text-end">{formatMoney(d.pph21)}</td>
                       <td className="text-end">{formatMoney(d.bpjs_kesehatan_emp + d.bpjs_tk_jht_emp + d.bpjs_tk_jp_emp)}</td>
@@ -265,8 +296,16 @@ function PayrollPage() {
           <form id="post-payroll-form" onSubmit={handlePost} className="d-flex flex-column gap-3">
             {postError && <div className="alert alert-danger py-2 small mb-0">{postError}</div>}
             <div className="text-secondary small">
-              Jurnal GL akan dibuat otomatis: debit Beban Gaji sebesar total gross ({formatMoney(postingRun.total_gross)}),
-              credit ke akun-akun di bawah ini.
+              Jurnal GL akan dibuat otomatis: debit total gross ({formatMoney(postingRun.total_gross)}), credit ke
+              akun-akun di bawah ini.
+              {postingRun.total_overtime > 0 && (
+                <>
+                  {' '}
+                  Sisi debit dipecah dua baris &mdash; Beban Gaji{' '}
+                  {formatMoney(postingRun.total_gross - postingRun.total_overtime)} dan Beban Lembur{' '}
+                  {formatMoney(postingRun.total_overtime)} &mdash; pada akun yang sama.
+                </>
+              )}
             </div>
             <div>
               <label className="form-label">Akun Beban Gaji (Debit)</label>
