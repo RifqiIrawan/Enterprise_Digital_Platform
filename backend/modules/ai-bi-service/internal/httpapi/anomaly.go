@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"time"
 )
@@ -21,8 +22,13 @@ type anomaly struct {
 	Value      float64 `json:"value"`
 	Mean       float64 `json:"mean"`
 	StdDev     float64 `json:"stddev"`
+	Median     float64 `json:"median"`
+	MAD        float64 `json:"mad"`
 	ZScore     float64 `json:"z_score"`
-	Reason     string  `json:"reason"`
+	// Method menyebut dasar perhitungan z-nya: "modified" (median/MAD, tahan
+	// outlier) atau "classic" (mean/stddev, dipakai saat MAD = 0).
+	Method string `json:"method"`
+	Reason string `json:"reason"`
 }
 
 type anomalyScanResponse struct {
@@ -100,6 +106,69 @@ func meanStdDev(values []float64) (mean, stddev float64) {
 	return mean, stddev
 }
 
+// madScale membuat MAD sebanding dengan simpangan baku pada sebaran normal
+// (0.6745 adalah kuartil ke-0.75 dari normal baku), sehingga ambang batas yang
+// sama bisa dipakai untuk kedua metode.
+const madScale = 0.6745
+
+// distribution merangkum satu kumpulan nilai dengan DUA cara sekaligus:
+// mean/stddev yang lazim, dan median/MAD yang tahan outlier.
+//
+// Kenapa perlu keduanya: z-score klasik memakai mean & stddev yang keduanya
+// ikut TERTARIK oleh outlier yang justru sedang dicari. Satu transaksi 100x
+// lebih besar menaikkan stddev sedemikian rupa sehingga dirinya sendiri (dan
+// outlier lain di sekitarnya) tidak lagi melewati ambang -- masking effect.
+// Median/MAD tidak bergeser oleh beberapa nilai ekstrem, jadi yang aneh tetap
+// terlihat aneh.
+type distribution struct {
+	Mean   float64
+	StdDev float64
+	Median float64
+	MAD    float64
+}
+
+func describeValues(values []float64) distribution {
+	mean, stddev := meanStdDev(values)
+	median := medianOf(values)
+	deviations := make([]float64, len(values))
+	for i, v := range values {
+		deviations[i] = math.Abs(v - median)
+	}
+	return distribution{Mean: mean, StdDev: stddev, Median: median, MAD: medianOf(deviations)}
+}
+
+// score mengembalikan z beserta metodenya. MAD = 0 terjadi kalau lebih dari
+// separuh nilainya identik (mis. banyak order bernilai sama persis); di situ
+// median/MAD tidak bisa membedakan apa pun dan perhitungan klasik yang dipakai.
+func (d distribution) score(v float64) (z float64, method string) {
+	if d.MAD > 0 {
+		return madScale * (v - d.Median) / d.MAD, "modified"
+	}
+	if d.StdDev > 0 {
+		return (v - d.Mean) / d.StdDev, "classic"
+	}
+	return 0, "classic"
+}
+
+// usable: kumpulan nilai yang seluruhnya identik tidak punya "yang aneh".
+func (d distribution) usable() bool {
+	return d.MAD > 0 || d.StdDev > 0
+}
+
+func medianOf(values []float64) float64 {
+	n := len(values)
+	if n == 0 {
+		return 0
+	}
+	sorted := make([]float64, n)
+	copy(sorted, values)
+	sort.Float64s(sorted)
+	if n%2 == 1 {
+		return sorted[n/2]
+	}
+	return (sorted[n/2-1] + sorted[n/2]) / 2
+}
+
 func (h *Handler) scanSalesOrders(companyID string, threshold float64) ([]anomaly, error) {
 	var orders []struct {
 		ID          string  `json:"id"`
@@ -113,18 +182,18 @@ func (h *Handler) scanSalesOrders(companyID string, threshold float64) ([]anomal
 	for i, o := range orders {
 		values[i] = o.TotalAmount
 	}
-	mean, stddev := meanStdDev(values)
-	if stddev == 0 || len(orders) < 3 {
+	dist := describeValues(values)
+	if !dist.usable() || len(orders) < 3 {
 		return nil, nil
 	}
 
 	var flagged []anomaly
 	for _, o := range orders {
-		z := (o.TotalAmount - mean) / stddev
+		z, method := dist.score(o.TotalAmount)
 		if math.Abs(z) >= threshold {
 			flagged = append(flagged, anomaly{
 				Source: "sales-service", EntityType: "sales_order", EntityID: o.ID,
-				Label: o.SONumber, Value: o.TotalAmount, Mean: mean, StdDev: stddev, ZScore: z,
+				Label: o.SONumber, Value: o.TotalAmount, Mean: dist.Mean, StdDev: dist.StdDev, Median: dist.Median, MAD: dist.MAD, ZScore: z, Method: method,
 				Reason: zReason(z, "Nilai sales order"),
 			})
 		}
@@ -145,18 +214,18 @@ func (h *Handler) scanPurchaseOrders(companyID string, threshold float64) ([]ano
 	for i, o := range orders {
 		values[i] = o.TotalAmount
 	}
-	mean, stddev := meanStdDev(values)
-	if stddev == 0 || len(orders) < 3 {
+	dist := describeValues(values)
+	if !dist.usable() || len(orders) < 3 {
 		return nil, nil
 	}
 
 	var flagged []anomaly
 	for _, o := range orders {
-		z := (o.TotalAmount - mean) / stddev
+		z, method := dist.score(o.TotalAmount)
 		if math.Abs(z) >= threshold {
 			flagged = append(flagged, anomaly{
 				Source: "purchasing-service", EntityType: "purchase_order", EntityID: o.ID,
-				Label: o.PONumber, Value: o.TotalAmount, Mean: mean, StdDev: stddev, ZScore: z,
+				Label: o.PONumber, Value: o.TotalAmount, Mean: dist.Mean, StdDev: dist.StdDev, Median: dist.Median, MAD: dist.MAD, ZScore: z, Method: method,
 				Reason: zReason(z, "Nilai purchase order"),
 			})
 		}
@@ -179,14 +248,14 @@ func (h *Handler) scanStockMovements(companyID string, threshold float64) ([]ano
 	for i, m := range movements {
 		values[i] = m.Quantity
 	}
-	mean, stddev := meanStdDev(values)
-	if stddev == 0 || len(movements) < 3 {
+	dist := describeValues(values)
+	if !dist.usable() || len(movements) < 3 {
 		return nil, nil
 	}
 
 	var flagged []anomaly
 	for _, m := range movements {
-		z := (m.Quantity - mean) / stddev
+		z, method := dist.score(m.Quantity)
 		if math.Abs(z) >= threshold {
 			date := m.MovementDate
 			if len(date) >= 10 {
@@ -195,7 +264,7 @@ func (h *Handler) scanStockMovements(companyID string, threshold float64) ([]ano
 			flagged = append(flagged, anomaly{
 				Source: "warehouse-service", EntityType: "stock_movement", EntityID: m.ID,
 				Label: fmt.Sprintf("%s (%s, %s)", m.ProductName, m.MovementType, date),
-				Value: m.Quantity, Mean: mean, StdDev: stddev, ZScore: z,
+				Value: m.Quantity, Mean: dist.Mean, StdDev: dist.StdDev, Median: dist.Median, MAD: dist.MAD, ZScore: z, Method: method,
 				Reason: zReason(z, "Kuantitas mutasi stok"),
 			})
 		}

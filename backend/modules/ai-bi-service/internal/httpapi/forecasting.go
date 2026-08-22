@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"math"
 	"net/http"
 	"sort"
 	"strconv"
@@ -18,9 +19,26 @@ type periodValue struct {
 	Value  float64 `json:"value"`
 }
 
+// forecastPoint membawa rentang, bukan satu angka: proyeksi dari 6-24 titik
+// data selalu punya ketidakpastian yang besar, dan menampilkan satu garis mulus
+// membuatnya terbaca lebih pasti daripada yang sebenarnya. Lower/Upper adalah
+// interval 95% dari sebaran residu model terhadap historinya sendiri.
+type forecastPoint struct {
+	Period string  `json:"period"`
+	Value  float64 `json:"value"`
+	Lower  float64 `json:"lower"`
+	Upper  float64 `json:"upper"`
+}
+
 type forecastSeries struct {
-	History  []periodValue `json:"history"`
-	Forecast []periodValue `json:"forecast"`
+	History  []periodValue   `json:"history"`
+	Forecast []forecastPoint `json:"forecast"`
+	// Method menjelaskan cara perhitungannya supaya pembaca dashboard tahu
+	// seberapa jauh angkanya bisa dipercaya: "seasonal" (tren + pola bulanan),
+	// "linear" (tren saja), atau "insufficient_data".
+	Method string `json:"method"`
+	// SeasonalPeriod = 12 saat pola bulanan dipakai, 0 kalau tidak.
+	SeasonalPeriod int `json:"seasonal_period"`
 }
 
 type forecastingResponse struct {
@@ -157,8 +175,29 @@ func fillMonthlySeries(byMonth map[string]float64, months int) []periodValue {
 // indeks bulan berurutan) lalu memproyeksikan `forecastMonths` bulan ke
 // depan. Kalau titik data kurang dari 2, proyeksi dilewati (tidak cukup
 // untuk menghitung tren).
+// seasonalPeriod: pola tahunan pada data bulanan. Butuh minimal DUA siklus
+// penuh sebelum dipakai -- dengan satu siklus, "pola musiman" tidak bisa
+// dibedakan dari kejadian sekali lewat.
+const seasonalPeriod = 12
+const minSeasonalPoints = seasonalPeriod * 2
+
+// zScore95 adalah pengali interval kepercayaan 95% untuk sebaran normal.
+const zScore95 = 1.96
+
+// projectSeries memproyeksikan histori bulanan ke depan.
+//
+// Dua lapis:
+//  1. TREN -- regresi linear atas seluruh titik histori (seperti sebelumnya).
+//  2. POLA MUSIMAN -- kalau histori mencakup >= 2 siklus penuh (24 bulan),
+//     residu tren dirata-ratakan per BULAN KALENDER lalu dipusatkan ke nol
+//     (dekomposisi aditif sederhana). Bulan Desember yang selalu tinggi tidak
+//     lagi terbaca sebagai "tren naik" yang lalu diteruskan ke Januari.
+//
+// Kalau historinya lebih pendek dari itu, hasilnya persis seperti dulu (tren
+// saja) -- ditandai method = "linear" supaya perbedaannya kelihatan di UI,
+// bukan disembunyikan.
 func projectSeries(history []periodValue, forecastMonths int) forecastSeries {
-	result := forecastSeries{History: history, Forecast: []periodValue{}}
+	result := forecastSeries{History: history, Forecast: []forecastPoint{}, Method: "insufficient_data"}
 	if len(history) < 2 {
 		return result
 	}
@@ -170,21 +209,94 @@ func projectSeries(history []periodValue, forecastMonths int) forecastSeries {
 		ys[i] = p.Value
 	}
 	slope, intercept := linearRegression(xs, ys)
+	result.Method = "linear"
+
+	// Indeks musiman per bulan kalender (1-12), 0 = tidak dipakai.
+	var seasonal map[int]float64
+	if len(history) >= minSeasonalPoints {
+		seasonal = seasonalIndices(history, slope, intercept)
+		if seasonal != nil {
+			result.Method = "seasonal"
+			result.SeasonalPeriod = seasonalPeriod
+		}
+	}
+
+	fitted := func(i int, period string) float64 {
+		v := slope*float64(i) + intercept
+		if seasonal != nil {
+			if m, err := time.Parse("2006-01", period); err == nil {
+				v += seasonal[int(m.Month())]
+			}
+		}
+		return v
+	}
+
+	// Sebaran residu terhadap histori sendiri jadi dasar lebar interval.
+	var sqSum float64
+	for i, p := range history {
+		d := p.Value - fitted(i, p.Period)
+		sqSum += d * d
+	}
+	stdErr := math.Sqrt(sqSum / float64(len(history)))
+	band := zScore95 * stdErr
 
 	lastPeriod, err := time.Parse("2006-01", history[len(history)-1].Period)
 	if err != nil {
 		return result
 	}
 	for i := 1; i <= forecastMonths; i++ {
-		x := float64(len(history) - 1 + i)
-		value := slope*x + intercept
+		period := lastPeriod.AddDate(0, i, 0).Format("2006-01")
+		value := fitted(len(history)-1+i, period)
 		if value < 0 {
 			value = 0
 		}
-		period := lastPeriod.AddDate(0, i, 0).Format("2006-01")
-		result.Forecast = append(result.Forecast, periodValue{Period: period, Value: value})
+		lower := value - band
+		if lower < 0 {
+			// Penjualan & stok tidak bisa negatif; batas bawah dipotong di nol
+			// alih-alih menampilkan angka yang mustahil.
+			lower = 0
+		}
+		result.Forecast = append(result.Forecast, forecastPoint{
+			Period: period, Value: value, Lower: lower, Upper: value + band,
+		})
 	}
 	return result
+}
+
+// seasonalIndices menghitung rata-rata residu tren per bulan kalender, lalu
+// memusatkannya ke nol supaya pola musiman hanya MENGGESER nilai, tidak ikut
+// menaikkan/menurunkan levelnya (itu tugas tren).
+//
+// Mengembalikan nil kalau ada bulan kalender yang tidak punya satu pun titik
+// data: indeks yang tidak lengkap akan membuat sebagian bulan proyeksi memakai
+// pola dan sebagian tidak -- lebih jujur kembali ke tren saja.
+func seasonalIndices(history []periodValue, slope, intercept float64) map[int]float64 {
+	sums := map[int]float64{}
+	counts := map[int]int{}
+	for i, p := range history {
+		m, err := time.Parse("2006-01", p.Period)
+		if err != nil {
+			return nil
+		}
+		residual := p.Value - (slope*float64(i) + intercept)
+		sums[int(m.Month())] += residual
+		counts[int(m.Month())]++
+	}
+	if len(counts) < seasonalPeriod {
+		return nil
+	}
+
+	indices := make(map[int]float64, seasonalPeriod)
+	var total float64
+	for month, sum := range sums {
+		indices[month] = sum / float64(counts[month])
+		total += indices[month]
+	}
+	mean := total / float64(len(indices))
+	for month := range indices {
+		indices[month] -= mean
+	}
+	return indices
 }
 
 func linearRegression(xs, ys []float64) (slope, intercept float64) {
