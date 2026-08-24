@@ -39,6 +39,10 @@ import StockOpnamePage from './pages/warehouse/StockOpnamePage.jsx'
 import BomPage from './pages/production/BomPage.jsx'
 import WorkOrdersPage from './pages/production/WorkOrdersPage.jsx'
 import ProductionSchedulePage from './pages/production/ProductionSchedulePage.jsx'
+import MachinesPage from './pages/production/MachinesPage.jsx'
+import ShiftsPage from './pages/production/ShiftsPage.jsx'
+import ProductionRunsPage from './pages/production/ProductionRunsPage.jsx'
+import OeePage from './pages/production/OeePage.jsx'
 import QualityStandardsPage from './pages/qc/QualityStandardsPage.jsx'
 import QualityInspectionsPage from './pages/qc/QualityInspectionsPage.jsx'
 import AssetRegisterPage from './pages/asset/AssetRegisterPage.jsx'
@@ -123,6 +127,10 @@ function App() {
         <Route path="/production/bom" element={<BomPage />} />
         <Route path="/production/work-orders" element={<WorkOrdersPage />} />
         <Route path="/production/schedule" element={<ProductionSchedulePage />} />
+        <Route path="/production/machines" element={<MachinesPage />} />
+        <Route path="/production/shifts" element={<ShiftsPage />} />
+        <Route path="/production/runs" element={<ProductionRunsPage />} />
+        <Route path="/production/oee" element={<OeePage />} />
         <Route path="/qc/standards" element={<QualityStandardsPage />} />
         <Route path="/qc/inspections" element={<QualityInspectionsPage />} />
         <Route path="/asset/register" element={<AssetRegisterPage />} />

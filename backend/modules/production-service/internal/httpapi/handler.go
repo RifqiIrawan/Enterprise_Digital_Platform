@@ -37,6 +37,25 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /work-orders/{id}", h.getWorkOrder)
 	mux.HandleFunc("POST /work-orders/{id}/start", h.startWorkOrder)
 	mux.HandleFunc("POST /work-orders/{id}/complete", h.completeWorkOrder)
+
+	// Fase 3 (MES): mesin, shift, catatan pelaksanaan produksi, downtime, OEE.
+	mux.HandleFunc("GET /machines", h.listMachines)
+	mux.HandleFunc("POST /machines", h.createMachine)
+	mux.HandleFunc("GET /machines/{id}", h.getMachine)
+	mux.HandleFunc("PUT /machines/{id}", h.updateMachine)
+
+	mux.HandleFunc("GET /shifts", h.listShifts)
+	mux.HandleFunc("POST /shifts", h.createShift)
+	mux.HandleFunc("PUT /shifts/{id}", h.updateShift)
+
+	mux.HandleFunc("GET /production-runs", h.listProductionRuns)
+	mux.HandleFunc("POST /production-runs", h.createProductionRun)
+	mux.HandleFunc("GET /production-runs/{id}", h.getProductionRun)
+	mux.HandleFunc("POST /production-runs/{id}/close", h.closeProductionRun)
+	mux.HandleFunc("POST /production-runs/{id}/downtime", h.addDowntime)
+	mux.HandleFunc("DELETE /production-runs/{id}/downtime/{downtimeId}", h.deleteDowntime)
+
+	mux.HandleFunc("GET /oee", h.oeeSummary)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {

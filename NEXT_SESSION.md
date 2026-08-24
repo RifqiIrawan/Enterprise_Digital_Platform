@@ -18,6 +18,7 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — QC module** (Standar Mutu per produk, Inspeksi Kualitas dengan hasil PASS/FAIL/PARTIAL otomatis, opsional terhubung ke PO/Work Order) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — Asset module** (Pendataan Aset, Maintenance Schedule dengan overdue indicator, complete/cancel) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — AI & BI** | ✅ **Selesai semua** — BI Dashboards, Forecasting (proyeksi tren linear sederhana), dan Anomaly Detection (heuristik z-score) semuanya sudah jalan & diverifikasi (lihat detail di bawah). **Ini menandai seluruh Fase 2 platform ini SELESAI** (Finance, HR, Sales, Purchasing, Warehouse, Production, QC, Asset, AI & BI). |
+| **Fase 3 — Manufacturing/MES** (Mesin, Shift Produksi, Eksekusi Produksi + downtime, OEE; dijahit ke penyelesaian Work Order) | 🚧 Inti MES selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). **Belum**: Formula (BOM berbasis persentase) dan fact table OEE di dw-service. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Frontend — Company/Branch switcher (menggantikan asumsi single-company `data[0]`) | ✅ Selesai & diverifikasi sesi ini di 29 halaman (lihat detail di bawah) |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
@@ -1502,3 +1503,150 @@ Tinggal satu: **Silver/Gold data lake** — butuh Spark atau dbt, cara kerja & d
 ### Catatan untuk sesi berikutnya
 
 Endpoint baru mana pun sekarang **wajib** didaftarkan di `backend/services/api-gateway/internal/authz/policy.go`. Kalau lupa, `TestPolicyCoversEveryRegisteredRoute` yang gagal lebih dulu — bukan pengguna yang menemukan 403 tanpa sebab.
+
+---
+
+## production-service — MES: Mesin, Shift, Eksekusi Produksi, Downtime & OEE (Fase 3, sesi 2026-08-25)
+
+Fase 3 di roadmap asli berisi BOM, Formula, Production Order, MES, Machine,
+Shift, Downtime, OEE, dan Quality Control. BOM, Production Order, dan QC sudah
+ada sejak Fase 2 — sesi ini mengerjakan sisanya kecuali Formula.
+
+### `002_mes.sql` — empat tabel
+
+- `machines` — kode/nama/tipe/lokasi, `ideal_cycle_time_minutes` (menit per 1
+  unit pada kecepatan rancangan; ini penyebut faktor Performance, jadi wajib &
+  harus > 0), status ACTIVE/MAINTENANCE/INACTIVE.
+- `shifts` — jam mulai/selesai (`TIME`, dibaca lewat `to_char` jadi "HH:MM"),
+  `break_minutes`. Waktu produktif tidak disimpan; dihitung di Go
+  (`shiftPlannedMinutes`) supaya UI dan server tidak punya dua rumus.
+- `production_runs` — satu mesin × satu shift × satu tanggal untuk satu work
+  order. `planned_minutes` di-**snapshot** dari shift saat run dibuat.
+- `downtime_logs` — per run, `reason_code` terbatas 7 pilihan (BREAKDOWN, SETUP,
+  MATERIAL_SHORTAGE, NO_OPERATOR, ADJUSTMENT, PLANNED_STOP, OTHER) supaya bisa
+  dijumlahkan jadi Pareto; kolom teks bebas tidak bisa dikelompokkan.
+
+Dua aturan sengaja dititipkan ke database, bukan cuma handler:
+
+- `idx_production_runs_one_open_per_machine` (unique index parsial `WHERE
+  status = 'OPEN'`) — dua operator yang menekan "Mulai Eksekusi" bersamaan pada
+  mesin yang sama akan lolos pemeriksaan SELECT keduanya.
+- CHECK yang mengikat status ke angka hasil: run OPEN wajib `quantity_good`/
+  `quantity_reject` NULL, run CLOSED wajib terisi. Tanpa itu, run yang belum
+  selesai bisa ikut terhitung di OEE.
+
+### Rumus OEE & keputusan yang menyertainya
+
+```
+Availability = run time / planned time      run time = planned − downtime
+Performance  = (cycle time ideal × total unit) / run time
+Quality       = unit bagus / total unit
+OEE          = A × P × Q
+```
+
+- **planned time = waktu produktif shift**, bukan 24 jam. OEE mengukur mesin
+  terhadap waktu yang memang dijadwalkan berproduksi; istirahat sudah
+  dikeluarkan lewat `break_minutes`.
+- **PLANNED_STOP tetap memotong Availability.** Itu memang berhenti di dalam
+  jam yang sudah dijadwalkan produksi.
+- **Performance > 100% dipotong ke 100% dan ditandai** `performance_capped`.
+  Itu bukan mesin yang melampaui rancangannya, itu `ideal_cycle_time_minutes`
+  terlalu lambat atau downtime tidak dicatat. Dibiarkan lewat, OEE-nya bohong
+  ke atas dan tidak ada yang tahu sebabnya.
+- **Agregat lintas mesin tidak boleh memakai satu cycle time.** `aggregateOEE`
+  menerima `idealMinutes` (menit yang seharusnya dibutuhkan), sehingga ringkasan
+  menjumlahkan menit ideal per mesin lebih dulu baru dibandingkan dengan total
+  run time. `computeOEE` untuk satu run hanyalah pembungkus tipis di atasnya.
+- **Hanya run CLOSED yang masuk hitungan** — di detail run maupun di `/oee`.
+  Run OPEN sengaja tidak mengembalikan objek `oee` sama sekali; menampilkan
+  0% untuk shift yang baru dimulai lebih menyesatkan daripada tidak menampilkan
+  apa pun.
+
+### Jahitan MES ↔ Work Order (bagian yang paling perlu diingat)
+
+`checkProductionRuns` dipanggil di awal `completeWorkOrder`:
+
+- WO **tanpa** production run → perilaku persis seperti sebelum MES ada,
+  `quantity_produced` diketik saat menyelesaikan WO. Tidak ada regresi untuk
+  data lama.
+- WO **dengan** run → lantai produksi yang jadi sumber kebenaran: masih ada run
+  OPEN ⇒ 409; `quantity_produced` ≠ total `quantity_good` seluruh run ⇒ 409.
+  Sengaja **ditolak, bukan ditimpa diam-diam**: kalau berbeda, salah satu dari
+  keduanya salah dan orangnya harus tahu.
+- Unit reject tidak ikut ditambahkan ke stok produk jadi.
+- Perbandingan pecahan memakai toleransi 0,0001 (sisa pembulatan NUMERIC).
+
+Production run **tidak menyentuh stok sama sekali**. Mutasi stok tetap hanya
+terjadi di `completeWorkOrder`, supaya stok bergerak di satu tempat saja.
+
+### Endpoint baru (14) & kebijakan gateway
+
+`/machines` (GET/POST + GET/PUT by id), `/shifts` (GET/POST + PUT by id),
+`/production-runs` (GET/POST + GET by id), `/production-runs/{id}/close`,
+`/production-runs/{id}/downtime` (POST) & `/{downtimeId}` (DELETE), `/oee`.
+
+Semuanya didaftarkan di `api-gateway/internal/authz/policy.go` (kalau lupa,
+`TestPolicyCoversEveryRegisteredRoute` yang gagal lebih dulu). Menutup run dan
+mencatat downtime cukup `update`, bukan `approve`: keduanya tidak menyentuh
+stok maupun buku besar — yang memutasi stok tetap hanya penyelesaian Work
+Order. Menghapus catatan downtime butuh `delete`. Daftar mesin & shift dianggap
+data acuan (`viewAny`) karena form Eksekusi Produksi dan penyaring OEE mengisi
+dropdown-nya dari situ, dan `GET /work-orders` ikut ditambahi `/production/runs`
+dengan alasan yang sama.
+
+### Frontend & menu
+
+`019_seed_mes_menus.sql` menambah 4 menu di modul Production yang sudah ada:
+Mesin (40), Shift Produksi (50), Eksekusi Produksi (60), OEE Mesin (70) — akses
+penuh untuk super_admin/production/company_admin/branch_manager, view-only untuk
+auditor.
+
+- `/production/machines` & `/production/shifts` — master sederhana. Kolom
+  "Waktu Produktif" shift datang dari server, bukan dihitung ulang di browser.
+- `/production/runs` — daftar + modal rincian berisi catatan downtime (tambah/
+  hapus selagi OPEN), form tutup run, dan OEE run itu setelah ditutup. Dropdown
+  work order hanya diisi yang IN_PROGRESS: menyodorkan pilihan yang pasti
+  ditolak backend adalah cara terburuk menyampaikan aturannya.
+- `/production/oee` — 4 stat tile (OEE, A, P, Q), grafik tiga faktor per mesin
+  memakai `GroupedBarChart` yang sama dengan BI Dashboards (semua seri bersatuan
+  persen, jadi tidak perlu SVG kedua), tabel rincian per mesin, dan Pareto
+  penyebab downtime. OEE **tidak** digambar sebagai batang keempat — nilainya
+  hasil perkalian ketiganya, bukan faktor sejajar. Warna: biru/oranye/ungu
+  (kategoris), hijau/merah dihindari karena 70% Availability bukan "baik" atau
+  "buruk" tanpa target pembanding.
+
+### Verifikasi
+
+- `production-service`: `go test ./...` → **75 test lulus** (termasuk subtest)
+  terhadap Postgres lokal nyata. Yang dijaga: snapshot `planned_minutes` tidak
+  berubah walau jam shift diubah setelahnya, satu run OPEN per mesin, mesin
+  MAINTENANCE tidak bisa dipakai & tidak bisa ditarik dari ACTIVE selagi run
+  berjalan, batas total downtime, shift malam (22:00–06:00 = 420 menit),
+  angka OEE sampai 4 desimal (A 0,8571 × P 0,8889 × Q 0,9375 = 0,7143),
+  `performance_capped`, agregat lintas dua mesin dengan cycle time berbeda,
+  Pareto downtime, dan ketiga cabang jahitan WO (tanpa run / run terbuka /
+  angka tidak cocok).
+- `api-gateway`: `go test ./...` lulus — termasuk penjaga cakupan kebijakan.
+- `rbac-service`: `go test ./...` lulus; menu & hak MES diperiksa langsung di
+  `rbac_service_test` lewat psql (7 menu di modul Production, 4 menu baru ×
+  5 role).
+- Frontend: ESLint bersih, `vitest run` **47 test lulus** (5 di antaranya baru:
+  gating tombol Eksekusi Produksi, dropdown WO IN_PROGRESS, dan format persen
+  + peringatan capped di halaman OEE).
+- **Belum diverifikasi di browser sungguhan** — sesi ini berhenti di tingkat
+  test otomatis.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Formula** (satu-satunya sisa Fase 3): BOM berbasis persentase/batch untuk
+  industri proses. Butuh `bom_type` + `batch_size` dan penyesuaian snapshot
+  `work_order_lines`, jadi memang potongan tersendiri.
+- **Fact table OEE di dw-service** (`fact_production_oee`) + chart ke-18 di BI
+  Dashboards. Semua bahannya sudah ada di `production_runs`/`downtime_logs`.
+- Verifikasi end-to-end di browser (Playwright), seperti modul Fase 2 lainnya.
+- Downtime belum punya jam mulai/selesai, hanya durasi — cukup untuk OEE, tidak
+  cukup kalau nanti mau timeline per shift.
+- Satu run = satu work order. Mesin yang dalam satu shift mengerjakan dua WO
+  harus dicatat sebagai dua run (dan itu ditolak, karena satu mesin hanya boleh
+  punya satu run OPEN). Kalau pola itu nyata di lapangan, aturannya perlu
+  ditinjau ulang.

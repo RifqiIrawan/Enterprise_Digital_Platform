@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -276,6 +277,14 @@ func (h *Handler) completeWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if msg, err := h.checkProductionRuns(ctx, wo.ID, req.QuantityProduced); err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memeriksa production run")
+		return
+	} else if msg != "" {
+		writeError(w, http.StatusConflict, msg)
+		return
+	}
+
 	lines, err := h.fetchWorkOrderLines(ctx, id)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat baris kebutuhan komponen")
@@ -333,6 +342,47 @@ func (h *Handler) completeWorkOrder(w http.ResponseWriter, r *http.Request) {
 
 	h.events.Publish("production.work_order.completed", newAuditEvent("production.work_order.completed", actor, &wo.CompanyID, "update", "work_order", wo.ID, wo))
 	writeJSON(w, http.StatusOK, wo)
+}
+
+// checkProductionRuns menjahit lapisan MES (Fase 3) ke penyelesaian work
+// order. Aturannya: SELAMA sebuah WO tidak punya production run, perilakunya
+// persis seperti sebelum MES ada -- angka hasil produksi diketik saat
+// menyelesaikan WO. Begitu ada run, lantai produksi yang jadi sumber
+// kebenarannya:
+//
+//   - masih ada run OPEN berarti shift-nya belum ditutup; menyelesaikan WO
+//     sekarang akan memutasi stok memakai angka yang belum lengkap.
+//   - quantity_produced harus sama dengan jumlah quantity_good seluruh run.
+//     Bukan dipaksa diam-diam sama: kalau operator mengetik angka lain,
+//     salah satu dari keduanya salah, dan itu harus diketahui orangnya --
+//     bukan ditimpa oleh service dan hilang begitu saja.
+//
+// Unit reject sengaja TIDAK ikut ditambahkan ke stok produk jadi; yang masuk
+// gudang hanya yang lolos.
+func (h *Handler) checkProductionRuns(ctx context.Context, workOrderID string, quantityProduced float64) (string, error) {
+	var runCount, openRuns int
+	var totalGood float64
+	err := h.pool.QueryRow(ctx, `
+		SELECT COUNT(*),
+		       COUNT(*) FILTER (WHERE status = 'OPEN'),
+		       COALESCE(SUM(quantity_good), 0)
+		FROM production_runs WHERE work_order_id = $1`, workOrderID,
+	).Scan(&runCount, &openRuns, &totalGood)
+	if err != nil {
+		return "", err
+	}
+	if runCount == 0 {
+		return "", nil
+	}
+	if openRuns > 0 {
+		return fmt.Sprintf("Masih ada %d production run yang belum ditutup untuk work order ini", openRuns), nil
+	}
+	// Perbandingan angka pecahan: beda di bawah 0,0001 unit adalah sisa
+	// pembulatan NUMERIC, bukan selisih yang berarti di lantai produksi.
+	if math.Abs(totalGood-quantityProduced) > 0.0001 {
+		return fmt.Sprintf("quantity_produced (%g) tidak sama dengan total hasil bagus seluruh production run (%g)", quantityProduced, totalGood), nil
+	}
+	return "", nil
 }
 
 func nextSequence(ctx context.Context, tx pgx.Tx, companyID, table, column, prefix, period string) (string, error) {

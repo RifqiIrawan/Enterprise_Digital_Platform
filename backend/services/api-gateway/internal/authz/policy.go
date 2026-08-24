@@ -328,11 +328,30 @@ var Rules = []Rule{
 	{"GET", "/api/production/boms/*", need("/production/bom", View)},
 	{"POST", "/api/production/boms", need("/production/bom", Create)},
 	{"PUT", "/api/production/boms/*", need("/production/bom", Update)},
-	{"GET", "/api/production/work-orders", viewAny("/production/work-orders", "/production/schedule", "/qc/inspections")},
+	{"GET", "/api/production/work-orders", viewAny("/production/work-orders", "/production/schedule", "/production/runs", "/qc/inspections")},
 	{"GET", "/api/production/work-orders/*", need("/production/work-orders", View)},
 	{"POST", "/api/production/work-orders", need("/production/work-orders", Create)},
 	{"POST", "/api/production/work-orders/*/start", need("/production/work-orders", Update)},
 	{"POST", "/api/production/work-orders/*/complete", need("/production/work-orders", Approve)},
+	// MES (Fase 3). Daftar mesin & shift adalah data acuan: form Eksekusi
+	// Produksi dan penyaring OEE mengisi dropdown-nya dari situ.
+	{"GET", "/api/production/machines", viewAny("/production/machines", "/production/runs", "/production/oee")},
+	{"GET", "/api/production/machines/*", need("/production/machines", View)},
+	{"POST", "/api/production/machines", need("/production/machines", Create)},
+	{"PUT", "/api/production/machines/*", need("/production/machines", Update)},
+	{"GET", "/api/production/shifts", viewAny("/production/shifts", "/production/runs")},
+	{"POST", "/api/production/shifts", need("/production/shifts", Create)},
+	{"PUT", "/api/production/shifts/*", need("/production/shifts", Update)},
+	{"GET", "/api/production/production-runs", viewAny("/production/runs", "/production/oee")},
+	{"GET", "/api/production/production-runs/*", need("/production/runs", View)},
+	{"POST", "/api/production/production-runs", need("/production/runs", Create)},
+	// Menutup run dan mencatat downtime cukup `update`: keduanya tidak
+	// menyentuh stok maupun buku besar. Yang memutasi stok tetap hanya
+	// penyelesaian Work Order, dan itu memang menuntut `approve`.
+	{"POST", "/api/production/production-runs/*/close", need("/production/runs", Update)},
+	{"POST", "/api/production/production-runs/*/downtime", need("/production/runs", Update)},
+	{"DELETE", "/api/production/production-runs/*/downtime/*", need("/production/runs", Delete)},
+	{"GET", "/api/production/oee", need("/production/oee", View)},
 
 	// ---------- qc-service ----------
 	{"GET", "/api/qc/standards", viewAny("/qc/standards", "/qc/inspections")},
