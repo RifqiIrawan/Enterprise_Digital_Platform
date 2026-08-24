@@ -53,7 +53,8 @@ Service yang naik:
 | Kafka UI | 8099 | Dashboard untuk inspeksi topic/consumer (host 8090 dipakai production-service) |
 | Mosquitto | 1883 | Broker MQTT untuk IoT Simulator (`backend/modules/iot-service`) — simulator publish, iot-service subscribe untuk ingest. Config di `infra/mosquitto/mosquitto.conf` (anonymous access, dev-only) |
 | Prometheus | 9090 | Scrape `/metrics` dari seluruh 16 service Go tiap 15 detik, lihat `infra/prometheus/prometheus.yml`. Target di-scrape lewat `host.docker.internal:<port>` — jalan sama baiknya untuk service yang jalan native (`go run`), sebagai container di compose ini, maupun sebagai pod K8s yang di-`kubectl port-forward` ke port host yang sama |
-| Grafana | 3001 (login dev-only `admin`/`admin`) | Dashboard "EDP - Services Overview" ter-provision otomatis (request rate, error rate, p95 latency, goroutines, memory per service) — datasource Prometheus + Loki sudah ter-wire, tidak perlu setup manual. Host port BUKAN 3000 (default Grafana) karena bentrok dengan `frontend` di compose ini |
+| Alertmanager | 9093 | Menerima alert dari Prometheus (aturannya di `infra/prometheus/rules/edp-alerts.yml`), mengelompokkan per `alertname`+`service`, lalu meneruskannya ke webhook di `infra/alertmanager/alertmanager.yml`. Tujuan pengiriman masih `REPLACE_ME_ALERT_WEBHOOK` — repo ini tidak menyimpan kredensial, jadi pengirimannya gagal (tercatat di log Alertmanager) sementara pengelompokan & UI-nya tetap jalan |
+| Grafana | 3001 (login dev-only `admin`/`admin`) | Dua dashboard ter-provision otomatis: "EDP - Services Overview" (request rate, error rate, p95 latency, goroutines, memory per service) dan "EDP - Alerts & SLO" (alert yang sedang berbunyi, ketersediaan per service, rasio 5xx & p95 dengan garis ambang yang sama persis dengan aturan alert, route penyumbang 5xx, gelombang 403 di gateway, dan log error dari Loki) — datasource Prometheus + Loki sudah ter-wire, tidak perlu setup manual. Host port BUKAN 3000 (default Grafana) karena bentrok dengan `frontend` di compose ini |
 | Loki | 3100 | Log storage, lihat `infra/loki/loki-config.yml` (single-binary, filesystem-backed, retensi 7 hari, dev-only) |
 | Promtail | — (tidak ada host port, cuma internal) | Ship log dari SEMUA container di Docker daemon ini ke Loki lewat Docker service discovery (`infra/promtail/promtail-config.yml`, akses `/var/run/docker.sock` read-only) — **tidak** menangkap log service yang jalan native lewat `go run` (lihat catatan di bawah) |
 | Jaeger | 16686 (UI), 4318 (OTLP/HTTP), 4317 (OTLP/gRPC, tidak dipakai exporter repo ini) | Distributed tracing — menerima span dari `internal/tracing` tiap service (100%-sampled, in-memory storage, dev-only, tidak survive restart). Service container pakai `OTLP_ENDPOINT=jaeger:4318`; proses native (`go run`) pakai default `localhost:4318` lewat port host di atas. Datasource Grafana sudah ter-wire (`infra/grafana/provisioning/datasources/jaeger.yml`) |
@@ -101,6 +102,40 @@ service.
 Distributed tracing (Jaeger) sengaja belum dikerjakan — menyusul sebagai
 pass terpisah kalau dibutuhkan, mengikuti pola "satu pilar sekaligus" yang
 sama seperti pengerjaan Data Warehouse bertahap sebelumnya.
+
+### Alerting (Fase 11)
+
+Tujuh aturan alert di `infra/prometheus/rules/edp-alerts.yml`, dikelompokkan
+jadi tiga: ketersediaan (`ServiceDown`, `MostServicesDown`), lalu lintas
+(`HighErrorRate`, `HighLatencyP95`, `AuthorizationDenialSpike`), dan runtime
+(`HighResidentMemory`, `GoroutineLeak`). Tiga hal yang dipegang saat menulisnya:
+
+1. **Hanya memakai metrik yang benar-benar diekspor.** Service di repo ini
+   cuma punya dua metrik buatan sendiri (`http_requests_total`,
+   `http_request_duration_seconds`) plus koleksi bawaan `go_*`/`process_*` dan
+   `up`. Alert yang menyebut metrik yang tidak ada tidak akan pernah berbunyi,
+   dan diamnya akan dibaca sebagai "semuanya sehat" — karena itu
+   `infra/scripts/check-alert-metrics.py` mencocokkan setiap nama metrik di
+   aturan dengan yang benar-benar didaftarkan kode Go, dan dijalankan di CI.
+2. **Setiap alert menyebut langkah berikutnya**, bukan cuma bahwa sesuatu
+   terjadi.
+3. **Selalu ada `for:`** — lonjakan sesaat saat deploy bukan insiden.
+
+`AuthorizationDenialSpike` khas platform ini: setiap endpoint wajib terdaftar
+di `api-gateway/internal/authz/policy.go` dan yang tidak terdaftar ditolak,
+jadi endpoint baru yang lupa didaftarkan muncul sebagai gelombang 403 di
+gateway. `TestPolicyCoversEveryRegisteredRoute` menjaga itu di CI; alert ini
+jaring pengaman untuk yang lolos sampai produksi.
+
+Alertmanager menekan alert turunan lewat `inhibit_rules`: service yang mati
+otomatis membuat error rate & latensinya ikut mencurigakan, dan yang perlu
+dibaca orang adalah "service X mati", bukan tiga alert tentang gejala yang
+sama.
+
+Konfigurasi monitoring tidak punya compiler; `.github/workflows/monitoring-ci.yml`
+menggantikannya dengan `promtool check config`/`check rules`,
+`amtool check-config`, pemeriksaan JSON dashboard, dan pemeriksaan nama metrik
+di atas.
 
 Prometheus/Grafana sengaja **cuma ada di `docker-compose.yml`**, tidak
 di-deploy sebagai Pod K8s tersendiri — sama seperti Kafka/Redis/ClickHouse/

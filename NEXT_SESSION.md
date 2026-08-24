@@ -22,6 +22,7 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 5 — Asset lanjutan** (Kalibrasi + Penyusutan dengan posting ke GL) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Sisa yang diketahui: jurnal pelepasan aset (disposal) belum ada. |
 | **Fase 9 — Business Intelligence per peran** (6 dashboard: Eksekutif/Sales/Finance/Gudang/Manufaktur/SDM, role baru `executive`, `?sections=` di ringkasan ai-bi) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Belum ada penyaring periode & tombol export. |
 | **Fase 10 — AI lanjutan** (Predictive Maintenance & Recommendation Engine; keduanya heuristik yang dijelaskan) | 🚧 Dua dari tiga selesai & tertutup test (sesi 2026-08-25, detail paling bawah). **RAG Chatbot belum** — butuh penyedia LLM, penyimpan vektor, dan keputusan soal data apa yang boleh masuk prompt. |
+| **Fase 11 — Monitoring** (aturan alert Prometheus + Alertmanager + dashboard Alerts & SLO + CI validasi konfigurasi) | ✅ Selesai (sesi 2026-08-25, detail paling bawah). **Catatan**: promtool/amtool belum dijalankan di mesin ini (Docker mati) — validasinya berjalan di GitHub Actions. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Frontend — Company/Branch switcher (menggantikan asumsi single-company `data[0]`) | ✅ Selesai & diverifikasi sesi ini di 29 halaman (lihat detail di bawah) |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
@@ -2025,3 +2026,107 @@ sini, dan tidak ada satu pun yang bisa diverifikasi di lingkungan ini sekarang.
   tanggal PO & penerimaan, jadi bahannya sebenarnya ada.
 - Riwayat skor risiko (sekarang dihitung ulang tiap request, tidak disimpan),
   sehingga tren "mesin ini memburuk" belum bisa dilihat.
+
+---
+
+## Alerting: aturan Prometheus + Alertmanager — FASE 11 SELESAI (sesi 2026-08-25, lanjutan lagi)
+
+Fase 11 di roadmap: Grafana, Prometheus, Loki, Alertmanager. Empat dari lima
+komponennya sudah berjalan sejak sesi observability 2026-07-21 (plus Jaeger).
+Yang benar-benar belum ada: **aturan alert** (`prometheus.yml` tidak punya
+`rule_files` sama sekali) dan **Alertmanager** (tidak ada di compose maupun di
+`infra/`).
+
+### Yang ditambahkan
+
+- `infra/prometheus/rules/edp-alerts.yml` — tujuh aturan dalam tiga grup:
+  - **Ketersediaan**: `ServiceDown` (up == 0, 2 menit, critical),
+    `MostServicesDown` (lebih dari separuh target mati — kalau begitu yang
+    rusak biasanya Postgres/jaringan/mesin, bukan service satu per satu, dan
+    orang tidak perlu menelusuri 16 alert terpisah).
+  - **Lalu lintas**: `HighErrorRate` (rasio 5xx > 5%, bukan cacah — 5 error
+    dari 10 request adalah insiden, 5 dari 100.000 adalah hari biasa),
+    `HighLatencyP95` (> 1 detik), `AuthorizationDenialSpike`.
+  - **Runtime**: `HighResidentMemory` (> 1,5 GiB), `GoroutineLeak`
+    (dibandingkan dengan dirinya sendiri satu jam lalu, bukan ambang tetap —
+    jumlah goroutine yang wajar berbeda-beda per service).
+- `infra/alertmanager/alertmanager.yml` + service `alertmanager` di
+  docker-compose (port 9093, volume `alertmanager_data`), dan
+  `rule_files`/`alerting` di `prometheus.yml`.
+- Dashboard kedua `edp-alerts.json` ("EDP - Alerts & SLO"): alert yang sedang
+  berbunyi (dari metrik `ALERTS` Prometheus sendiri, jadi tetap terisi walau
+  pengiriman webhook gagal), ketersediaan per service, rasio 5xx & p95 dengan
+  garis ambang, route penyumbang 5xx, 403 di gateway, dan log error dari Loki.
+- `.github/workflows/monitoring-ci.yml` + `infra/scripts/check-alert-metrics.py`.
+
+### `AuthorizationDenialSpike` — alert yang khas platform ini
+
+Setiap endpoint wajib terdaftar di `api-gateway/internal/authz/policy.go`, dan
+yang tidak terdaftar DITOLAK. Artinya endpoint baru yang lupa didaftarkan
+muncul sebagai gelombang 403 di gateway. `TestPolicyCoversEveryRegisteredRoute`
+sudah menjaga itu di CI; alert ini jaring pengaman untuk yang lolos sampai
+produksi. 403 sesekali normal (orang membuka menu yang bukan haknya) — yang
+tidak normal adalah 403 yang menetap 15 menit.
+
+### Tiga keputusan yang membentuk berkas aturannya
+
+1. **Hanya metrik yang benar-benar diekspor.** Seluruh service Go di repo ini
+   hanya punya dua metrik buatan sendiri (`http_requests_total`,
+   `http_request_duration_seconds`) plus koleksi bawaan client_golang
+   (`go_*`, `process_*`) dan `up`. Alert yang menyebut metrik yang tidak
+   pernah ada tidak akan pernah berbunyi, dan **diamnya akan dibaca sebagai
+   "semuanya sehat"** — kegagalan yang paling mahal justru karena tidak
+   terlihat. promtool tidak memeriksa ini (dia hanya memeriksa sintaksis),
+   jadi dibuat pemeriksa tersendiri.
+2. **Setiap alert menyebut langkah berikutnya**, bukan cuma bahwa sesuatu
+   terjadi — alert tanpa tindak lanjut akan dimatikan orang.
+3. **Selalu ada `for:`.** Lonjakan sesaat saat deploy/restart bukan insiden.
+
+`inhibit_rules` di Alertmanager menekan alert turunan: service yang mati
+otomatis membuat error rate & latensinya ikut mencurigakan, dan yang perlu
+dibaca adalah "service X mati", bukan tiga alert tentang gejala yang sama.
+`MostServicesDown` menekan `ServiceDown` dengan alasan yang sama.
+
+### `infra/scripts/check-alert-metrics.py`
+
+Mengambil nama metrik dari ekspresi PromQL di aturan (setelah membuang blok
+label, rentang `[10m]`, daftar label `by (service)`, durasi `1h`, dan angka
+`1.5e9` — semuanya sempat terbaca sebagai "nama metrik" di versi pertama) lalu
+mencocokkannya dengan `Name:` di `backend/**/internal/metrics/*.go`, ditambah
+awalan bawaan yang sah. Punya penjaga untuk dirinya sendiri: kalau pembacaan
+kode Go tidak menemukan satu metrik pun, dia GAGAL alih-alih lulus tanpa
+memeriksa apa pun.
+
+### Verifikasi
+
+- Seluruh YAML & JSON baru mem-parse (Python).
+- `check-alert-metrics.py` → **OK, 7 aturan diperiksa**, dan dibuktikan juga
+  bahwa versi salah ketik (`http_request_duraton_seconds_bucket`) memang
+  ditolaknya.
+- **promtool & amtool TIDAK dijalankan di sini**: Docker Desktop sedang mati di
+  mesin ini, jadi tidak ada cara menjalankan image resminya. Itulah alasan
+  workflow CI-nya dibuat — di GitHub Actions ketiganya berjalan sungguhan.
+  Konsekuensinya harus jujur disebut: **aturan alert ini belum pernah dimuat
+  Prometheus sungguhan di sesi ini.**
+- Stack monitoring juga belum bisa dicoba end-to-end (mematikan satu service
+  lalu menunggu `ServiceDown` berbunyi) karena alasan yang sama.
+
+### Bersih-bersih
+
+Direktori kosong `infra/grafana/provisioning;C` (sisa perintah shell yang
+salah di sesi lama, tidak pernah ter-track git) dihapus, dan `__pycache__/`
+ditambahkan ke `.gitignore` karena sekarang ada skrip Python di repo.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- Menjalankan `docker compose up prometheus alertmanager grafana` lalu
+  membuktikan satu alert benar-benar berbunyi & sampai ke Alertmanager
+  (butuh Docker hidup).
+- Mengisi `REPLACE_ME_ALERT_WEBHOOK` dengan tujuan sungguhan (Slack/Teams/
+  on-call) — itu kredensial, jadi keputusan Anda.
+- Alert khusus data-plane: Kafka consumer lag, ETL dw-service yang tertinggal,
+  MQTT ingest yang berhenti. Semuanya butuh metrik BARU di service
+  masing-masing (belum ada yang mengekspornya), jadi bukan sekadar menulis
+  aturan.
+- Recording rules untuk ekspresi rasio 5xx yang dipakai berulang di alert &
+  dashboard.

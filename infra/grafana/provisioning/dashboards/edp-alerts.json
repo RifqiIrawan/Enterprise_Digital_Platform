@@ -1,0 +1,220 @@
+{
+  "id": null,
+  "uid": "edp-alerts",
+  "title": "EDP - Alerts & SLO",
+  "tags": ["edp", "alerts"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "description": "Layar yang dibuka saat alert berbunyi. Ekspresi tiap panel SENGAJA sama persis dengan ekspresi di infra/prometheus/rules/edp-alerts.yml -- dashboard yang memakai rumus sendiri akan cepat berbeda pendapat dengan alertnya, dan pertengkaran itu selalu dimenangkan orang yang berhenti mempercayai keduanya.",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Alert yang sedang berbunyi",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Diambil dari metrik ALERTS milik Prometheus sendiri, bukan dari Alertmanager -- panel ini tetap berisi walau pengiriman ke webhook sedang gagal.",
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "instant": true,
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "Value": true, "__name__": true, "job": true },
+            "renameByName": {
+              "alertname": "Alert",
+              "service": "Service",
+              "severity": "Tingkat",
+              "alertstate": "Status"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Ketersediaan per service (rata-rata up)",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "1 = selalu bisa di-scrape sepanjang rentang waktu yang dipilih. Turun di bawah 1 berarti ada jendela waktu saat service tidak menjawab.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 0.99 },
+              { "color": "green", "value": 0.999 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] }, "colorMode": "value" },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "avg_over_time(up{job=\"edp-services\"}[$__range])",
+          "legendFormat": "{{service}}",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Rasio 5xx per service (ambang alert 5%)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Ekspresi sama dengan alert HighErrorRate. Garis ambang di 0,05 adalah titik alert itu mulai menghitung 10 menit.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.05 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (service) (rate(http_requests_total{job=\"edp-services\",status=~\"5..\"}[10m])) / sum by (service) (rate(http_requests_total{job=\"edp-services\"}[10m]))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "P95 latensi per service (ambang alert 1s)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Ekspresi sama dengan alert HighLatencyP95.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_seconds_bucket{job=\"edp-services\"}[10m])))",
+          "legendFormat": "{{service}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Route penyumbang 5xx terbanyak",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Pertanyaan berikutnya setelah 'service mana yang error' selalu 'endpoint mana'. Label route adalah pola rute (mis. GET /accounts/{id}), bukan URL mentah, jadi aman dikelompokkan.",
+      "options": { "showHeader": true },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "topk(10, sum by (service, route, status) (rate(http_requests_total{job=\"edp-services\",status=~\"5..\"}[10m])))",
+          "instant": true,
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "job": true },
+            "renameByName": {
+              "service": "Service",
+              "route": "Route",
+              "status": "Status",
+              "Value": "req/s"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "403 di api-gateway (endpoint yang belum terdaftar di policy.go?)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "description": "Setiap endpoint harus terdaftar di api-gateway/internal/authz/policy.go; yang tidak terdaftar ditolak. Gelombang 403 yang menetap biasanya berarti endpoint baru yang lupa didaftarkan -- bukan pengguna yang iseng. Ambang alert 0,2 req/s selama 15 menit.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "thresholdsStyle": { "mode": "line" } },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.2 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (route) (rate(http_requests_total{service=\"api-gateway\",status=\"403\"}[15m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Log error terbaru (semua container)",
+      "type": "logs",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "description": "Promtail memberi label `container` (nama container Docker) dan `stream`. Filter di bawah mencari baris yang mengandung kata error -- log service di repo ini berformat teks, bukan JSON.",
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{container=~\".+\"} |~ \"(?i)error\"",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

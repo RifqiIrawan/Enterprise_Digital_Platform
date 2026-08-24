@@ -1,0 +1,63 @@
+# Alertmanager (Fase 11) -- menerima alert dari Prometheus, mengelompokkannya,
+# dan meneruskannya ke satu tujuan.
+#
+# TUJUAN PENGIRIMAN SENGAJA BELUM DIISI. Repo ini tidak menyimpan kredensial
+# (lihat pola REPLACE_ME_* di infra/environments/), dan webhook Slack/email
+# SMTP adalah kredensial. Ganti REPLACE_ME_ALERT_WEBHOOK dengan endpoint
+# sungguhan -- Slack incoming webhook, Microsoft Teams, atau layanan on-call
+# apa pun yang menerima POST JSON dari Alertmanager.
+#
+# Selama masih REPLACE_ME, Alertmanager tetap berjalan dan tetap
+# mengelompokkan alert (bisa dilihat di http://localhost:9093); pengirimannya
+# saja yang gagal, dan kegagalan itu tercatat di lognya sendiri.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Dikelompokkan per alertname DAN service: 16 service yang mati bersamaan
+  # sebaiknya datang sebagai satu pesan berisi 16 baris, bukan 16 pesan.
+  group_by: ["alertname", "service"]
+  # Tunggu sebentar sebelum mengirim kelompok baru -- alert yang saling
+  # menyusul dalam beberapa detik hampir selalu satu kejadian yang sama.
+  group_wait: 30s
+  group_interval: 5m
+  # Diulang 12 jam sekali supaya masalah yang belum ditangani tidak hilang
+  # begitu saja dari perhatian, tapi juga tidak menjadi kebisingan.
+  repeat_interval: 12h
+  receiver: default
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: critical
+      # Yang kritis diulang lebih sering: service yang mati dan didiamkan
+      # 12 jam bukan keadaan yang bisa diterima.
+      repeat_interval: 1h
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: http://REPLACE_ME_ALERT_WEBHOOK/edp/warning
+        send_resolved: true
+
+  - name: critical
+    webhook_configs:
+      - url: http://REPLACE_ME_ALERT_WEBHOOK/edp/critical
+        send_resolved: true
+
+inhibit_rules:
+  # Service yang mati otomatis membuat error rate dan latensinya ikut
+  # mencurigakan. Yang perlu dibaca orang adalah "service X mati", bukan tiga
+  # alert tentang gejala yang sama.
+  - source_matchers:
+      - alertname = "ServiceDown"
+    target_matchers:
+      - severity = "warning"
+    equal: ["service"]
+
+  # Begitu jelas separuh platform mati, alert per-service tidak menambah
+  # informasi apa pun.
+  - source_matchers:
+      - alertname = "MostServicesDown"
+    target_matchers:
+      - alertname = "ServiceDown"

@@ -1,0 +1,64 @@
+name: Monitoring CI
+
+# Konfigurasi monitoring (Fase 11) tidak punya compiler maupun test runner --
+# kesalahannya baru ketahuan saat Prometheus/Alertmanager gagal start di
+# lingkungan sungguhan, atau lebih buruk: saat alert yang salah tulis diam
+# selamanya dan diamnya dikira "semuanya sehat". Workflow ini memeriksa apa
+# yang bisa diperiksa tanpa menjalankan stack-nya.
+
+on:
+  push:
+    paths:
+      - "infra/prometheus/**"
+      - "infra/alertmanager/**"
+      - "infra/grafana/**"
+      - "infra/loki/**"
+      - "infra/promtail/**"
+      - ".github/workflows/monitoring-ci.yml"
+  pull_request:
+    paths:
+      - "infra/prometheus/**"
+      - "infra/alertmanager/**"
+      - "infra/grafana/**"
+      - "infra/loki/**"
+      - "infra/promtail/**"
+      - ".github/workflows/monitoring-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # promtool & amtool datang di dalam image resminya masing-masing;
+      # versinya sengaja disamakan dengan yang dipakai infra/docker-compose.yml
+      # supaya yang lolos di sini benar-benar yang akan dijalankan nanti.
+      - name: Periksa konfigurasi & aturan Prometheus
+        run: |
+          docker run --rm -v "$PWD/infra/prometheus:/work" -w /work \
+            --entrypoint promtool prom/prometheus:v2.55.1 \
+            check config prometheus.yml
+          docker run --rm -v "$PWD/infra/prometheus:/work" -w /work \
+            --entrypoint promtool prom/prometheus:v2.55.1 \
+            check rules rules/edp-alerts.yml
+
+      - name: Periksa konfigurasi Alertmanager
+        run: |
+          docker run --rm -v "$PWD/infra/alertmanager:/work" -w /work \
+            --entrypoint amtool prom/alertmanager:v0.27.0 \
+            check-config alertmanager.yml
+
+      - name: Periksa dashboard Grafana masih JSON yang sah
+        run: |
+          for f in infra/grafana/provisioning/dashboards/*.json; do
+            python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$f"
+            echo "OK $f"
+          done
+
+      # Yang TIDAK diperiksa promtool: apakah metrik yang disebut aturan alert
+      # benar-benar pernah diekspor. Lihat komentar di skrip ini.
+      - name: Periksa metrik yang disebut aturan alert benar-benar ada
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 infra/scripts/check-alert-metrics.py

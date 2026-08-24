@@ -1,0 +1,147 @@
+# Aturan alert untuk seluruh service EDP (Fase 11).
+#
+# ATURAN YANG DIPEGANG SAAT MENULIS BERKAS INI:
+#
+#  1. Hanya memakai metrik yang BENAR-BENAR ADA. Seluruh service Go di repo ini
+#     mengekspor dua metrik buatan sendiri lewat internal/metrics
+#     (http_requests_total{method,route,status} dan
+#     http_request_duration_seconds{method,route}), ditambah koleksi bawaan
+#     client_golang (go_*, process_*) dan `up` dari Prometheus sendiri. Alert
+#     yang menyebut metrik yang tidak pernah diekspor tidak akan pernah
+#     berbunyi, dan diamnya akan disalahartikan sebagai "semuanya sehat".
+#     .github/workflows/monitoring-ci.yml menjalankan promtool untuk menjaga
+#     berkas ini tetap sah.
+#
+#  2. Setiap alert menyebut APA YANG HARUS DILIHAT, bukan hanya bahwa sesuatu
+#     terjadi. Alert tanpa langkah lanjutan akan dimatikan orang setelah
+#     beberapa kali berbunyi.
+#
+#  3. `for:` selalu ada. Lonjakan sesaat (deploy, restart, satu batch ETL)
+#     bukan insiden; yang layak membangunkan orang adalah keadaan yang
+#     BERTAHAN.
+#
+# Label `service` datang dari scrape_configs di prometheus.yml, bukan dari
+# aplikasinya -- jadi tersedia di semua metrik di bawah, termasuk `up`.
+
+groups:
+  - name: edp-availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job="edp-services"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} tidak bisa di-scrape"
+          description: >-
+            Prometheus gagal mengambil /metrics dari {{ $labels.service }}
+            selama 2 menit. Periksa apakah prosesnya hidup (docker compose ps
+            / kubectl get pods), lalu lihat lognya di Loki dengan filter
+            service="{{ $labels.service }}".
+
+      - alert: MostServicesDown
+        # Kalau lebih dari separuh target mati bersamaan, yang rusak biasanya
+        # bukan service-nya satu per satu -- melainkan Postgres, jaringan, atau
+        # mesin yang menjalankan semuanya. Alert terpisah supaya orang tidak
+        # menghabiskan waktu menelusuri 16 alert ServiceDown satu-satu.
+        expr: count(up{job="edp-services"} == 0) > count(up{job="edp-services"}) / 2
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Lebih dari separuh service EDP mati"
+          description: >-
+            {{ $value }} target tidak bisa di-scrape. Periksa dulu yang dipakai
+            bersama: Postgres di host, jaringan docker, dan kapasitas mesin.
+
+  - name: edp-traffic
+    rules:
+      - alert: HighErrorRate
+        # Rasio, bukan cacah: 5 error dari 10 request adalah insiden, 5 error
+        # dari 100.000 request adalah hari biasa.
+        expr: |
+          sum by (service) (rate(http_requests_total{job="edp-services",status=~"5.."}[10m]))
+            /
+          sum by (service) (rate(http_requests_total{job="edp-services"}[10m]))
+            > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }}: lebih dari 5% request gagal (5xx)"
+          description: >-
+            Rasio 5xx {{ $value | humanizePercentage }} selama 10 menit. Buka
+            dashboard "EDP - Alerts & SLO" untuk melihat route mana yang
+            menyumbang, lalu telusuri trace-nya di Jaeger.
+
+      - alert: HighLatencyP95
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (service, le) (rate(http_request_duration_seconds_bucket{job="edp-services"}[10m]))
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }}: p95 latensi di atas 1 detik"
+          description: >-
+            p95 {{ $value | humanizeDuration }} selama 10 menit. Penyebab yang
+            paling sering di platform ini: query tanpa indeks, atau service
+            yang menunggu service lain (lihat span-nya di Jaeger).
+
+      - alert: AuthorizationDenialSpike
+        # Khas platform ini: setiap endpoint harus terdaftar di
+        # api-gateway/internal/authz/policy.go, dan yang tidak terdaftar
+        # DITOLAK. Endpoint baru yang lupa didaftarkan karena itu muncul
+        # sebagai gelombang 403 di gateway -- persis pola yang dijaga
+        # TestPolicyCoversEveryRegisteredRoute di CI, tapi ini jaring
+        # pengaman untuk yang lolos sampai produksi.
+        #
+        # 403 sesekali itu normal (orang membuka menu yang bukan haknya);
+        # yang tidak normal adalah 403 yang menetap selama 15 menit.
+        expr: sum(rate(http_requests_total{service="api-gateway",status="403"}[15m])) > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gelombang 403 di api-gateway"
+          description: >-
+            {{ $value | humanize }} penolakan/detik selama 15 menit. Periksa
+            apakah ada endpoint baru yang belum terdaftar di
+            internal/authz/policy.go, atau perubahan hak akses yang tidak
+            disengaja di rbac-service.
+
+  - name: edp-runtime
+    rules:
+      - alert: HighResidentMemory
+        # Ambang tumpul yang disengaja: service di repo ini semuanya kecil
+        # (tidak ada cache besar di memori), jadi 1,5 GiB berarti ada yang
+        # tidak wajar -- bukan beban normal yang tumbuh.
+        expr: process_resident_memory_bytes{job="edp-services"} > 1.5e9
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }} memakai memori di atas 1,5 GiB"
+          description: >-
+            {{ $value | humanize1024 }}B resident selama 15 menit. Kandidat
+            pertama: hasil query yang dimuat seluruhnya ke memori sebelum
+            dikirim.
+
+      - alert: GoroutineLeak
+        # Goroutine yang terus bertambah dan tidak pernah turun adalah tanda
+        # goroutine yang menunggu selamanya (biasanya panggilan HTTP tanpa
+        # timeout, atau channel yang tidak pernah ditutup). Dibandingkan
+        # dengan dirinya sendiri satu jam lalu, bukan dengan angka tetap:
+        # jumlah wajar berbeda-beda per service.
+        expr: go_goroutines{job="edp-services"} > 200 and go_goroutines{job="edp-services"} > 2 * (go_goroutines{job="edp-services"} offset 1h)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.service }}: jumlah goroutine berlipat dalam sejam"
+          description: >-
+            {{ $value }} goroutine, lebih dari dua kali lipat dibanding sejam
+            lalu dan tidak turun selama 15 menit. Periksa panggilan
+            service-to-service yang tidak punya timeout.

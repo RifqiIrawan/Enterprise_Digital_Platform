@@ -31,3 +31,8 @@ infra/docker-compose.override.yml
 Thumbs.db
 .vscode/
 .idea/
+
+# Skrip pemeriksa infra ditulis dengan Python (lihat infra/scripts/), dan
+# menjalankannya meninggalkan cache bytecode.
+__pycache__/
+*.pyc
