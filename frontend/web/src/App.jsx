@@ -50,6 +50,12 @@ import MaintenanceSchedulePage from './pages/asset/MaintenanceSchedulePage.jsx'
 import CalibrationPage from './pages/asset/CalibrationPage.jsx'
 import DepreciationPage from './pages/asset/DepreciationPage.jsx'
 import BIDashboardsPage from './pages/aibi/BIDashboardsPage.jsx'
+import ExecutiveDashboardPage from './pages/bi/ExecutiveDashboardPage.jsx'
+import SalesDashboardPage from './pages/bi/SalesDashboardPage.jsx'
+import FinanceDashboardPage from './pages/bi/FinanceDashboardPage.jsx'
+import WarehouseDashboardPage from './pages/bi/WarehouseDashboardPage.jsx'
+import ManufacturingDashboardPage from './pages/bi/ManufacturingDashboardPage.jsx'
+import HrDashboardPage from './pages/bi/HrDashboardPage.jsx'
 import ForecastingPage from './pages/aibi/ForecastingPage.jsx'
 import AnomalyDetectionPage from './pages/aibi/AnomalyDetectionPage.jsx'
 import DevicesPage from './pages/iot/DevicesPage.jsx'
@@ -140,6 +146,12 @@ function App() {
         <Route path="/asset/calibration" element={<CalibrationPage />} />
         <Route path="/asset/depreciation" element={<DepreciationPage />} />
         <Route path="/ai-bi/dashboards" element={<BIDashboardsPage />} />
+        <Route path="/bi/executive" element={<ExecutiveDashboardPage />} />
+        <Route path="/bi/sales" element={<SalesDashboardPage />} />
+        <Route path="/bi/finance" element={<FinanceDashboardPage />} />
+        <Route path="/bi/warehouse" element={<WarehouseDashboardPage />} />
+        <Route path="/bi/manufacturing" element={<ManufacturingDashboardPage />} />
+        <Route path="/bi/hr" element={<HrDashboardPage />} />
         <Route path="/ai-bi/forecasting" element={<ForecastingPage />} />
         <Route path="/ai-bi/anomaly-detection" element={<AnomalyDetectionPage />} />
         <Route path="/iot/devices" element={<DevicesPage />} />

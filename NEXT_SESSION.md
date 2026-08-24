@@ -20,6 +20,7 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — AI & BI** | ✅ **Selesai semua** — BI Dashboards, Forecasting (proyeksi tren linear sederhana), dan Anomaly Detection (heuristik z-score) semuanya sudah jalan & diverifikasi (lihat detail di bawah). **Ini menandai seluruh Fase 2 platform ini SELESAI** (Finance, HR, Sales, Purchasing, Warehouse, Production, QC, Asset, AI & BI). |
 | **Fase 3 — Manufacturing/MES** (Mesin, Shift Produksi, Eksekusi Produksi + downtime, OEE; dijahit ke penyelesaian Work Order) | 🚧 Inti MES selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). **Belum**: Formula (BOM berbasis persentase) dan fact table OEE di dw-service. |
 | **Fase 5 — Asset lanjutan** (Kalibrasi + Penyusutan dengan posting ke GL) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Sisa yang diketahui: jurnal pelepasan aset (disposal) belum ada. |
+| **Fase 9 — Business Intelligence per peran** (6 dashboard: Eksekutif/Sales/Finance/Gudang/Manufaktur/SDM, role baru `executive`, `?sections=` di ringkasan ai-bi) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Belum ada penyaring periode & tombol export. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Frontend — Company/Branch switcher (menggantikan asumsi single-company `data[0]`) | ✅ Selesai & diverifikasi sesi ini di 29 halaman (lihat detail di bawah) |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
@@ -1798,3 +1799,107 @@ mereka pegang.
 - Proporsi hari untuk bulan pertama, kalau nanti dibutuhkan.
 - Sertifikat kalibrasi masih sebatas nomor; belum ada lampiran berkas.
 - Verifikasi end-to-end di browser (Playwright), seperti modul Fase 2 lainnya.
+
+---
+
+## Dashboard per peran — FASE 9 SELESAI (sesi 2026-08-25, lanjutan lagi)
+
+Fase 9 di roadmap asli: CEO / Sales / Finance / Warehouse / Manufacturing / HR
+Dashboard. Bahannya sebenarnya sudah ada sejak lama (ringkasan lintas modul di
+ai-bi-service + 17 endpoint analitik dw-service); yang belum ada adalah
+**siapa melihat apa**.
+
+### Keputusan yang membentuk seluruh sesi ini
+
+**Peran ditentukan hak menu, bukan cabang `if role == ...` di halaman.**
+Platform ini sudah punya persis mekanisme yang dibutuhkan: menu-tree menggambar
+sidebar dari hak user, gateway menegakkan endpoint-nya. Jadi "dashboard per
+peran" = enam menu baru + pembagian `role_menu_permissions`, bukan lapisan
+logika baru. Konsekuensinya menyenangkan: memberi seseorang dashboard Sales
+adalah pekerjaan admin biasa lewat User Management, bukan deploy.
+
+Pembagiannya (`021_seed_role_dashboards.sql`):
+
+| Role | Dashboard |
+|---|---|
+| super_admin, company_admin, **executive**, ai_analyst, branch_manager | keenamnya (view + export) |
+| auditor | keenamnya (view saja, tanpa export — perlakuan auditor yang sama seperti menu lain) |
+| sales / finance / hr | bidangnya sendiri |
+| production, qc | Manufaktur (dua sisi lantai produksi yang sama: output & mutu) |
+| warehouse, purchasing | Gudang (arus barang beserta pemasoknya) |
+
+**Role baru `executive` (Direksi).** Dashboard Eksekutif butuh audiens, dan
+sampai sekarang satu-satunya yang bisa melihat seluruh company adalah Company
+Admin — peran administratif, bukan peran yang membaca angka. Direksi sengaja
+view-only dan tidak diberi satu pun menu operasional.
+
+### `?sections=` di `GET /api/ai-bi/dashboards/summary`
+
+Endpoint ringkasan itu memanggil **delapan** service secara paralel. Dashboard
+Sales tidak butuh tujuh di antaranya — dan yang lebih penting, tidak boleh ikut
+melaporkan "asset-service tidak bisa dihubungi" untuk layar yang tidak memakai
+data aset sama sekali.
+
+- `?sections=sales,finance` → hanya dua service yang dihubungi. Dibuktikan test
+  yang menghitung panggilan ke tiap fake service, bukan sekadar memeriksa
+  bentuk JSON-nya.
+- Bagian yang tidak diminta **hilang** dari JSON (pointer + `omitempty`), bukan
+  terkirim berisi nol. Nol adalah jawaban yang sah ("belum ada work order"),
+  jadi mengirimkannya untuk bagian yang tidak ditanyakan adalah cara paling
+  mudah membuat dashboard memajang angka palsu dengan percaya diri.
+- Nama bagian yang salah ketik **ditolak 400**, bukan diabaikan: kartu yang
+  diam-diam hilang jauh lebih sulit dilacak daripada pesan galat.
+- Tanpa parameter, perilakunya persis seperti dulu (delapan bagian) — halaman
+  BI Dashboards lama tidak perlu diubah sama sekali.
+
+### Kebijakan gateway
+
+Wildcard `GET /api/dw/analytics/*` sekarang `viewAny` atas BI Dashboards +
+keenam dashboard peran. **Empat deret SDM dikecualikan** dengan rule yang lebih
+sempit (payroll, cuti bulanan, KPI, KPI per departemen): itu bukan "angka
+perusahaan" yang wajar dibaca dari dashboard Gudang. Rule dengan segmen literal
+terbanyak menang atas wildcard, jadi pengecualiannya bekerja tanpa mengubah
+urutan tabel.
+
+### Frontend
+
+- `pages/bi/RoleDashboard.jsx` — satu kerangka: memuat ringkasan (dengan
+  `sections`), memuat tiap grafik dw-service **secara terpisah** (dw mati hanya
+  mengosongkan grafiknya sendiri, bukan kartu angka yang datang dari
+  ai-bi-service), lalu merender kartu + grafik dari konfigurasi. Enam halaman
+  peran karena itu hanya berisi konfigurasi 60-80 baris.
+- `pages/bi/chartSeries.js` — definisi seri & warna **dipindahkan** dari
+  BIDashboardsPage.jsx (bukan disalin) dan sekarang diimpor keduanya. Dua
+  halaman yang menyalin palet akan menyimpang pelan-pelan, dan "biru = masuk"
+  yang berlaku di satu layar tapi tidak di layar sebelahnya adalah kebingungan
+  mahal untuk penghematan yang tidak ada.
+- Halaman BI Dashboards lama dibiarkan utuh: itu layar analis (17 grafik, 4
+  tab), bukan layar peran.
+
+### Verifikasi
+
+- `ai-bi-service`: `go test ./...` → **27 test lulus**, termasuk empat test baru
+  untuk `sections` (fan-out yang menyempit, default delapan bagian, nama tidak
+  dikenal ditolak, galat hanya dari bagian yang diminta).
+- `api-gateway`: lulus, termasuk penjaga cakupan kebijakan.
+- `rbac-service`: lulus; pembagian dashboard per role diperiksa langsung lewat
+  psql (13 role, pembagian persis seperti tabel di atas).
+- Frontend: ESLint bersih, `vitest run` **57 test lulus** (4 baru untuk
+  dashboard peran; 7 test BI Dashboards lama tetap hijau setelah seri chart
+  dipindah — itu yang membuktikan pemindahannya aman).
+- **Belum diverifikasi di browser sungguhan.** Catatan lingkungan: Docker
+  Desktop sedang mati di mesin ini, jadi ClickHouse tidak bisa dihubungi —
+  grafik dw-service tidak bisa dicoba dengan data nyata sesi ini. Yang dipakai
+  keenam dashboard adalah endpoint dw yang sudah ada sejak lama dan sudah
+  pernah diverifikasi, jadi tidak ada query baru yang belum pernah jalan.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- Dashboard belum punya penyaring periode sendiri; semuanya menampilkan seluruh
+  rentang yang dikembalikan dw-service.
+- Tombol export belum ada padahal `can_export` sudah di-seed untuk peran-peran
+  yang wajar mengunduh (itu memang disiapkan untuk langkah berikutnya).
+- Belum ada perbandingan periode (MoM/YoY) di kartu angka — bahannya ada di
+  deret bulanan, tapi perhitungannya lebih tepat di dw-service daripada di
+  browser, dan itu butuh ClickHouse hidup untuk diverifikasi.
+- Role `executive` belum punya user contoh di data demo.

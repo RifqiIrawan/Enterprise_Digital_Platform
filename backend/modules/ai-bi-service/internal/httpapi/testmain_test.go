@@ -27,6 +27,7 @@ import (
 type fakeService struct {
 	mu     sync.Mutex
 	routes map[string]http.HandlerFunc
+	calls  int
 }
 
 func newFakeService(t *testing.T) (*httptest.Server, *fakeService) {
@@ -35,6 +36,7 @@ func newFakeService(t *testing.T) (*httptest.Server, *fakeService) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fs.mu.Lock()
+		fs.calls++
 		h, ok := fs.routes[r.URL.Path]
 		fs.mu.Unlock()
 		if !ok {
@@ -51,6 +53,15 @@ func newFakeService(t *testing.T) (*httptest.Server, *fakeService) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv, fs
+}
+
+// callCount reports how many requests this fake service received -- used by the
+// ?sections= tests to prove a section that was not asked for is not fetched at
+// all, rather than fetched and then dropped from the response.
+func (fs *fakeService) callCount() int {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	return fs.calls
 }
 
 // json configures fs to answer GET <path> with the given status and JSON body.
@@ -139,6 +150,14 @@ func (r apiResponse) decode(t *testing.T, v any) {
 	if err := json.Unmarshal(r.body, v); err != nil {
 		t.Fatalf("decode response body %q: %v", r.body, err)
 	}
+}
+
+func (r apiResponse) errorMessage() string {
+	var e struct {
+		Error string `json:"error"`
+	}
+	_ = json.Unmarshal(r.body, &e)
+	return e.Error
 }
 
 func getJSON(t *testing.T, url string) apiResponse {

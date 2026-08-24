@@ -384,7 +384,12 @@ var Rules = []Rule{
 	{"POST", "/api/asset/calibrations/*/cancel", need("/asset/calibration", Update)},
 
 	// ---------- ai-bi-service ----------
-	{"GET", "/api/ai-bi/dashboards/summary", need("/ai-bi/dashboards", View)},
+	// Ringkasan lintas modul menyuplai halaman BI Dashboards DAN keenam
+	// dashboard per peran (Fase 9) -- masing-masing hanya meminta bagian yang
+	// dipakainya lewat ?sections=, tapi endpoint-nya sama.
+	{"GET", "/api/ai-bi/dashboards/summary", viewAny(
+		"/ai-bi/dashboards", "/bi/executive", "/bi/sales", "/bi/finance",
+		"/bi/warehouse", "/bi/manufacturing", "/bi/hr")},
 	{"GET", "/api/ai-bi/forecasting/summary", need("/ai-bi/forecasting", View)},
 	{"GET", "/api/ai-bi/anomaly-detection/scan", need("/ai-bi/anomaly-detection", View)},
 
@@ -399,8 +404,22 @@ var Rules = []Rule{
 	{"POST", "/api/iot/alerts/*/resolve", need("/iot/alerts", Update)},
 
 	// ---------- dw-service ----------
-	// Seluruh /analytics/* menyuplai satu halaman: BI Dashboards.
-	{"GET", "/api/dw/analytics/*", need("/ai-bi/dashboards", View)},
+	// Sejak Fase 9, /analytics/* menyuplai BI Dashboards DAN dashboard per
+	// peran. Wildcard-nya sengaja longgar untuk deret umum (penjualan bulanan,
+	// pergerakan stok, dst): itu angka agregat perusahaan yang memang dibaca
+	// dari beberapa dashboard sekaligus.
+	//
+	// TIGA deret SDM di bawah dikecualikan dengan aturan yang lebih sempit --
+	// payroll dan nilai KPI bukan "angka perusahaan" yang wajar dilihat dari
+	// dashboard Gudang. Rule dengan segmen literal terbanyak menang atas
+	// wildcard (lihat Lookup), jadi urutannya di sini tidak menentukan.
+	{"GET", "/api/dw/analytics/*", viewAny(
+		"/ai-bi/dashboards", "/bi/executive", "/bi/sales", "/bi/finance",
+		"/bi/warehouse", "/bi/manufacturing", "/bi/hr")},
+	{"GET", "/api/dw/analytics/payroll-period-summary", viewAny("/ai-bi/dashboards", "/bi/finance", "/bi/hr")},
+	{"GET", "/api/dw/analytics/hr-leave-monthly-summary", viewAny("/ai-bi/dashboards", "/bi/hr")},
+	{"GET", "/api/dw/analytics/hr-kpi-department-summary", viewAny("/ai-bi/dashboards", "/bi/hr")},
+	{"GET", "/api/dw/analytics/hr-kpi-summary", viewAny("/ai-bi/dashboards", "/bi/executive", "/bi/hr")},
 	{"GET", "/api/dw/sync/status", need("/dw/sync-status", View)},
 	{"POST", "/api/dw/sync", need("/dw/sync-status", Create)},
 

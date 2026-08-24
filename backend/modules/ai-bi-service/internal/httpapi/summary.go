@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,18 +18,30 @@ import (
 // -- dashboard tetap tampil dengan data yang berhasil didapat, bukan gagal
 // total, karena mengandalkan 8 service hidup bersamaan adalah asumsi yang
 // rapuh untuk sebuah endpoint agregasi.
+//
+// Sejak dashboard per peran (Fase 9), pemanggil bisa meminta SEBAGIAN bagian
+// saja lewat ?sections=sales,finance. Halaman Sales tidak perlu menunggu
+// asset-service, tidak perlu ikut melaporkan asset-service mati, dan tidak
+// perlu membebani delapan service untuk menggambar empat angka.
+//
+// Bagian yang tidak diminta HILANG dari JSON (pointer + omitempty), bukan
+// terkirim sebagai objek berisi nol. Nol adalah jawaban yang sah -- "belum ada
+// work order sama sekali" -- jadi mengirimkannya untuk bagian yang bahkan tidak
+// ditanyakan adalah cara paling mudah membuat dashboard menampilkan angka
+// palsu dengan percaya diri.
 type dashboardResponse struct {
-	CompanyID   string            `json:"company_id"`
-	GeneratedAt time.Time         `json:"generated_at"`
-	Sales       salesSummary      `json:"sales"`
-	Purchasing  purchasingSummary `json:"purchasing"`
-	Finance     financeSummary    `json:"finance"`
-	Warehouse   warehouseSummary  `json:"warehouse"`
-	Production  productionSummary `json:"production"`
-	QC          qcSummary         `json:"qc"`
-	HR          hrSummary         `json:"hr"`
-	Asset       assetSummary      `json:"asset"`
-	Errors      []sourceError     `json:"errors"`
+	CompanyID   string             `json:"company_id"`
+	GeneratedAt time.Time          `json:"generated_at"`
+	Sections    []string           `json:"sections"`
+	Sales       *salesSummary      `json:"sales,omitempty"`
+	Purchasing  *purchasingSummary `json:"purchasing,omitempty"`
+	Finance     *financeSummary    `json:"finance,omitempty"`
+	Warehouse   *warehouseSummary  `json:"warehouse,omitempty"`
+	Production  *productionSummary `json:"production,omitempty"`
+	QC          *qcSummary         `json:"qc,omitempty"`
+	HR          *hrSummary         `json:"hr,omitempty"`
+	Asset       *assetSummary      `json:"asset,omitempty"`
+	Errors      []sourceError      `json:"errors"`
 }
 
 type sourceError struct {
@@ -92,16 +105,59 @@ type assetSummary struct {
 // sinyal "stok menipis" tanpa menunggu fitur minimum-stock di Warehouse.
 const lowStockThreshold = 10
 
+// allSections adalah urutan baku bagian dashboard; dipakai sebagai default
+// (tanpa ?sections=) sekaligus sebagai daftar nama yang sah.
+var allSections = []string{"sales", "purchasing", "finance", "warehouse", "production", "qc", "hr", "asset"}
+
+// parseSections membaca ?sections=a,b. Nama yang tidak dikenal DITOLAK, bukan
+// diabaikan diam-diam: salah ketik yang diabaikan menghasilkan dashboard yang
+// kehilangan satu kartu tanpa penjelasan apa pun.
+func parseSections(raw string) ([]string, string) {
+	if strings.TrimSpace(raw) == "" {
+		return allSections, ""
+	}
+	valid := map[string]bool{}
+	for _, name := range allSections {
+		valid[name] = true
+	}
+	seen := map[string]bool{}
+	out := []string{}
+	for _, part := range strings.Split(raw, ",") {
+		name := strings.ToLower(strings.TrimSpace(part))
+		if name == "" {
+			continue
+		}
+		if !valid[name] {
+			return nil, "sections tidak dikenal: " + name
+		}
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
+	}
+	if len(out) == 0 {
+		return nil, "sections tidak boleh kosong"
+	}
+	return out, ""
+}
+
 func (h *Handler) dashboardSummary(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("company_id")
 	if companyID == "" {
 		writeError(w, http.StatusBadRequest, "company_id wajib diisi")
 		return
 	}
+	sections, msg := parseSections(r.URL.Query().Get("sections"))
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
 
 	resp := dashboardResponse{
 		CompanyID:   companyID,
 		GeneratedAt: time.Now(),
+		Sections:    sections,
 		Errors:      []sourceError{},
 	}
 	var mu sync.Mutex
@@ -111,95 +167,103 @@ func (h *Handler) dashboardSummary(w http.ResponseWriter, r *http.Request) {
 		resp.Errors = append(resp.Errors, sourceError{Source: source, Message: err.Error()})
 	}
 
+	// Satu tabel bagian -> service asal + cara mengisinya, supaya menambah
+	// bagian baru tidak berarti menyalin blok goroutine yang sama sekali lagi.
+	fetchers := map[string]struct {
+		source string
+		run    func() error
+	}{
+		"sales": {"sales-service", func() error {
+			s, err := h.fetchSalesSummary(companyID)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			resp.Sales = &s
+			mu.Unlock()
+			return nil
+		}},
+		"purchasing": {"purchasing-service", func() error {
+			s, err := h.fetchPurchasingSummary(companyID)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			resp.Purchasing = &s
+			mu.Unlock()
+			return nil
+		}},
+		"finance": {"finance-service", func() error {
+			s, err := h.fetchFinanceSummary(companyID)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			resp.Finance = &s
+			mu.Unlock()
+			return nil
+		}},
+		"warehouse": {"warehouse-service", func() error {
+			s, err := h.fetchWarehouseSummary(companyID)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			resp.Warehouse = &s
+			mu.Unlock()
+			return nil
+		}},
+		"production": {"production-service", func() error {
+			s, err := h.fetchProductionSummary(companyID)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			resp.Production = &s
+			mu.Unlock()
+			return nil
+		}},
+		"qc": {"qc-service", func() error {
+			s, err := h.fetchQCSummary(companyID)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			resp.QC = &s
+			mu.Unlock()
+			return nil
+		}},
+		"hr": {"hr-service", func() error {
+			s, err := h.fetchHRSummary(companyID)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			resp.HR = &s
+			mu.Unlock()
+			return nil
+		}},
+		"asset": {"asset-service", func() error {
+			s, err := h.fetchAssetSummary(companyID)
+			if err != nil {
+				return err
+			}
+			mu.Lock()
+			resp.Asset = &s
+			mu.Unlock()
+			return nil
+		}},
+	}
+
 	var wg sync.WaitGroup
-
-	wg.Go(func() {
-		s, err := h.fetchSalesSummary(companyID)
-		if err != nil {
-			addErr("sales-service", err)
-			return
-		}
-		mu.Lock()
-		resp.Sales = s
-		mu.Unlock()
-	})
-
-	wg.Go(func() {
-		s, err := h.fetchPurchasingSummary(companyID)
-		if err != nil {
-			addErr("purchasing-service", err)
-			return
-		}
-		mu.Lock()
-		resp.Purchasing = s
-		mu.Unlock()
-	})
-
-	wg.Go(func() {
-		s, err := h.fetchFinanceSummary(companyID)
-		if err != nil {
-			addErr("finance-service", err)
-			return
-		}
-		mu.Lock()
-		resp.Finance = s
-		mu.Unlock()
-	})
-
-	wg.Go(func() {
-		s, err := h.fetchWarehouseSummary(companyID)
-		if err != nil {
-			addErr("warehouse-service", err)
-			return
-		}
-		mu.Lock()
-		resp.Warehouse = s
-		mu.Unlock()
-	})
-
-	wg.Go(func() {
-		s, err := h.fetchProductionSummary(companyID)
-		if err != nil {
-			addErr("production-service", err)
-			return
-		}
-		mu.Lock()
-		resp.Production = s
-		mu.Unlock()
-	})
-
-	wg.Go(func() {
-		s, err := h.fetchQCSummary(companyID)
-		if err != nil {
-			addErr("qc-service", err)
-			return
-		}
-		mu.Lock()
-		resp.QC = s
-		mu.Unlock()
-	})
-
-	wg.Go(func() {
-		s, err := h.fetchHRSummary(companyID)
-		if err != nil {
-			addErr("hr-service", err)
-			return
-		}
-		mu.Lock()
-		resp.HR = s
-		mu.Unlock()
-	})
-
-	wg.Go(func() {
-		s, err := h.fetchAssetSummary(companyID)
-		if err != nil {
-			addErr("asset-service", err)
-			return
-		}
-		mu.Lock()
-		resp.Asset = s
-		mu.Unlock()
-	})
+	for _, name := range sections {
+		f := fetchers[name]
+		wg.Go(func() {
+			if err := f.run(); err != nil {
+				addErr(f.source, err)
+			}
+		})
+	}
 
 	wg.Wait()
 	writeJSON(w, http.StatusOK, resp)
