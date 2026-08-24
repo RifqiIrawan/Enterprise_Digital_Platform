@@ -1,0 +1,47 @@
+name: Infra CI
+
+# Konfigurasi deployment tidak punya compiler. Yang menjaganya di sini:
+#
+#   1. Setiap env var yang dibaca kode benar-benar ada di config Kustomize dan
+#      di kedua env example. Selisih semacam ini tidak pernah gagal saat
+#      build -- service-nya jatuh ke nilai default lalu berperilaku diam-diam
+#      berbeda di cluster (lihat komentar di infra/scripts/check-deploy-config.py
+#      soal OTLP_ENDPOINT yang pernah terlewat di ke-21 service).
+#   2. Ketiga overlay Kustomize masih bisa di-render.
+
+on:
+  push:
+    paths:
+      - "backend/**/internal/config/config.go"
+      - "infra/kubernetes/**"
+      - "infra/environments/**"
+      - "infra/docker-compose.yml"
+      - "infra/scripts/check-deploy-config.py"
+      - ".github/workflows/infra-ci.yml"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "backend/**/internal/config/config.go"
+      - "infra/kubernetes/**"
+      - "infra/environments/**"
+      - "infra/docker-compose.yml"
+      - "infra/scripts/check-deploy-config.py"
+      - ".github/workflows/infra-ci.yml"
+      - ".github/workflows/backend-ci.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Periksa kelengkapan config deployment tiap service
+        run: python3 infra/scripts/check-deploy-config.py
+
+      - name: Periksa ketiga overlay Kustomize masih bisa di-render
+        run: |
+          for overlay in dev staging prod; do
+            kubectl kustomize "infra/kubernetes/overlays/$overlay" > /dev/null
+            echo "OK overlay $overlay"
+          done

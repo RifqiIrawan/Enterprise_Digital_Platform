@@ -24,6 +24,8 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 10 — AI lanjutan** (Predictive Maintenance & Recommendation Engine; keduanya heuristik yang dijelaskan) | 🚧 Dua dari tiga selesai & tertutup test (sesi 2026-08-25, detail paling bawah). **RAG Chatbot belum** — butuh penyedia LLM, penyimpan vektor, dan keputusan soal data apa yang boleh masuk prompt. |
 | **Fase 11 — Monitoring** (aturan alert Prometheus + Alertmanager + dashboard Alerts & SLO + CI validasi konfigurasi) | ✅ Selesai (sesi 2026-08-25, detail paling bawah). **Catatan**: promtool/amtool belum dijalankan di mesin ini (Docker mati) — validasinya berjalan di GitHub Actions. |
 | **Fase 12 — DevOps** (backup 18 database + runbook DR + latihan pemulihan sungguhan + ArgoCD) | ✅ Selesai (sesi 2026-08-25, detail paling bawah). Jenkins & Helm sengaja dilewati. **Sisa penting**: backup belum offsite & belum terjadwal. |
+| **Fase 6 — IoT Simulator** | ✅ Selesai (production-readiness-nya ternyata sudah lengkap sejak lama; catatan "belum" di README usang, sudah dikoreksi sesi 2026-08-25). |
+| **Audit kelengkapan config deployment** (21 service) | ✅ Selesai + celah nyata ditemukan: `OTLP_ENDPOINT` hilang di config Kustomize ke-21 service (trace hilang diam-diam di K8s), `MINIO_USE_SSL` di dw-service, `IOT_SIMULATOR_INTERVAL_SECONDS` di env example. Dijaga `infra/scripts/check-deploy-config.py` + `infra-ci.yml`. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Frontend — Company/Branch switcher (menggantikan asumsi single-company `data[0]`) | ✅ Selesai & diverifikasi sesi ini di 29 halaman (lihat detail di bawah) |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
@@ -2233,3 +2235,86 @@ Belum pernah dijalankan terhadap cluster sungguhan (tidak ada cluster di sini).
   angka pasti karena backupnya masih manual.
 - Uji pemulihan otomatis & berkala.
 - Workflow CD yang membangun & mendorong image ke registry (belum ada registry).
+
+---
+
+## Audit kelengkapan deployment: Fase 6 ternyata SUDAH selesai, dan satu celah nyata ditemukan (sesi 2026-08-25, lanjutan lagi)
+
+Sesi ini dimulai untuk "menuntaskan Fase 6" — README menyebut iot-service belum
+punya Dockerfile, manifest K8s, env staging/prod, dan entry CI. **Semuanya
+ternyata sudah ada.** Catatan itu ditulis 2026-07-14 dan tidak pernah
+diperbarui setelah pekerjaannya benar-benar dikerjakan di sesi berikutnya.
+
+Alih-alih menambahkan yang sudah ada, sesi ini memeriksa keadaan sebenarnya
+untuk **seluruh 21 service**, dan menemukan satu celah yang jauh lebih penting.
+
+### Hasil audit tingkat pertama: berkas deployment
+
+Ke-21 service (5 core + 16 modul) lengkap: Dockerfile, entry docker-compose,
+manifest K8s + config Kustomize, env example staging & production, dan entry
+di backend-ci. Tidak ada satu pun yang tertinggal.
+
+### Hasil audit tingkat kedua: kunci env — DI SINI CELAHNYA
+
+Membandingkan kunci yang benar-benar DIBACA `internal/config/config.go` dengan
+yang ADA di config deployment:
+
+- **`OTLP_ENDPOINT` hilang di config Kustomize ke-21 service.** Ditambahkan ke
+  config.go, docker-compose, dan env example saat tracing dibangun (Observability
+  Fase 3), tapi tidak pernah masuk ke Kustomize. Akibatnya di K8s setiap service
+  jatuh ke default `localhost:4318`, tidak menemukan collector apa pun di
+  Pod-nya sendiri, lalu **DIAM**: exporter OTLP hanya mencatat kegagalan kirim
+  dan aplikasinya tetap jalan. Trace hilang tanpa ada yang tahu.
+- **`MINIO_USE_SSL` hilang** di config Kustomize dw-service (default `false` —
+  di produksi hampir pasti salah).
+- **`IOT_SIMULATOR_INTERVAL_SECONDS` hilang** di kedua env example iot-service.
+
+Sudah diperbaiki: 22 kunci ditambahkan, ketiga overlay tetap ter-render
+(`kubectl kustomize`), dan `OTLP_ENDPOINT` kini muncul 21 kali di hasil render
+overlay prod.
+
+Satu temuan yang BUKAN celah: `JWT_SECRET` memang tidak ada di ConfigMap
+api-gateway/auth-service — dia datang lewat `secretRef: jwt-secret`, dan itu
+memang tempat yang benar. Pemeriksa di bawah tahu soal ini lewat daftar
+`SECRET_KEYS`.
+
+### `infra/scripts/check-deploy-config.py` + `.github/workflows/infra-ci.yml`
+
+Celah seperti OTLP_ENDPOINT tidak pernah menggagalkan build apa pun — service
+jatuh ke default lalu berperilaku diam-diam berbeda di cluster. Karena itu
+pemeriksaannya sekarang dijalankan CI, bukan diingat orang:
+
+1. tiap service punya Dockerfile, entry compose, manifest+config K8s, dua env
+   example, dan entry CI;
+2. tiap kunci yang dibaca `getEnv*("NAMA", ...)` ada di config Kustomize DAN
+   di kedua env example;
+3. ketiga overlay Kustomize masih bisa di-render.
+
+Punya penjaga untuk dirinya sendiri (gagal kalau menemukan < 10 service, tanda
+pembacaan foldernya rusak), dan **dibuktikan benar-benar menangkap**: satu
+kunci `PORT` dihapus sementara dari config qc-service → checker exit 1 dan
+menyebut kuncinya; setelah dikembalikan → exit 0.
+
+### Dokumen yang dikoreksi
+
+- **Fase 6 → ✅ selesai** (sebelumnya "🚧 sebagian" karena production-readiness
+  yang sebenarnya sudah ada).
+- **Fase 7/8** dirapikan: 16 fact table (bukan 3), Kafka Streaming ETL, data
+  lake bronze MinIO, dan production-readiness dw-service semuanya sudah ada.
+  Sisa sesungguhnya tinggal **layer Silver/Gold** (butuh Spark/dbt).
+- Struktur repo di README: 5 modul yang belum tercantum (crm, ticketing,
+  ecommerce, fleet, project) ditambahkan; "15 service" → 21.
+
+### Pelajaran yang sebaiknya diingat
+
+Dokumen yang menyatakan sesuatu "belum dikerjakan" tidak pernah gagal seperti
+test yang salah — dia hanya membuat orang mengerjakan ulang yang sudah ada,
+atau lebih buruk, mempercayai kelengkapan yang tidak ada. Setiap klaim
+kelengkapan yang bisa diperiksa mesin sebaiknya diperiksa mesin.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- Pemeriksa serupa untuk docker-compose: kunci env yang ada di compose tapi
+  tidak di config.go (arah sebaliknya — konfigurasi yang tidak pernah dibaca).
+- Silver/Gold data lake (sisa nyata Fase 7/8).
+- Verifikasi end-to-end di browser untuk lima fase yang dikerjakan hari ini.

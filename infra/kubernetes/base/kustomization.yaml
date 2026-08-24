@@ -40,6 +40,14 @@ resources:
 # placeholder) -- see the comment on auth-service.yaml/api-gateway.yaml.
 # Every overlay must supply its own secretGenerator (or external secret)
 # named "jwt-secret", or auth-service/api-gateway's pods fail to start.
+# OTLP_ENDPOINT ada di SETIAP config di bawah karena setiap service memanggil
+# internal/tracing saat start. Tanpa nilai ini service jatuh ke default
+# "localhost:4318", tidak menemukan collector apa pun di Pod-nya sendiri, lalu
+# DIAM -- exporter OTLP hanya mencatat kegagalan kirim di log dan aplikasinya
+# tetap jalan. Akibatnya trace hilang tanpa ada yang tahu, persis jenis
+# kegagalan yang paling mahal. Belum ada Jaeger/collector di dalam cluster
+# (infra observability sengaja cuma di docker-compose, lihat overlays/dev),
+# jadi nilainya REPLACE_ME sampai ada.
 configMapGenerator:
   - name: auth-service-config
     literals:
@@ -50,6 +58,7 @@ configMapGenerator:
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - ACCESS_TOKEN_TTL=15m
       - REFRESH_TOKEN_TTL=168h
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: company-service-config
     literals:
@@ -57,6 +66,7 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_COMPANY
       - REDIS_URL=REPLACE_ME_REDIS_URL
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: rbac-service-config
     literals:
@@ -64,6 +74,7 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_RBAC
       - REDIS_URL=REPLACE_ME_REDIS_URL
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: audit-service-config
     literals:
@@ -72,6 +83,7 @@ configMapGenerator:
       - CLICKHOUSE_URL=REPLACE_ME_CLICKHOUSE_URL
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - KAFKA_GROUP_ID=audit-service
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: api-gateway-config
     literals:
@@ -98,12 +110,14 @@ configMapGenerator:
       - FLEET_SERVICE_URL=http://fleet-service:8099
       - PROJECT_SERVICE_URL=http://project-service:8100
       - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: finance-service-config
     literals:
       - PORT=8085
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_FINANCE
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: hr-service-config
     literals:
@@ -111,6 +125,7 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_HR
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - FINANCE_SERVICE_URL=http://finance-service:8085
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: sales-service-config
     literals:
@@ -119,6 +134,7 @@ configMapGenerator:
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - FINANCE_SERVICE_URL=http://finance-service:8085
       - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: purchasing-service-config
     literals:
@@ -127,12 +143,14 @@ configMapGenerator:
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - FINANCE_SERVICE_URL=http://finance-service:8085
       - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: warehouse-service-config
     literals:
       - PORT=8089
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_WAREHOUSE
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: production-service-config
     literals:
@@ -140,12 +158,14 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_PRODUCTION
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: qc-service-config
     literals:
       - PORT=8091
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_QC
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: asset-service-config
     literals:
@@ -153,6 +173,7 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_ASSET
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - FINANCE_SERVICE_URL=http://finance-service:8085
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: ai-bi-service-config
     literals:
@@ -165,6 +186,7 @@ configMapGenerator:
       - QC_SERVICE_URL=http://qc-service:8091
       - HR_SERVICE_URL=http://hr-service:8086
       - ASSET_SERVICE_URL=http://asset-service:8092
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   # dw-service has no database of its own -- it connects READ-ONLY straight
   # into finance/sales/warehouse's Postgres databases (not through their
@@ -201,6 +223,8 @@ configMapGenerator:
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - KAFKA_GROUP_ID=dw-service-streaming
       - DW_STREAMING_ENABLED=true
+      - MINIO_USE_SSL=REPLACE_ME_MINIO_USE_SSL
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: iot-service-config
     literals:
@@ -210,18 +234,21 @@ configMapGenerator:
       - MQTT_BROKER_URL=REPLACE_ME_MQTT_BROKER_URL
       - IOT_SIMULATOR_ENABLED=false
       - IOT_SIMULATOR_INTERVAL_SECONDS=15
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: crm-service-config
     literals:
       - PORT=8096
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_CRM
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: ticketing-service-config
     literals:
       - PORT=8097
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_TICKETING
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: ecommerce-service-config
     literals:
@@ -229,6 +256,7 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_ECOMMERCE
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: fleet-service-config
     literals:
@@ -236,6 +264,7 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_FLEET
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - ECOMMERCE_SERVICE_URL=http://ecommerce-service:8098
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: project-service-config
     literals:
@@ -244,3 +273,4 @@ configMapGenerator:
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - HR_SERVICE_URL=http://hr-service:8086
       - FINANCE_SERVICE_URL=http://finance-service:8085
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
