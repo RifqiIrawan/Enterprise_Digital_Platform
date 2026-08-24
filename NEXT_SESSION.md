@@ -26,6 +26,7 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 12 — DevOps** (backup 18 database + runbook DR + latihan pemulihan sungguhan + ArgoCD) | ✅ Selesai (sesi 2026-08-25, detail paling bawah). Jenkins & Helm sengaja dilewati. **Sisa penting**: backup belum offsite & belum terjadwal. |
 | **Fase 6 — IoT Simulator** | ✅ Selesai (production-readiness-nya ternyata sudah lengkap sejak lama; catatan "belum" di README usang, sudah dikoreksi sesi 2026-08-25). |
 | **Audit kelengkapan config deployment** (21 service) | ✅ Selesai + celah nyata ditemukan: `OTLP_ENDPOINT` hilang di config Kustomize ke-21 service (trace hilang diam-diam di K8s), `MINIO_USE_SSL` di dw-service, `IOT_SIMULATOR_INTERVAL_SECONDS` di env example. Dijaga `infra/scripts/check-deploy-config.py` + `infra-ci.yml`. |
+| **Verifikasi end-to-end lewat gateway sungguhan** (MES, penyusutan+GL, predictive, rekomendasi) | ✅ Selesai sesi 2026-08-25 — lihat detail paling bawah. Menemukan 2 bug nyata (urutan menu bentrok, sisa hari negatif) + 1 temuan data (stok bisa minus). **Verifikasi di BROWSER masih terhalang izin situs ekstensi Chrome.** |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Frontend — Company/Branch switcher (menggantikan asumsi single-company `data[0]`) | ✅ Selesai & diverifikasi sesi ini di 29 halaman (lihat detail di bawah) |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
@@ -2318,3 +2319,66 @@ kelengkapan yang bisa diperiksa mesin sebaiknya diperiksa mesin.
   tidak di config.go (arah sebaliknya — konfigurasi yang tidak pernah dibaca).
 - Silver/Gold data lake (sisa nyata Fase 7/8).
 - Verifikasi end-to-end di browser untuk lima fase yang dikerjakan hari ini.
+
+---
+
+## Verifikasi end-to-end lewat gateway sungguhan (sesi 2026-08-25, penutup)
+
+Lima fase yang dikerjakan hari ini semuanya berhenti di test otomatis, jadi
+sesi ini menjalankan platformnya sungguhan: Postgres native + 9 service Go
+(`go run`) + api-gateway + login JWT nyata, lalu menelusuri alur bisnisnya
+lewat gateway seperti browser melakukannya.
+
+### Yang terbukti jalan
+
+| Alur | Hasil |
+|---|---|
+| Migrasi 019-022 di database dev | Terpasang otomatis saat rbac-service start; seluruh 11 menu baru muncul di menu-tree |
+| Mesin & shift (MES) | Dibuat lewat gateway; shift malam 22:00-06:00 -> 420 menit produktif |
+| Work order -> run -> downtime -> tutup | OEE **A 0,8571 / P 0,8889 / Q 0,9375 / OEE 0,7143** -- sama persis dengan yang diramalkan unit test |
+| Jahitan MES <-> WO | `quantity_produced` 160 (salah) -> **409**; 150 (benar) -> **200**, termasuk mutasi stok ke warehouse-service |
+| Ringkasan OEE | Pareto downtime BREAKDOWN 75% / SETUP 25% |
+| Penyusutan + posting GL | Aset 120 jt / 60 bulan -> 2 jt/bulan; **jurnal JE-202601-0001 POSTED bertanggal 2026-01-31** ada di finance-service; akumulasi aset naik HANYA setelah posting (120 jt -> 118 jt nilai buku) |
+| Predictive maintenance | Faktor & skor tergambar dari data nyata, tanpa galat sumber |
+| Rekomendasi pemesanan | Jendela 46 hari dari 12 pergerakan nyata |
+
+### Dua bug yang ditemukan (dan diperbaiki)
+
+1. **Urutan menu AI & BI bentrok.** Migrasi 021 memakai sort_order 40-90 untuk
+   enam dashboard peran, lalu 022 memakai 40 & 50 lagi untuk Predictive
+   Maintenance & Rekomendasi -- di sidebar keenam dashboard jadi tercerai-berai
+   oleh dua menu di tengahnya. Tidak ada test yang bisa menangkap ini; ketahuan
+   begitu menu-tree dibuka dengan data sungguhan. Diperbaiki lewat migrasi
+   `023_fix_ai_menu_order.sql` (bukan menyunting 022, yang sudah terlanjur
+   tercatat di schema_migrations).
+
+2. **"Cukup untuk -35 hari".** Saldo stok bisa MINUS (warehouse-service tidak
+   menghalangi pengeluaran yang melebihi saldo), dan rekomendasi pemesanan
+   membagi saldo minus itu dengan kecepatan pemakaian. Sekarang sisa hari
+   dibulatkan ke nol dan minusnya disebut apa adanya di `reason`: "stok
+   tercatat MINUS 320 (pengeluaran melebihi saldo)" -- itu justru sinyal yang
+   layak dibaca orang gudang. Dijaga `TestReorderRecommendations_NegativeStock`.
+
+### Satu temuan yang BUKAN bug saya
+
+`warehouse-service` membiarkan saldo stok jadi negatif: work order uji
+mengonsumsi 400 unit SKU-RAW-01 yang stoknya cuma 80, dan mutasinya diterima
+apa adanya (-320). Itu keputusan lama yang belum pernah ditinjau -- mungkin
+disengaja (pencatatan menyusul barang), mungkin tidak. **Belum diubah**: itu
+perubahan perilaku modul lain yang butuh keputusan Anda.
+
+### Yang BELUM bisa diverifikasi
+
+Verifikasi tampilan di browser terhalang **izin situs ekstensi Claude in
+Chrome** untuk `localhost:3000`. Frontend-nya sendiri hidup dan seluruh
+endpoint yang dipanggilnya sudah terbukti benar lewat gateway. Untuk
+melanjutkan: izinkan `localhost` di ekstensi, lalu buka
+`/production/runs`, `/production/oee`, `/asset/depreciation`, `/bi/executive`,
+`/ai-bi/predictive-maintenance`, dan `/ai-bi/recommendations`.
+
+### Data uji yang ditinggalkan di database dev
+
+`MC-E2E-1`, `SH-E2E-N`, `WO-202608-0001` (COMPLETED), `PRUN-202608-0001`,
+`AST-E2E-1` beserta run penyusutan 2026-01 yang **sudah diposting ke GL**
+(jurnal JE-202601-0001, tidak bisa dihapus lewat API -- memang begitu
+seharusnya), dan saldo SKU-RAW-01 yang jadi -320 akibat WO uji itu.

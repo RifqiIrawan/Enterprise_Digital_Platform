@@ -192,7 +192,16 @@ func buildReorderRecommendations(balances []stockBalanceView, movements []stockM
 		}
 		velocity := out / float64(days)
 		stock := onHand[productID]
-		cover := stock / velocity
+		// Saldo stok bisa MINUS: warehouse-service tidak menghalangi
+		// pengeluaran yang melebihi saldo (mis. work order yang mengonsumsi
+		// komponen yang belum tercatat masuk). "Cukup untuk -35 hari" bukan
+		// kalimat yang berarti apa pun, jadi sisa harinya dibulatkan ke nol --
+		// barangnya memang sudah habis, dan minusnya diberitahukan tersendiri
+		// di `reason` karena itu sinyal yang layak dibaca orang gudang.
+		cover := 0.0
+		if stock > 0 {
+			cover = stock / velocity
+		}
 		if cover >= coverTargetDays {
 			continue
 		}
@@ -229,7 +238,7 @@ func buildReorderRecommendations(balances []stockBalanceView, movements []stockM
 			DaysOfCover:   round1(cover),
 			SuggestedQty:  suggested,
 			Urgency:       urgency,
-			Reason:        "Keluar " + formatQty(out) + " dalam " + itoa(days) + " hari; sisa stok cukup untuk " + formatQty(round1(cover)) + " hari",
+			Reason:        reorderReason(out, days, stock, cover),
 		})
 	}
 
@@ -253,4 +262,19 @@ func round2(v float64) float64 { return math.Round(v*100) / 100 }
 // "12.5" bukan "12.50" -- ini teks untuk dibaca orang.
 func formatQty(v float64) string {
 	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+// reorderReason menjelaskan dasar sebuah saran dalam satu kalimat. Saldo minus
+// disebut apa adanya: itu berarti ada pengeluaran yang melebihi stok tercatat,
+// dan menyembunyikannya di balik "0 hari" menghilangkan satu-satunya petunjuk
+// bahwa pencatatannya perlu diperiksa.
+func reorderReason(out float64, days int, stock, cover float64) string {
+	base := "Keluar " + formatQty(out) + " dalam " + itoa(days) + " hari; "
+	if stock < 0 {
+		return base + "stok tercatat MINUS " + formatQty(-stock) + " (pengeluaran melebihi saldo)"
+	}
+	if stock == 0 {
+		return base + "stok sudah habis"
+	}
+	return base + "sisa stok cukup untuk " + formatQty(round1(cover)) + " hari"
 }
