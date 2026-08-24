@@ -92,13 +92,22 @@ func (h *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 			WHERE m.is_active = true
 			ORDER BY mod.sort_order ASC, m.sort_order ASC`)
 	} else {
-		// company_id opsional: kalau diisi, override permission per user untuk
-		// company itu ikut diperhitungkan -- override bisa MENAMBAH menu yang
-		// role-nya tidak punya, dan bisa MENCABUT menu yang role-nya punya
-		// (can_view = false). Tanpa company_id, hasilnya persis seperti dulu:
-		// murni hak dari role. Lihat catatan di user_overrides.go soal kenapa
-		// hak role sendiri tetap tidak di-scope per company.
+		// company_id WAJIB di sini (kecuali super admin, yang keluar lewat
+		// cabang di atas): sidebar harus menggambarkan hak di company yang
+		// sedang dibuka, dan sejak hak role di-scope per company (lihat
+		// resolveEffective di access.go) pertanyaan "menu apa yang boleh
+		// dilihat user ini" tidak punya jawaban tanpa menyebut company-nya.
+		//
+		// Dulu parameter ini opsional dan tanpa-company berarti "murni hak
+		// role lintas company". Membiarkannya begitu sekarang justru
+		// menyesatkan: sidebar akan sempat menampilkan menu dari company lain
+		// lalu menyusut begitu company-nya diketahui -- menu yang berkedip
+		// lalu hilang lebih buruk daripada menu yang datang sedikit terlambat.
 		companyID := r.URL.Query().Get("company_id")
+		if companyID == "" {
+			writeError(w, http.StatusBadRequest, "company_id wajib diisi")
+			return
+		}
 		rows, err = h.pool.Query(r.Context(), `
 			SELECT m.id, m.parent_id, m.name, m.path, m.icon, m.sort_order,
 			       mod.id, mod.name, mod.sort_order
@@ -111,18 +120,20 @@ func (h *Handler) menuTree(w http.ResponseWriter, r *http.Request) {
 			        SELECT DISTINCT rmp.menu_id
 			        FROM user_roles ur
 			        JOIN role_menu_permissions rmp ON rmp.role_id = ur.role_id
-			        WHERE ur.user_id = $1 AND rmp.can_view = true
+			        WHERE ur.user_id = $1 AND ur.company_id = $2::uuid
+			          AND rmp.can_view = true
+			          AND ur.valid_from <= now() AND (ur.valid_to IS NULL OR ur.valid_to > now())
 			      )
 			      AND NOT EXISTS (
 			        SELECT 1 FROM user_menu_permission_overrides o
-			        WHERE o.user_id = $1 AND $2 <> '' AND o.company_id = $2::uuid
+			        WHERE o.user_id = $1 AND o.company_id = $2::uuid
 			          AND o.menu_id = m.id AND o.can_view = false
 			          AND o.branch_id IS NULL AND o.department_id IS NULL
 			      )
 			    )
 			    OR EXISTS (
 			      SELECT 1 FROM user_menu_permission_overrides o
-			      WHERE o.user_id = $1 AND $2 <> '' AND o.company_id = $2::uuid
+			      WHERE o.user_id = $1 AND o.company_id = $2::uuid
 			        AND o.menu_id = m.id AND o.can_view = true
 			        AND o.branch_id IS NULL AND o.department_id IS NULL
 			    )

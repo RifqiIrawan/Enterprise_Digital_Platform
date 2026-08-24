@@ -13,7 +13,7 @@ Titik masuk tunggal (single entry point) untuk seluruh client web ke platform. T
 Gateway adalah satu-satunya jalan masuk dari browser, jadi di sinilah hak akses ditegakkan — bukan disalin ke 20 service.
 
 - `policy.go` memetakan setiap endpoint ke **menu + aksi** yang dibutuhkannya (mis. `POST /api/finance/invoices/{id}/post` → menu `/finance/invoices`, aksi `approve`). Endpoint yang **tidak ada** di tabel itu **ditolak**, bukan diteruskan diam-diam.
-- `client.go` menanyakan hak efektif user ke rbac-service (`GET /access?user_id=&company_id=`) dan menyimpannya sebentar (TTL 30 detik; kalau rbac-service mati, jawaban lama masih dipakai sampai 5 menit, setelah itu request dijawab **503** — bukan diloloskan).
+- `client.go` menanyakan hak efektif user ke rbac-service (`GET /access?user_id=&company_id=`) dan menyimpannya sebentar (TTL 30 detik; kalau rbac-service mati, jawaban lama masih dipakai sampai 5 menit, setelah itu request dijawab **503** — bukan diloloskan). Hak sebuah role hanya berlaku di company tempat role itu **ditugaskan**, jadi jawaban untuk company berbeda memang berbeda: orang yang Finance di satu perusahaan dan Auditor read-only di perusahaan lain tidak membawa hak Finance-nya menyeberang.
 - `enforcer.go` menentukan company yang dituju request: query `company_id` → field `company_id` di body JSON → header `X-Company-Id`. Yang disebut request sendiri selalu menang atas header, supaya hak di satu company tidak bisa dipakai untuk menyentuh data company lain.
 
 Super admin melewati pemeriksaan ini sepenuhnya. Endpoint yang ditandai internal (mis. `POST /api/warehouse/stock-movements/batch`, yang dipanggil service lain secara **langsung**, bukan lewat gateway) ditolak untuk semua pemanggil lewat gateway, super admin termasuk.

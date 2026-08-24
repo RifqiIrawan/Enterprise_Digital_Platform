@@ -344,29 +344,22 @@ func TestUserPermissionsCoversEveryActiveMenu(t *testing.T) {
 
 // menu-tree tanpa company_id = perilaku lama persis (murni hak role), supaya
 // pemanggil yang belum mengirim company_id tidak berubah hasilnya.
-func TestMenuTreeIgnoresOverridesWhenNoCompanyIsGiven(t *testing.T) {
+// menu-tree tanpa company_id tidak lagi punya jawaban yang masuk akal untuk
+// user biasa: hak role sendiri sekarang di-scope per company, jadi "menu apa
+// yang boleh dilihat orang ini" baru bisa dijawab setelah company-nya disebut.
+// Dulu endpoint ini menjawabnya dengan gabungan hak lintas company -- yang
+// membuat sidebar sempat menampilkan menu milik company lain lalu menyusut.
+func TestMenuTreeRequiresACompanyForNormalUsers(t *testing.T) {
 	srv := newServer(t)
-	role := mustCreateRole(t, srv)
-	user := uuid.NewString()
-	company := uuid.NewString()
-	leave := menuIDByCode(t, "hr", "leave")
-	overtime := menuIDByCode(t, "hr", "overtime")
-	grantRoleAndAssign(t, srv, role.ID, leave, user, company)
 
-	requireStatus(t, putOverride(t, srv, map[string]any{
-		"user_id": user, "company_id": company, "menu_id": overtime, "can_view": true,
-	}, nil), http.StatusOK)
-	requireStatus(t, putOverride(t, srv, map[string]any{
-		"user_id": user, "company_id": company, "menu_id": leave, "can_view": false,
-	}, nil), http.StatusOK)
-	t.Cleanup(func() {
-		_, _ = pool.Exec(context.Background(), `DELETE FROM user_menu_permission_overrides WHERE user_id = $1`, user)
-	})
+	resp := getJSON(t, srv.URL+"/menu-tree?user_id="+uuid.NewString())
+	requireStatus(t, resp, http.StatusBadRequest)
 
-	ids := menuIDsInTree(fetchMenuTree(t, srv, user, false))
-	if !ids[leave] || ids[overtime] || len(ids) != 1 {
-		t.Fatalf("tanpa company_id, menu-tree harus murni dari role: %v", ids)
-	}
+	// Super admin tetap boleh tanpa company: dia memang tidak lewat jalur
+	// role/override sama sekali.
+	resp = getJSONWithHeaders(t, srv.URL+"/menu-tree?user_id="+uuid.NewString(),
+		map[string]string{"X-Is-Super-Admin": "true"})
+	requireStatus(t, resp, http.StatusOK)
 }
 
 func TestMenuTreeAppliesOverridesWhenCompanyIsGiven(t *testing.T) {
@@ -402,9 +395,10 @@ func TestMenuTreeAppliesOverridesWhenCompanyIsGiven(t *testing.T) {
 	}
 }
 
-// Override milik company lain tidak boleh ikut terpakai: hak khusus di satu
-// perusahaan tidak berlaku saat user membuka perusahaan lain.
-func TestMenuTreeIgnoresOverridesOfAnotherCompany(t *testing.T) {
+// Baik override MAUPUN hak role milik company lain tidak boleh ikut terpakai:
+// membuka perusahaan lain berarti mulai dari nol, bukan membawa serta hak dari
+// perusahaan tempat role-nya ditugaskan.
+func TestMenuTreeIgnoresRolesAndOverridesOfAnotherCompany(t *testing.T) {
 	srv := newServer(t)
 	role := mustCreateRole(t, srv)
 	user := uuid.NewString()
@@ -425,8 +419,11 @@ func TestMenuTreeIgnoresOverridesOfAnotherCompany(t *testing.T) {
 	if ids[overtime] {
 		t.Error("override company A ikut terpakai saat membuka company B")
 	}
-	if !ids[leave] {
-		t.Error("menu dari role hilang saat membuka company B")
+	if ids[leave] {
+		t.Error("hak role yang ditugaskan di company A ikut terbawa ke company B")
+	}
+	if len(ids) != 0 {
+		t.Errorf("company tanpa penugasan apa pun seharusnya kosong, dapat %v", ids)
 	}
 }
 
@@ -445,7 +442,7 @@ func TestMenuTreeForSuperAdminIgnoresOverrides(t *testing.T) {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM user_menu_permission_overrides WHERE user_id = $1`, user)
 	})
 
-	ids := menuIDsInTree(fetchMenuTree(t, srv, user, true))
+	ids := menuIDsInTree(fetchMenuTree(t, srv, user, "", true))
 	if !ids[leave] {
 		t.Fatal("super admin seharusnya tetap melihat menu yang di-override cabut")
 	}

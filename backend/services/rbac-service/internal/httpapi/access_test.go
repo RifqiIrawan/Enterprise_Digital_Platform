@@ -156,3 +156,81 @@ func TestAccessIgnoresExpiredRoleAssignments(t *testing.T) {
 		t.Fatalf("penugasan kedaluwarsa masih memberi hak: %+v", payload.Permissions)
 	}
 }
+
+// Inti dari scope per company, dan skenario yang paling mudah terjadi di
+// perusahaan bercabang: satu orang Finance di PT A tapi hanya Auditor
+// read-only di PT B. Dia MEMANG anggota kedua company -- pemeriksaan `member`
+// tidak menahan apa pun di sini -- jadi yang harus menahannya adalah scope
+// hak role itu sendiri.
+func TestAccessDoesNotCarryRoleRightsIntoAnotherCompany(t *testing.T) {
+	srv := newServer(t)
+	finance := mustCreateRole(t, srv)
+	auditor := mustCreateRole(t, srv)
+	user := uuid.NewString()
+	companyA := uuid.NewString()
+	companyB := uuid.NewString()
+	invoices := menuIDByCode(t, "finance", "invoices")
+
+	// Di PT A: hak penuh atas Invoices.
+	requireStatus(t, putJSON(t, srv.URL+"/roles/"+finance.ID+"/permissions", []map[string]any{
+		{"menu_id": invoices, "can_view": true, "can_create": true, "can_approve": true},
+	}), http.StatusOK)
+	requireStatus(t, postJSON(t, srv.URL+"/user-roles", map[string]any{
+		"user_id": user, "role_id": finance.ID, "company_id": companyA,
+	}), http.StatusCreated)
+
+	// Di PT B: hanya boleh melihat.
+	requireStatus(t, putJSON(t, srv.URL+"/roles/"+auditor.ID+"/permissions", []map[string]any{
+		{"menu_id": invoices, "can_view": true},
+	}), http.StatusOK)
+	requireStatus(t, postJSON(t, srv.URL+"/user-roles", map[string]any{
+		"user_id": user, "role_id": auditor.ID, "company_id": companyB,
+	}), http.StatusCreated)
+
+	inA := fetchAccess(t, srv, user, companyA)
+	if !inA.Permissions["/finance/invoices"].CanApprove {
+		t.Fatalf("hak approve di company tempat role Finance ditugaskan hilang: %+v", inA.Permissions)
+	}
+
+	inB := fetchAccess(t, srv, user, companyB)
+	if !inB.Member {
+		t.Fatal("prasyarat: user harus tetap terhitung anggota company B")
+	}
+	if !inB.Permissions["/finance/invoices"].CanView {
+		t.Fatalf("hak view dari role Auditor di company B ikut hilang: %+v", inB.Permissions)
+	}
+	if inB.Permissions["/finance/invoices"].CanApprove {
+		t.Fatal("hak approve dari role di company A ikut terbawa ke company B")
+	}
+	if inB.Permissions["/finance/invoices"].CanCreate {
+		t.Fatal("hak create dari role di company A ikut terbawa ke company B")
+	}
+}
+
+// Beberapa role di company yang SAMA tetap digabung OR -- yang disempitkan
+// adalah lintas company, bukan gabungan antar role.
+func TestAccessStillMergesSeveralRolesWithinTheSameCompany(t *testing.T) {
+	srv := newServer(t)
+	viewer := mustCreateRole(t, srv)
+	poster := mustCreateRole(t, srv)
+	user := uuid.NewString()
+	company := uuid.NewString()
+	invoices := menuIDByCode(t, "finance", "invoices")
+
+	requireStatus(t, putJSON(t, srv.URL+"/roles/"+viewer.ID+"/permissions", []map[string]any{
+		{"menu_id": invoices, "can_view": true},
+	}), http.StatusOK)
+	requireStatus(t, putJSON(t, srv.URL+"/roles/"+poster.ID+"/permissions", []map[string]any{
+		{"menu_id": invoices, "can_view": true, "can_approve": true},
+	}), http.StatusOK)
+	for _, roleID := range []string{viewer.ID, poster.ID} {
+		requireStatus(t, postJSON(t, srv.URL+"/user-roles", map[string]any{
+			"user_id": user, "role_id": roleID, "company_id": company,
+		}), http.StatusCreated)
+	}
+
+	got := fetchAccess(t, srv, user, company).Permissions["/finance/invoices"]
+	if !got.CanView || !got.CanApprove {
+		t.Fatalf("dua role di company yang sama seharusnya digabung, dapat %+v", got)
+	}
+}

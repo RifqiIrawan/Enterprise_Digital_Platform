@@ -19,11 +19,11 @@ import (
 // menu-tree & permission efektif di bawah hanya membaca override ber-scope
 // company.
 //
-// Catatan penting soal role: hak dari role SENGAJA tetap dihitung lintas
-// company (persis seperti menuTree sejak awal), hanya override-nya yang
-// di-scope per company. Menyempitkan hak role ke company yang sedang dipilih
-// adalah perubahan perilaku tersendiri -- sidebar user yang punya role di
-// company lain akan menyusut -- jadi itu bukan bagian dari perubahan ini.
+// Catatan soal role: hak dari role JUGA di-scope per company sekarang (lihat
+// resolveEffective di access.go), mengikuti company tempat role itu
+// DITUGASKAN. Sebelumnya tidak, dan itu masuk akal selama gating cuma di UI --
+// begitu gateway benar-benar menegakkannya, hak Finance di satu perusahaan
+// ikut berlaku di setiap perusahaan lain tempat orangnya jadi anggota.
 
 type userOverrideView struct {
 	ID         string `json:"id"`

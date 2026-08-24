@@ -106,10 +106,19 @@ func (h *Handler) access(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// resolveEffective mengembalikan hak per menu_id dari role (digabung OR lintas
-// seluruh role user) dan override company ini secara TERPISAH, karena kedua
-// pemanggilnya butuh keduanya untuk hal berbeda: /user-permissions menampilkan
-// "asalnya dari mana", /access hanya butuh hasil akhirnya.
+// resolveEffective mengembalikan hak per menu_id dari role dan dari override
+// secara TERPISAH, karena kedua pemanggilnya butuh keduanya untuk hal berbeda:
+// /user-permissions menampilkan "asalnya dari mana", /access hanya butuh hasil
+// akhirnya.
+//
+// Hak role di-scope KE COMPANY INI (`ur.company_id = $2`), digabung OR antar
+// role yang ditugaskan di situ. Sebelumnya hak role dihitung lintas company --
+// keputusan yang masuk akal selama gating cuma di UI, tapi berubah jadi lubang
+// begitu gateway benar-benar menegakkannya: user yang Finance di PT A dan hanya
+// Auditor read-only di PT B tetap bisa memposting jurnal di PT B, karena hak
+// Finance-nya ikut terbawa ke mana pun dia jadi anggota. Yang menentukan sebuah
+// role berlaku di mana adalah PENUGASANNYA (user_roles.company_id), bukan
+// keanggotaan user di company itu.
 //
 // Penugasan role yang sudah kedaluwarsa (valid_to lewat) atau belum berlaku
 // (valid_from di masa depan) tidak ikut dihitung. Kolomnya memang belum bisa
@@ -121,8 +130,8 @@ func (h *Handler) resolveEffective(ctx context.Context, userID, companyID string
 		SELECT rmp.menu_id, rmp.can_view, rmp.can_create, rmp.can_update, rmp.can_delete, rmp.can_approve, rmp.can_export
 		FROM user_roles ur
 		JOIN role_menu_permissions rmp ON rmp.role_id = ur.role_id
-		WHERE ur.user_id = $1
-		  AND ur.valid_from <= now() AND (ur.valid_to IS NULL OR ur.valid_to > now())`, userID)
+		WHERE ur.user_id = $1 AND ur.company_id = $2
+		  AND ur.valid_from <= now() AND (ur.valid_to IS NULL OR ur.valid_to > now())`, userID, companyID)
 	if err != nil {
 		return nil, nil, err
 	}

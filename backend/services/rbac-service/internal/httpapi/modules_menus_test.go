@@ -89,7 +89,7 @@ func TestMenuTreeRequiresUserID(t *testing.T) {
 func TestMenuTreeForSuperAdminCoversEveryActiveMenu(t *testing.T) {
 	srv := newServer(t)
 
-	tree := fetchMenuTree(t, srv, uuid.NewString(), true)
+	tree := fetchMenuTree(t, srv, uuid.NewString(), "", true)
 
 	var activeMenus int
 	if err := pool.QueryRow(context.Background(),
@@ -127,7 +127,7 @@ func TestMenuTreeOrderIsStableAcrossRequests(t *testing.T) {
 func TestMenuTreeFollowsModuleThenMenuSortOrder(t *testing.T) {
 	srv := newServer(t)
 
-	tree := fetchMenuTree(t, srv, uuid.NewString(), true)
+	tree := fetchMenuTree(t, srv, uuid.NewString(), "", true)
 
 	rows, err := pool.Query(context.Background(), `
 		SELECT mod.id, m.id
@@ -176,6 +176,7 @@ func TestMenuTreeForNormalUserOnlyIncludesMenusItCanView(t *testing.T) {
 	srv := newServer(t)
 	role := mustCreateRole(t, srv)
 	user := uuid.NewString()
+	company := uuid.NewString()
 	leave := menuIDByCode(t, "hr", "leave")
 	overtime := menuIDByCode(t, "hr", "overtime")
 
@@ -183,9 +184,9 @@ func TestMenuTreeForNormalUserOnlyIncludesMenusItCanView(t *testing.T) {
 		{"menu_id": leave, "can_view": true},
 		{"menu_id": overtime, "can_view": true},
 	}), http.StatusOK)
-	mustAssignRole(t, srv, user, role.ID)
+	mustAssignRole(t, srv, user, role.ID, company)
 
-	tree := fetchMenuTree(t, srv, user, false)
+	tree := fetchMenuTree(t, srv, user, company, false)
 	got := menuIDsInTree(tree)
 	if len(got) != 2 || !got[leave] || !got[overtime] {
 		t.Fatalf("expected exactly the two granted HR menus, got %d: %v", len(got), got)
@@ -202,6 +203,7 @@ func TestMenuTreeExcludesPermissionRowsWithoutCanView(t *testing.T) {
 	srv := newServer(t)
 	role := mustCreateRole(t, srv)
 	user := uuid.NewString()
+	company := uuid.NewString()
 	leave := menuIDByCode(t, "hr", "leave")
 
 	// Ditulis langsung ke tabel: PUT /permissions memang membuang baris
@@ -211,9 +213,9 @@ func TestMenuTreeExcludesPermissionRowsWithoutCanView(t *testing.T) {
 		VALUES ($1, $2, false, true)`, role.ID, leave); err != nil {
 		t.Fatalf("insert permission tanpa can_view: %v", err)
 	}
-	mustAssignRole(t, srv, user, role.ID)
+	mustAssignRole(t, srv, user, role.ID, company)
 
-	if tree := fetchMenuTree(t, srv, user, false); len(tree) != 0 {
+	if tree := fetchMenuTree(t, srv, user, company, false); len(tree) != 0 {
 		t.Fatalf("expected an empty tree, got %+v", tree)
 	}
 }
@@ -221,7 +223,7 @@ func TestMenuTreeExcludesPermissionRowsWithoutCanView(t *testing.T) {
 func TestMenuTreeForUserWithoutRolesIsEmptyArray(t *testing.T) {
 	srv := newServer(t)
 
-	resp := getJSON(t, srv.URL+"/menu-tree?user_id="+uuid.NewString())
+	resp := getJSON(t, srv.URL+"/menu-tree?user_id="+uuid.NewString()+"&company_id="+uuid.NewString())
 	requireStatus(t, resp, http.StatusOK)
 	if got := string(resp.body); got != "[]\n" {
 		t.Fatalf("expected an empty JSON array, got %q", got)
@@ -235,16 +237,19 @@ func TestMenuTreeDeduplicatesMenusGrantedBySeveralRoles(t *testing.T) {
 	roleA := mustCreateRole(t, srv)
 	roleB := mustCreateRole(t, srv)
 	user := uuid.NewString()
+	company := uuid.NewString()
 	leave := menuIDByCode(t, "hr", "leave")
 
+	// Kedua role ditugaskan di company yang SAMA -- itulah keadaan yang
+	// menghasilkan menu ganda kalau DISTINCT-nya hilang.
 	for _, roleID := range []string{roleA.ID, roleB.ID} {
 		requireStatus(t, putJSON(t, srv.URL+"/roles/"+roleID+"/permissions", []map[string]any{
 			{"menu_id": leave, "can_view": true},
 		}), http.StatusOK)
-		mustAssignRole(t, srv, user, roleID)
+		mustAssignRole(t, srv, user, roleID, company)
 	}
 
-	tree := fetchMenuTree(t, srv, user, false)
+	tree := fetchMenuTree(t, srv, user, company, false)
 	if n := countMenuNodes(tree); n != 1 {
 		t.Fatalf("expected the menu once, got %d nodes: %+v", n, tree)
 	}
@@ -256,6 +261,7 @@ func TestMenuTreeNestsChildMenusUnderTheirParent(t *testing.T) {
 	srv := newServer(t)
 	role := mustCreateRole(t, srv)
 	user := uuid.NewString()
+	company := uuid.NewString()
 	moduleID := moduleIDByCode(t, "hr")
 
 	parent := mustInsertMenu(t, moduleID, nil, true)
@@ -265,9 +271,9 @@ func TestMenuTreeNestsChildMenusUnderTheirParent(t *testing.T) {
 		{"menu_id": parent, "can_view": true},
 		{"menu_id": child, "can_view": true},
 	}), http.StatusOK)
-	mustAssignRole(t, srv, user, role.ID)
+	mustAssignRole(t, srv, user, role.ID, company)
 
-	tree := fetchMenuTree(t, srv, user, false)
+	tree := fetchMenuTree(t, srv, user, company, false)
 	if len(tree) != 1 {
 		t.Fatalf("expected one module group, got %d", len(tree))
 	}
@@ -279,13 +285,20 @@ func TestMenuTreeNestsChildMenusUnderTheirParent(t *testing.T) {
 	}
 }
 
-func fetchMenuTree(t *testing.T, srv *httptest.Server, userID string, superAdmin bool) []menuTreeModule {
+// companyID boleh kosong HANYA untuk super admin: jalur non-super-admin
+// menuntutnya (lihat menuTree), karena sejak hak role di-scope per company,
+// "menu apa yang boleh dilihat user ini" tidak punya jawaban tanpa company.
+func fetchMenuTree(t *testing.T, srv *httptest.Server, userID, companyID string, superAdmin bool) []menuTreeModule {
 	t.Helper()
 	headers := map[string]string{}
 	if superAdmin {
 		headers["X-Is-Super-Admin"] = "true"
 	}
-	resp := getJSONWithHeaders(t, srv.URL+"/menu-tree?user_id="+userID, headers)
+	url := srv.URL + "/menu-tree?user_id=" + userID
+	if companyID != "" {
+		url += "&company_id=" + companyID
+	}
+	resp := getJSONWithHeaders(t, url, headers)
 	requireStatus(t, resp, http.StatusOK)
 	var tree []menuTreeModule
 	resp.decode(t, &tree)
@@ -352,11 +365,15 @@ func mustInsertMenu(t *testing.T, moduleID string, parentID *string, active bool
 	return id
 }
 
-func mustAssignRole(t *testing.T, srv *httptest.Server, userID, roleID string) {
+// companyID eksplisit, bukan uuid acak per pemanggilan seperti dulu: sejak hak
+// role di-scope per company, dua role yang ditugaskan di company berbeda tidak
+// lagi menghasilkan sidebar gabungan -- test yang memakai company acak akan
+// lulus/gagal karena hal yang tidak sedang diujinya.
+func mustAssignRole(t *testing.T, srv *httptest.Server, userID, roleID, companyID string) {
 	t.Helper()
 	requireStatus(t, postJSON(t, srv.URL+"/user-roles", map[string]any{
 		"user_id":    userID,
 		"role_id":    roleID,
-		"company_id": uuid.NewString(),
+		"company_id": companyID,
 	}), http.StatusCreated)
 }

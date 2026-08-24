@@ -33,13 +33,14 @@ function Shell() {
   useEffect(() => {
     const user = getCurrentUser()
     if (!user) return
-    // companyId masih null saat daftar company belum selesai dimuat; menu-tree
-    // tetap dipanggil (hasilnya murni hak role, perilaku lama) lalu dipanggil
-    // ulang begitu company-nya diketahui.
-    const params = { user_id: user.id }
-    if (companyId) params.company_id = companyId
+    // Ditunggu sampai company-nya diketahui, tidak dipanggil lebih dulu tanpa
+    // company seperti dulu: hak role sekarang di-scope per company, jadi
+    // jawaban tanpa company tidak ada artinya -- backend pun menolaknya (400).
+    // Efek sampingnya justru bagus: sidebar tidak lagi sempat menampilkan menu
+    // gabungan lintas company lalu menyusut begitu company-nya terpilih.
+    if (!companyId) return
     apiClient
-      .get('/api/rbac/menu-tree', { params })
+      .get('/api/rbac/menu-tree', { params: { user_id: user.id, company_id: companyId } })
       .then(({ data }) => setModuleTree(data))
       .catch(() => setMenuError('Gagal memuat menu dari server.'))
   }, [companyId])

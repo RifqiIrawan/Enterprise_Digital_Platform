@@ -73,6 +73,16 @@ function Sidebar({ collapsed, onNavigate, moduleTree, menuError }) {
 
         {menuError && <div className="text-danger small px-2 mb-2">{menuError}</div>}
         {!moduleTree && !menuError && <div className="text-secondary small px-2 mb-2">Memuat menu...</div>}
+        {/* Sidebar kosong sekarang punya arti yang jelas dan sering terjadi:
+            user memilih company tempat dia tidak punya role sama sekali. Sejak
+            hak role di-scope per company, itu berarti dia memang tidak punya
+            akses apa pun di sana -- dan diam saja membuatnya terlihat seperti
+            aplikasi yang gagal memuat. */}
+        {moduleTree?.length === 0 && !menuError && (
+          <div className="text-secondary small px-2 mb-2">
+            Anda tidak punya akses apa pun di company ini. Pilih company lain di kanan atas.
+          </div>
+        )}
 
         {moduleTree?.map((mod) => {
           const isOpen = openModuleId === mod.id
