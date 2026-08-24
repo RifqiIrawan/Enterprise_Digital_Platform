@@ -24,6 +24,10 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /dashboards/summary", h.dashboardSummary)
 	mux.HandleFunc("GET /forecasting/summary", h.forecastingSummary)
 	mux.HandleFunc("GET /anomaly-detection/scan", h.anomalyScan)
+
+	// Fase 10: dua pelengkap forecasting & anomaly detection yang sudah ada.
+	mux.HandleFunc("GET /predictive-maintenance/scan", h.predictiveMaintenanceScan)
+	mux.HandleFunc("GET /recommendations/reorder", h.reorderRecommendations)
 }
 
 func (h *Handler) health(w http.ResponseWriter, r *http.Request) {

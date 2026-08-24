@@ -21,6 +21,7 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 3 — Manufacturing/MES** (Mesin, Shift Produksi, Eksekusi Produksi + downtime, OEE; dijahit ke penyelesaian Work Order) | 🚧 Inti MES selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). **Belum**: Formula (BOM berbasis persentase) dan fact table OEE di dw-service. |
 | **Fase 5 — Asset lanjutan** (Kalibrasi + Penyusutan dengan posting ke GL) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Sisa yang diketahui: jurnal pelepasan aset (disposal) belum ada. |
 | **Fase 9 — Business Intelligence per peran** (6 dashboard: Eksekutif/Sales/Finance/Gudang/Manufaktur/SDM, role baru `executive`, `?sections=` di ringkasan ai-bi) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Belum ada penyaring periode & tombol export. |
+| **Fase 10 — AI lanjutan** (Predictive Maintenance & Recommendation Engine; keduanya heuristik yang dijelaskan) | 🚧 Dua dari tiga selesai & tertutup test (sesi 2026-08-25, detail paling bawah). **RAG Chatbot belum** — butuh penyedia LLM, penyimpan vektor, dan keputusan soal data apa yang boleh masuk prompt. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Frontend — Company/Branch switcher (menggantikan asumsi single-company `data[0]`) | ✅ Selesai & diverifikasi sesi ini di 29 halaman (lihat detail di bawah) |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
@@ -1903,3 +1904,124 @@ urutan tabel.
   deret bulanan, tapi perhitungannya lebih tepat di dw-service daripada di
   browser, dan itu butuh ClickHouse hidup untuk diverifikasi.
 - Role `executive` belum punya user contoh di data demo.
+
+---
+
+## ai-bi-service — Predictive Maintenance & Recommendation Engine (Fase 10, sesi 2026-08-25 lanjutan lagi)
+
+Fase 10 di roadmap asli: Forecasting, Predictive Maintenance, Anomaly
+Detection, Recommendation Engine, RAG Chatbot. Forecasting & anomaly sudah ada
+sejak Fase 2; sesi ini mengerjakan dua berikutnya. **RAG Chatbot tidak
+dikerjakan** — lihat bagian terakhir.
+
+### Prinsip yang dipegang keduanya: heuristik yang DIJELASKAN
+
+Service ini tidak punya model terlatih dan tidak berpura-pura punya. Yang
+dikirim ke layar bukan sekadar angka, melainkan angka **beserta faktor
+pembentuknya**: `factors: [{code, label, contribution, detail}]` untuk risiko,
+dan `reason` untuk tiap saran pemesanan. Alasannya praktis: skor tanpa alasan
+akan diabaikan begitu tebakan pertamanya meleset, dan tidak ada yang bisa
+menyanggah angka yang tidak menjelaskan dirinya.
+
+### `GET /predictive-maintenance/scan`
+
+Dua sumber sinyal, keduanya sudah ada di platform:
+
+| Subjek | Faktor | Bobot |
+|---|---|---|
+| Mesin | Availability < 85% (dari OEE Fase 3) | (0,85−avail) × 200, maks 45 |
+| Mesin | Quality < 95% (reject menetap ≈ perkakas aus) | (0,95−qual) × 200, maks 20 |
+| Mesin/Aset | Status MAINTENANCE | 15 |
+| Aset | Jadwal maintenance terlewat | hari/60 × 45 |
+| Aset | Belum pernah ada maintenance selesai | 20 |
+| Aset | Nilai buku ≤ 10% dari nilai yang disusutkan (Fase 5) | 15 |
+
+HIGH ≥ 60, MEDIUM ≥ 30. Ambangnya sengaja dipilih supaya **satu faktor besar
+saja belum cukup** untuk HIGH — daftar yang penuh HIGH adalah daftar yang tidak
+lagi dibaca.
+
+Yang sengaja TIDAK dinilai: mesin tanpa satu pun run tertutup (tidak ada bukti
+apa pun; memberinya skor 0 sama menyesatkannya dengan memberinya skor tinggi)
+dan aset berstatus DISPOSED.
+
+**IoT sengaja tidak dipakai.** Device di iot-service hanya menyimpan
+`warehouse_id`; tidak ada kolom yang mengaitkannya ke aset atau mesin tertentu.
+Mencocokkan lewat kemiripan nama adalah tebakan yang akan salah tanpa ada yang
+menyadarinya. Kalau `device.asset_id` nanti benar-benar ada, alert tinggal
+ditambahkan sebagai faktor baru.
+
+### `GET /recommendations/reorder`
+
+```
+kecepatan pemakaian = total stok keluar / rentang hari yang tercakup
+sisa hari           = stok saat ini / kecepatan pemakaian
+saran pesan         = (kecepatan × 30 hari) − stok saat ini
+```
+
+HIGH < 7 hari, MEDIUM < 14 hari, dan barang dengan persediaan ≥ 30 hari tidak
+muncul sama sekali. Barang yang stoknya sudah nol tetap muncul (identitasnya
+diambil dari baris pergerakannya) — justru dia yang paling mendesak.
+
+Tiga batasan yang **ikut dikirim di respons**, bukan disembunyikan:
+
+1. `GET /stock-movements` di warehouse-service mengembalikan **200 pergerakan
+   terakhir**. Rentang hari karena itu dihitung dari data yang benar-benar
+   diterima, dan `window.truncated` memberi tahu kalau batas itu tersentuh —
+   rentang yang terpotong membuat kecepatan pemakaian terlihat lebih tinggi
+   daripada kenyataannya, dan itu mengubah arti setiap angka di tabelnya.
+2. Tidak ada musiman, tren, maupun lead time pemasok. Ini rata-rata datar.
+3. Barang tanpa pergerakan keluar tidak direkomendasikan — tanpa pemakaian
+   tidak ada dasar menghitung kapan dia habis. Stok mati bukan urusan endpoint
+   ini.
+
+### Bug nyata yang ditemukan test (bukan pre-existing)
+
+Perhitungan "berapa hari terlambat" awalnya memakai `now.Truncate(24*time.Hour)`.
+Truncate memotong di tengah malam **UTC**, sehingga di zona waktu Indonesia
+(+07) hasilnya bergeser satu hari selama tujuh jam pertama setiap hari — dan
+memang begitulah test pertama gagal (29 hari, bukan 30). Sekarang memakai
+`time.Date(now.Year(), now.Month(), now.Day(), …, time.UTC)`, yang
+membandingkan tanggal dengan tanggal.
+
+### Kebijakan gateway & menu
+
+Dua endpoint baru didaftarkan di `policy.go`. `022_seed_ai_menus.sql` menambah
+menu Predictive Maintenance & Rekomendasi Pemesanan di modul AI & BI. Keduanya
+layar **operasional**: Production & Asset mendapat predictive maintenance,
+Warehouse & Purchasing mendapat rekomendasi pemesanan, sementara role
+`executive` (Fase 9) sengaja **tidak** diberi keduanya — dia sudah punya enam
+dashboard ringkasan.
+
+### Verifikasi
+
+- `ai-bi-service`: `go test ./...` → **36 test lulus** (sebelumnya 27). Yang
+  dijaga: setiap bobot faktor beserta pemotongannya, mesin sehat & mesin tanpa
+  run yang tidak boleh muncul, aset DISPOSED yang tidak dinilai, jadwal
+  COMPLETED yang tidak boleh dihitung terlambat, urutan hasil, toleransi
+  kegagalan sebagian, seluruh aritmetika reorder (termasuk stok masuk yang
+  tidak boleh mengurangi pemakaian, saldo dua gudang yang dijumlahkan, barang
+  stok-nol, dan penandaan riwayat terpotong).
+- `api-gateway` & `rbac-service`: lulus; pembagian menu per role dicek lewat
+  psql.
+- Frontend: ESLint bersih, `vitest run` **61 test lulus** (4 baru).
+- **Belum diverifikasi di browser sungguhan.**
+
+### RAG Chatbot — sengaja tidak dikerjakan
+
+Butuh tiga hal yang belum ada di platform ini: penyedia LLM (beserta kunci &
+biayanya), penyimpan vektor + pipeline embedding untuk dokumen/data yang mau ditanyai, dan keputusan tentang data mana yang boleh masuk ke prompt (chatbot
+yang membaca lintas modul akan dengan mudah membocorkan payroll ke orang yang
+tidak berhak — persis masalah yang baru saja dijaga ketat di kebijakan gateway).
+Ketiganya keputusan Anda, bukan detail teknis yang bisa diputuskan sepihak di
+sini, dan tidak ada satu pun yang bisa diverifikasi di lingkungan ini sekarang.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- RAG Chatbot (di atas).
+- Cross-sell / market-basket dari baris sales order: butuh detail per order
+  (`GET /sales-orders/{id}`), jadi N+1 panggilan — lebih tepat dihitung di
+  dw-service dari `fact_sales_order_lines` yang sudah ada.
+- Lead time pemasok di rekomendasi pemesanan: purchasing-service menyimpan
+  tanggal PO & penerimaan, jadi bahannya sebenarnya ada.
+- Riwayat skor risiko (sekarang dihitung ulang tiap request, tidak disimpan),
+  sehingga tren "mesin ini memburuk" belum bisa dilihat.

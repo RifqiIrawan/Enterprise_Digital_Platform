@@ -58,6 +58,8 @@ import ManufacturingDashboardPage from './pages/bi/ManufacturingDashboardPage.js
 import HrDashboardPage from './pages/bi/HrDashboardPage.jsx'
 import ForecastingPage from './pages/aibi/ForecastingPage.jsx'
 import AnomalyDetectionPage from './pages/aibi/AnomalyDetectionPage.jsx'
+import PredictiveMaintenancePage from './pages/aibi/PredictiveMaintenancePage.jsx'
+import ReorderRecommendationsPage from './pages/aibi/ReorderRecommendationsPage.jsx'
 import DevicesPage from './pages/iot/DevicesPage.jsx'
 import ReadingsPage from './pages/iot/ReadingsPage.jsx'
 import AlertsPage from './pages/iot/AlertsPage.jsx'
@@ -154,6 +156,8 @@ function App() {
         <Route path="/bi/hr" element={<HrDashboardPage />} />
         <Route path="/ai-bi/forecasting" element={<ForecastingPage />} />
         <Route path="/ai-bi/anomaly-detection" element={<AnomalyDetectionPage />} />
+        <Route path="/ai-bi/predictive-maintenance" element={<PredictiveMaintenancePage />} />
+        <Route path="/ai-bi/recommendations" element={<ReorderRecommendationsPage />} />
         <Route path="/iot/devices" element={<DevicesPage />} />
         <Route path="/iot/readings" element={<ReadingsPage />} />
         <Route path="/iot/alerts" element={<AlertsPage />} />

@@ -392,6 +392,8 @@ var Rules = []Rule{
 		"/bi/warehouse", "/bi/manufacturing", "/bi/hr")},
 	{"GET", "/api/ai-bi/forecasting/summary", need("/ai-bi/forecasting", View)},
 	{"GET", "/api/ai-bi/anomaly-detection/scan", need("/ai-bi/anomaly-detection", View)},
+	{"GET", "/api/ai-bi/predictive-maintenance/scan", need("/ai-bi/predictive-maintenance", View)},
+	{"GET", "/api/ai-bi/recommendations/reorder", need("/ai-bi/recommendations", View)},
 
 	// ---------- iot-service ----------
 	{"GET", "/api/iot/devices", viewAny("/iot/devices", "/iot/readings")},
