@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,10 +13,25 @@ import (
 	"github.com/enterprise-digital-platform/asset-service/internal/model"
 )
 
-const assetColumns = `id, company_id, branch_id, warehouse_id, asset_code, name, category, acquisition_date, acquisition_cost, status, notes, created_at, updated_at`
+const assetColumns = `id, company_id, branch_id, warehouse_id, asset_code, name, category, acquisition_date, acquisition_cost, status, notes, salvage_value, useful_life_months, depreciation_method, depreciation_start_date, accumulated_depreciation, created_at, updated_at`
+
+var depreciationMethods = map[string]bool{"STRAIGHT_LINE": true, "DECLINING_BALANCE": true}
+
+func round2(v float64) float64 {
+	return math.Round(v*100) / 100
+}
 
 func scanAsset(row pgx.Row, a *model.Asset) error {
-	return row.Scan(&a.ID, &a.CompanyID, &a.BranchID, &a.WarehouseID, &a.AssetCode, &a.Name, &a.Category, &a.AcquisitionDate, &a.AcquisitionCost, &a.Status, &a.Notes, &a.CreatedAt, &a.UpdatedAt)
+	if err := row.Scan(&a.ID, &a.CompanyID, &a.BranchID, &a.WarehouseID, &a.AssetCode, &a.Name, &a.Category,
+		&a.AcquisitionDate, &a.AcquisitionCost, &a.Status, &a.Notes,
+		&a.SalvageValue, &a.UsefulLifeMonths, &a.DepreciationMethod, &a.DepreciationStartDate, &a.AccumulatedDepreciation,
+		&a.CreatedAt, &a.UpdatedAt); err != nil {
+		return err
+	}
+	// Nilai buku selalu diturunkan, tidak pernah disimpan -- dua angka yang
+	// bisa berbeda adalah dua angka yang cepat atau lambat AKAN berbeda.
+	a.BookValue = round2(a.AcquisitionCost - a.AccumulatedDepreciation)
+	return nil
 }
 
 func (h *Handler) listAssets(w http.ResponseWriter, r *http.Request) {
@@ -52,15 +68,51 @@ func (h *Handler) listAssets(w http.ResponseWriter, r *http.Request) {
 }
 
 type assetRequest struct {
-	CompanyID       string  `json:"company_id"`
-	BranchID        *string `json:"branch_id"`
-	WarehouseID     *string `json:"warehouse_id"`
-	AssetCode       string  `json:"asset_code"`
-	Name            string  `json:"name"`
-	Category        string  `json:"category"`
-	AcquisitionDate string  `json:"acquisition_date"`
-	AcquisitionCost float64 `json:"acquisition_cost"`
-	Notes           string  `json:"notes"`
+	CompanyID             string  `json:"company_id"`
+	BranchID              *string `json:"branch_id"`
+	WarehouseID           *string `json:"warehouse_id"`
+	AssetCode             string  `json:"asset_code"`
+	Name                  string  `json:"name"`
+	Category              string  `json:"category"`
+	AcquisitionDate       string  `json:"acquisition_date"`
+	AcquisitionCost       float64 `json:"acquisition_cost"`
+	Notes                 string  `json:"notes"`
+	SalvageValue          float64 `json:"salvage_value"`
+	UsefulLifeMonths      *int    `json:"useful_life_months"`
+	DepreciationMethod    string  `json:"depreciation_method"`
+	DepreciationStartDate string  `json:"depreciation_start_date"`
+}
+
+// depreciationInput memvalidasi parameter penyusutan yang dipakai createAsset
+// maupun updateAsset. Nilai residu yang melebihi harga perolehan akan membuat
+// setiap perhitungan penyusutan negatif, jadi ditolak di sini -- bukan
+// dibiarkan muncul sebagai angka aneh di jurnal.
+func depreciationInput(method, startDate string, usefulLife *int, salvage, cost float64) (string, *time.Time, string) {
+	method = strings.TrimSpace(method)
+	if method == "" {
+		method = "STRAIGHT_LINE"
+	}
+	if !depreciationMethods[method] {
+		return "", nil, "depreciation_method harus STRAIGHT_LINE atau DECLINING_BALANCE"
+	}
+	if usefulLife != nil && *usefulLife <= 0 {
+		return "", nil, "useful_life_months harus lebih besar dari 0 (kosongkan kalau aset tidak disusutkan)"
+	}
+	if salvage < 0 {
+		return "", nil, "salvage_value tidak boleh negatif"
+	}
+	if salvage > cost {
+		return "", nil, "salvage_value tidak boleh melebihi acquisition_cost"
+	}
+	var start *time.Time
+	if startDate != "" {
+		parsed, err := time.Parse("2006-01-02", startDate)
+		if err != nil {
+			return "", nil, "depreciation_start_date harus format YYYY-MM-DD"
+		}
+		start = &parsed
+	}
+	return method, start, ""
 }
 
 func (h *Handler) createAsset(w http.ResponseWriter, r *http.Request) {
@@ -86,15 +138,29 @@ func (h *Handler) createAsset(w http.ResponseWriter, r *http.Request) {
 		acquisitionDate = &parsed
 	}
 
+	method, depreciationStart, msg := depreciationInput(req.DepreciationMethod, req.DepreciationStartDate, req.UsefulLifeMonths, req.SalvageValue, req.AcquisitionCost)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	// Tanggal mulai penyusutan yang tidak diisi jatuh ke tanggal perolehan --
+	// itu yang benar di hampir semua kasus, dan memaksa mengisi dua tanggal
+	// yang sama hanya membuat orang mengisinya asal.
+	if depreciationStart == nil {
+		depreciationStart = acquisitionDate
+	}
+
 	var a model.Asset
 	err := scanAsset(h.pool.QueryRow(r.Context(), `
-		INSERT INTO assets (company_id, branch_id, warehouse_id, asset_code, name, category, acquisition_date, acquisition_cost, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		INSERT INTO assets (company_id, branch_id, warehouse_id, asset_code, name, category, acquisition_date, acquisition_cost, notes,
+		                    salvage_value, useful_life_months, depreciation_method, depreciation_start_date)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING `+assetColumns,
 		req.CompanyID, req.BranchID, req.WarehouseID, req.AssetCode, req.Name, req.Category, acquisitionDate, req.AcquisitionCost, req.Notes,
+		req.SalvageValue, req.UsefulLifeMonths, method, depreciationStart,
 	), &a)
 	if err != nil {
-		if strings.Contains(err.Error(), "duplicate key") {
+		if isDuplicateKey(err) {
 			writeError(w, http.StatusConflict, "Kode aset sudah dipakai di company ini")
 			return
 		}
@@ -112,8 +178,22 @@ type updateAssetRequest struct {
 	Category    string  `json:"category"`
 	Status      string  `json:"status"`
 	Notes       string  `json:"notes"`
+	// Field penyusutan OPSIONAL di update: yang tidak dikirim tidak diubah.
+	// Ini bukan soal kerapian -- klien yang hanya mengirim nama & status
+	// (halaman aset sebelum Fase 5, atau skrip lama) tidak boleh diam-diam
+	// menghapus umur manfaat sebuah aset dan menghentikan penyusutannya.
+	// useful_life_months = 0 adalah cara eksplisit menyatakan "aset ini tidak
+	// lagi disusutkan".
+	SalvageValue          *float64 `json:"salvage_value"`
+	UsefulLifeMonths      *int     `json:"useful_life_months"`
+	DepreciationMethod    string   `json:"depreciation_method"`
+	DepreciationStartDate string   `json:"depreciation_start_date"`
 }
 
+// updateAsset boleh mengubah parameter penyusutan kapan saja; yang berubah
+// hanya perhitungan periode BERIKUTNYA. Entry yang sudah diposting membawa
+// nilai bukunya sendiri dan tidak dihitung ulang -- jurnal yang sudah masuk
+// buku besar tidak boleh berubah karena master datanya disunting.
 func (h *Handler) updateAsset(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var req updateAssetRequest
@@ -131,12 +211,47 @@ func (h *Handler) updateAsset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := r.Context()
+	var current model.Asset
+	if err := scanAsset(h.pool.QueryRow(ctx, `SELECT `+assetColumns+` FROM assets WHERE id = $1`, id), &current); err == pgx.ErrNoRows {
+		writeError(w, http.StatusNotFound, "Aset tidak ditemukan")
+		return
+	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memuat aset")
+		return
+	}
+
+	salvage := current.SalvageValue
+	if req.SalvageValue != nil {
+		salvage = *req.SalvageValue
+	}
+	life := current.UsefulLifeMonths
+	if req.UsefulLifeMonths != nil {
+		if *req.UsefulLifeMonths == 0 {
+			life = nil
+		} else {
+			life = req.UsefulLifeMonths
+		}
+	}
+	method := current.DepreciationMethod
+	if strings.TrimSpace(req.DepreciationMethod) != "" {
+		method = strings.TrimSpace(req.DepreciationMethod)
+	}
+	method, depreciationStart, msg := depreciationInput(method, req.DepreciationStartDate, life, salvage, current.AcquisitionCost)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+
 	var a model.Asset
-	err := scanAsset(h.pool.QueryRow(r.Context(), `
-		UPDATE assets SET warehouse_id = $1, name = $2, category = $3, status = $4, notes = $5, updated_at = now()
-		WHERE id = $6
+	err := scanAsset(h.pool.QueryRow(ctx, `
+		UPDATE assets SET warehouse_id = $1, name = $2, category = $3, status = $4, notes = $5,
+		       salvage_value = $6, useful_life_months = $7, depreciation_method = $8,
+		       depreciation_start_date = COALESCE($9, depreciation_start_date), updated_at = now()
+		WHERE id = $10
 		RETURNING `+assetColumns,
-		req.WarehouseID, req.Name, req.Category, req.Status, req.Notes, id,
+		req.WarehouseID, req.Name, req.Category, req.Status, req.Notes,
+		salvage, life, method, depreciationStart, id,
 	), &a)
 	if err == pgx.ErrNoRows {
 		writeError(w, http.StatusNotFound, "Aset tidak ditemukan")

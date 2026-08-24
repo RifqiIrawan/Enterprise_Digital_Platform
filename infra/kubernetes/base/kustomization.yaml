@@ -152,6 +152,7 @@ configMapGenerator:
       - PORT=8092
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_ASSET
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - FINANCE_SERVICE_URL=http://finance-service:8085
 
   - name: ai-bi-service-config
     literals:

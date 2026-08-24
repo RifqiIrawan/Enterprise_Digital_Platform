@@ -47,6 +47,8 @@ import QualityStandardsPage from './pages/qc/QualityStandardsPage.jsx'
 import QualityInspectionsPage from './pages/qc/QualityInspectionsPage.jsx'
 import AssetRegisterPage from './pages/asset/AssetRegisterPage.jsx'
 import MaintenanceSchedulePage from './pages/asset/MaintenanceSchedulePage.jsx'
+import CalibrationPage from './pages/asset/CalibrationPage.jsx'
+import DepreciationPage from './pages/asset/DepreciationPage.jsx'
 import BIDashboardsPage from './pages/aibi/BIDashboardsPage.jsx'
 import ForecastingPage from './pages/aibi/ForecastingPage.jsx'
 import AnomalyDetectionPage from './pages/aibi/AnomalyDetectionPage.jsx'
@@ -135,6 +137,8 @@ function App() {
         <Route path="/qc/inspections" element={<QualityInspectionsPage />} />
         <Route path="/asset/register" element={<AssetRegisterPage />} />
         <Route path="/asset/maintenance" element={<MaintenanceSchedulePage />} />
+        <Route path="/asset/calibration" element={<CalibrationPage />} />
+        <Route path="/asset/depreciation" element={<DepreciationPage />} />
         <Route path="/ai-bi/dashboards" element={<BIDashboardsPage />} />
         <Route path="/ai-bi/forecasting" element={<ForecastingPage />} />
         <Route path="/ai-bi/anomaly-detection" element={<AnomalyDetectionPage />} />

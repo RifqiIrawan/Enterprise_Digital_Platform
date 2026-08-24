@@ -19,6 +19,7 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — Asset module** (Pendataan Aset, Maintenance Schedule dengan overdue indicator, complete/cancel) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — AI & BI** | ✅ **Selesai semua** — BI Dashboards, Forecasting (proyeksi tren linear sederhana), dan Anomaly Detection (heuristik z-score) semuanya sudah jalan & diverifikasi (lihat detail di bawah). **Ini menandai seluruh Fase 2 platform ini SELESAI** (Finance, HR, Sales, Purchasing, Warehouse, Production, QC, Asset, AI & BI). |
 | **Fase 3 — Manufacturing/MES** (Mesin, Shift Produksi, Eksekusi Produksi + downtime, OEE; dijahit ke penyelesaian Work Order) | 🚧 Inti MES selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). **Belum**: Formula (BOM berbasis persentase) dan fact table OEE di dw-service. |
+| **Fase 5 — Asset lanjutan** (Kalibrasi + Penyusutan dengan posting ke GL) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Sisa yang diketahui: jurnal pelepasan aset (disposal) belum ada. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Frontend — Company/Branch switcher (menggantikan asumsi single-company `data[0]`) | ✅ Selesai & diverifikasi sesi ini di 29 halaman (lihat detail di bawah) |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
@@ -1650,3 +1651,150 @@ auditor.
   harus dicatat sebagai dua run (dan itu ditolak, karena satu mesin hanya boleh
   punya satu run OPEN). Kalau pola itu nyata di lapangan, aturannya perlu
   ditinjau ulang.
+
+---
+
+## asset-service — Penyusutan & Kalibrasi: FASE 5 SELESAI (sesi 2026-08-25, lanjutan)
+
+Fase 5 di roadmap asli: Asset Register, Maintenance, Calibration, Depreciation.
+Dua yang pertama sudah ada sejak Fase 2; sesi ini mengerjakan dua sisanya.
+
+### `003_depreciation_and_calibration.sql`
+
+Lima kolom baru di `assets` (`salvage_value`, `useful_life_months`,
+`depreciation_method`, `depreciation_start_date`, `accumulated_depreciation`)
+plus tiga tabel: `depreciation_runs`, `depreciation_entries`, `calibrations`.
+
+- `useful_life_months` NULL = aset ini memang tidak disusutkan (tanah, barang di
+  bawah batas kapitalisasi). Itu keadaan yang sah, bukan data yang belum diisi.
+- `accumulated_depreciation` sengaja disimpan (denormalized) karena tiap
+  perhitungan run butuh nilai buku tiap aset; `book_value` justru **tidak**
+  disimpan, selalu diturunkan — dua angka yang bisa berbeda adalah dua angka
+  yang cepat atau lambat akan berbeda.
+- `depreciation_runs` **tidak ber-branch**, berbeda dari tabel transaksi lain
+  di platform ini: penyusutan adalah penutupan buku tingkat company, dan run
+  yang dipecah per cabang membuat satu periode punya beberapa run tanpa jaminan
+  seluruh aset tersapu (aset tanpa branch_id akan terlewat atau dobel).
+  Pelaporan per cabang tetap bisa lewat aset yang ditunjuk entry-nya.
+- Dua aturan dititipkan ke database: `UNIQUE (company_id, period)` supaya satu
+  periode tidak bisa dihitung dua kali, dan CHECK yang mengikat status ke
+  kelengkapan datanya (DRAFT tanpa journal_entry_id/posted_at, POSTED wajib
+  punya keduanya; kalibrasi COMPLETED wajib punya hasil & tanggal pengerjaan).
+
+### Rumus penyusutan & keputusan yang menyertainya
+
+```
+Garis lurus   : (harga perolehan − nilai residu) / umur manfaat (bulan)
+Saldo menurun : nilai buku × (2 / umur manfaat)
+```
+
+- **Tidak ada proporsi hari** — aset yang mulai disusutkan tanggal berapa pun
+  dalam sebuah bulan dikenai satu bulan penuh. Konvensi yang lazim, dan yang
+  membuat angkanya bisa dicocokkan dengan tabel penyusutan manual. Proporsi
+  harian bisa ditambahkan nanti; setengah-setengah lebih buruk daripada
+  konsisten.
+- **Bulan terakhir dipotong** ke `nilai buku − residu`. Tanpa itu saldo menurun
+  tidak pernah mencapai residu dan garis lurus melewatinya karena pembulatan.
+- Semua angka dibulatkan 2 desimal di titik yang sama (`round2`).
+
+### Urutan periode — dua penolakan yang menjaga akumulasi tetap benar
+
+1. Run baru ditolak selama masih ada run **DRAFT** (periode mana pun):
+   perhitungan berikutnya memakai `accumulated_depreciation`, yang belum
+   termasuk run yang belum diposting itu — periode berikutnya akan menyusutkan
+   angka yang sama dua kali.
+2. Run ditolak untuk periode yang **sama atau lebih lama** dari run POSTED
+   terakhir: akumulasi adalah angka berjalan, dan menyisipkan periode lama di
+   belakangnya membuat nilai buku tiap aset tidak lagi cocok dengan urutan
+   entry-nya.
+
+Run DRAFT boleh dihapus (`DELETE`) dan dihitung ulang; run POSTED tidak — dia
+punya jurnal di buku besar, dan menghapusnya di sini menyisakan jurnal tanpa
+asal-usul.
+
+### Posting ke GL
+
+Satu jurnal per periode (bukan per aset): debit Beban Penyusutan, kredit
+Akumulasi Penyusutan, `entry_date` = **hari terakhir periode** (bukan hari ini),
+`reference_type = ASSET_DEPRECIATION`, `reference_id` = id run. Rincian per aset
+tetap ada di `depreciation_entries`.
+
+Urutannya sama seperti payroll & penyelesaian work order: **finance-service
+dipanggil dulu, akumulasi aset naik setelah jurnalnya berhasil**. finance-service
+gagal ⇒ run tetap DRAFT dan bisa diposting ulang; kebalikannya akan
+meninggalkan nilai buku yang tidak punya jurnal pasangannya.
+
+`asset-service` karena itu sekarang punya `internal/financeclient` (disalin dari
+hr-service) dan `FINANCE_SERVICE_URL` — sudah ditambahkan ke `docker-compose.yml`
+(termasuk `depends_on: finance-service`), `kubernetes/base/kustomization.yaml`,
+dan kedua `asset-service.env.example`.
+
+### Satu jebakan kompatibilitas yang hampir lolos
+
+`updateAsset` menulis kolom penyusutan, jadi halaman aset lama yang hanya
+mengirim `{name, status}` akan **mengosongkan umur manfaat** setiap kali orang
+menyunting nama aset — asetnya diam-diam berhenti disusutkan. Karena itu field
+penyusutan di PUT dibuat opsional (pointer): yang tidak dikirim tidak diubah,
+dan `useful_life_months: 0` adalah cara eksplisit menyatakan "tidak lagi
+disusutkan". Dijaga test `TestUpdateAsset_KeepsDepreciationFieldsWhenOmitted`.
+
+### Kalibrasi
+
+- Hasil **PASS/ADJUSTED** + `interval_months` ⇒ kalibrasi berikutnya langsung
+  dibuat pada `performed_date + interval`. Kalibrasi adalah kewajiban berulang;
+  menyerahkan penjadwalan ulang pada ingatan orang adalah cara paling mudah
+  membuat alat ukur kedaluwarsa tanpa ada yang menyadarinya.
+- Hasil **FAIL** ⇒ status aset jadi MAINTENANCE, dan **tidak** dijadwalkan
+  ulang. Alat yang gagal kalibrasi bukan alat yang perlu diperiksa lagi
+  beberapa bulan lagi, tapi alat yang hasil ukurnya tidak bisa dipakai
+  sekarang; kapan kalibrasi berikutnya tergantung kapan perbaikannya selesai.
+- "Terlambat" dihitung saat ditampilkan, bukan status tersendiri — sama seperti
+  jadwal maintenance.
+
+### Kebijakan gateway & menu
+
+9 endpoint baru didaftarkan di `policy.go`. Memposting penyusutan menuntut
+`approve` (satu-satunya aksi di modul ini yang menghasilkan jurnal di buku
+besar); menghitungnya cukup `create`, menghapus perhitungan DRAFT `delete`.
+`020_seed_asset_depreciation_calibration_menus.sql` menambah menu Kalibrasi (30)
+& Penyusutan (40) di modul Asset. Role **finance** ikut diberi view+approve pada
+Penyusutan (tanpa hak mengubah data aset): jurnalnya masuk ke buku besar yang
+mereka pegang.
+
+### Frontend
+
+- Pendataan Aset kedatangan blok "Penyusutan" di formnya (umur manfaat, residu,
+  metode, tanggal mulai) dan kolom Nilai Buku (+ akumulasi) di tabel; aset tanpa
+  umur manfaat tertulis "tidak disusutkan", bukan Rp 0.
+- `/asset/calibration` — jadwal + catat hasil + batal, dengan indikator
+  Terlambat dan penjelasan konsekuensi hasil FAIL di modalnya.
+- `/asset/depreciation` — pemilih bulan + "Hitung Penyusutan", tabel run, dan
+  modal rincian berisi entry per aset serta form posting dua akun COA.
+
+### Verifikasi
+
+- `asset-service`: `go test ./...` → **68 test lulus** (sebelumnya 35) terhadap
+  Postgres lokal nyata, finance-service di-stub. Yang dijaga antara lain: angka
+  garis lurus & saldo menurun, saldo menurun yang memakai nilai buku hasil
+  posting bulan sebelumnya, pemotongan ke nilai residu, aset yang tidak
+  memenuhi syarat (tanpa umur manfaat / DISPOSED / mulai setelah periode /
+  sudah mentok di residu), keempat aturan urutan periode, isi jurnal yang
+  dikirim ke finance-service (termasuk `entry_date` akhir periode), kegagalan
+  finance-service yang meninggalkan run DRAFT tanpa menyentuh akumulasi,
+  penjadwalan ulang kalibrasi, dan FAIL yang menarik aset ke MAINTENANCE.
+- `api-gateway`: `go test ./...` lulus, termasuk penjaga cakupan kebijakan.
+- `rbac-service`: lulus; menu & hak diperiksa langsung lewat psql (11 baris
+  role_menu_permissions untuk dua menu baru, termasuk finance di Penyusutan).
+- Frontend: ESLint bersih, `vitest run` **53 test lulus** (6 baru).
+- **Belum diverifikasi di browser sungguhan** — sesi ini berhenti di tingkat
+  test otomatis.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Pelepasan aset (disposal) belum menghasilkan jurnal.** Mengubah status ke
+  DISPOSED menghentikan penyusutan, tapi keuntungan/kerugian pelepasan
+  (harga jual − nilai buku) belum dicatat ke buku besar sama sekali.
+- Fact table penyusutan di dw-service + chart-nya di BI Dashboards.
+- Proporsi hari untuk bulan pertama, kalau nanti dibutuhkan.
+- Sertifikat kalibrasi masih sebatas nomor; belum ada lampiran berkas.
+- Verifikasi end-to-end di browser (Playwright), seperti modul Fase 2 lainnya.

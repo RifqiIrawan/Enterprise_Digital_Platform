@@ -362,13 +362,26 @@ var Rules = []Rule{
 	{"POST", "/api/qc/inspections", need("/qc/inspections", Create)},
 
 	// ---------- asset-service ----------
-	{"GET", "/api/asset/assets", viewAny("/asset/register", "/asset/maintenance")},
+	{"GET", "/api/asset/assets", viewAny("/asset/register", "/asset/maintenance", "/asset/calibration", "/asset/depreciation")},
 	{"POST", "/api/asset/assets", need("/asset/register", Create)},
 	{"PUT", "/api/asset/assets/*", need("/asset/register", Update)},
 	{"GET", "/api/asset/maintenance-schedules", need("/asset/maintenance", View)},
 	{"POST", "/api/asset/maintenance-schedules", need("/asset/maintenance", Create)},
 	{"POST", "/api/asset/maintenance-schedules/*/complete", need("/asset/maintenance", Update)},
 	{"POST", "/api/asset/maintenance-schedules/*/cancel", need("/asset/maintenance", Update)},
+	// Penyusutan & kalibrasi (Fase 5). Memposting penyusutan menuntut
+	// `approve`: itu satu-satunya aksi di modul ini yang menghasilkan jurnal di
+	// buku besar. Menghitungnya (DRAFT) cukup `create`, dan menghapus
+	// perhitungan yang belum diposting `delete`.
+	{"GET", "/api/asset/depreciation-runs", need("/asset/depreciation", View)},
+	{"GET", "/api/asset/depreciation-runs/*", need("/asset/depreciation", View)},
+	{"POST", "/api/asset/depreciation-runs", need("/asset/depreciation", Create)},
+	{"POST", "/api/asset/depreciation-runs/*/post", need("/asset/depreciation", Approve)},
+	{"DELETE", "/api/asset/depreciation-runs/*", need("/asset/depreciation", Delete)},
+	{"GET", "/api/asset/calibrations", need("/asset/calibration", View)},
+	{"POST", "/api/asset/calibrations", need("/asset/calibration", Create)},
+	{"POST", "/api/asset/calibrations/*/complete", need("/asset/calibration", Update)},
+	{"POST", "/api/asset/calibrations/*/cancel", need("/asset/calibration", Update)},
 
 	// ---------- ai-bi-service ----------
 	{"GET", "/api/ai-bi/dashboards/summary", need("/ai-bi/dashboards", View)},

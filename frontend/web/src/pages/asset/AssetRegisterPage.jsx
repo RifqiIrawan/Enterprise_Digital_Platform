@@ -5,7 +5,10 @@ import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
 import { usePagePermission } from '../../store/PermissionContext.jsx'
 
-const emptyForm = { asset_code: '', name: '', category: '', warehouse_id: '', acquisition_date: '', acquisition_cost: '', notes: '' }
+const emptyForm = {
+  asset_code: '', name: '', category: '', warehouse_id: '', acquisition_date: '', acquisition_cost: '', notes: '',
+  salvage_value: '', useful_life_months: '', depreciation_method: 'STRAIGHT_LINE', depreciation_start_date: '',
+}
 
 function formatMoney(n) {
   return new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0 }).format(n ?? 0)
@@ -73,6 +76,10 @@ function AssetRegisterPage() {
       acquisition_date: a.acquisition_date ? a.acquisition_date.slice(0, 10) : '',
       acquisition_cost: a.acquisition_cost ?? '',
       notes: a.notes ?? '',
+      salvage_value: a.salvage_value ?? '',
+      useful_life_months: a.useful_life_months ?? '',
+      depreciation_method: a.depreciation_method ?? 'STRAIGHT_LINE',
+      depreciation_start_date: a.depreciation_start_date ? a.depreciation_start_date.slice(0, 10) : '',
     })
     setStatus(a.status)
     setFormError('')
@@ -84,6 +91,15 @@ function AssetRegisterPage() {
     setSaving(true)
     setFormError('')
     try {
+      // useful_life_months dikirim 0 saat dikosongkan -- itu cara eksplisit
+      // memberi tahu server "aset ini tidak lagi disusutkan"; field yang tidak
+      // dikirim sama sekali justru berarti "jangan diubah".
+      const depreciation = {
+        salvage_value: Number(form.salvage_value) || 0,
+        useful_life_months: form.useful_life_months === '' ? 0 : Number(form.useful_life_months),
+        depreciation_method: form.depreciation_method,
+        depreciation_start_date: form.depreciation_start_date || null,
+      }
       if (editingId) {
         await apiClient.put(`/api/asset/assets/${editingId}`, {
           warehouse_id: form.warehouse_id || null,
@@ -91,6 +107,7 @@ function AssetRegisterPage() {
           category: form.category,
           status,
           notes: form.notes,
+          ...depreciation,
         })
       } else {
         await apiClient.post('/api/asset/assets', {
@@ -103,6 +120,8 @@ function AssetRegisterPage() {
           acquisition_date: form.acquisition_date || null,
           acquisition_cost: Number(form.acquisition_cost) || 0,
           notes: form.notes,
+          ...depreciation,
+          useful_life_months: form.useful_life_months === '' ? null : Number(form.useful_life_months),
         })
       }
       setEditing(false)
@@ -133,6 +152,22 @@ function AssetRegisterPage() {
       className: 'text-end',
       cellClassName: 'text-end',
       render: (a) => formatMoney(a.acquisition_cost),
+    },
+    {
+      key: 'book_value',
+      label: 'Nilai Buku',
+      className: 'text-end',
+      cellClassName: 'text-end',
+      render: (a) =>
+        a.useful_life_months ? (
+          <div>
+            <div>{formatMoney(a.book_value)}</div>
+            <div className="text-secondary small">akum. {formatMoney(a.accumulated_depreciation)}</div>
+          </div>
+        ) : (
+          <span className="text-secondary small">tidak disusutkan</span>
+        ),
+      sortValue: (a) => a.book_value ?? 0,
     },
     {
       key: 'status',
@@ -269,6 +304,55 @@ function AssetRegisterPage() {
                   </select>
                 </div>
               )}
+              <div className="col-12">
+                <hr className="my-1" />
+                <div className="fw-semibold small">Penyusutan</div>
+                <div className="text-secondary small">
+                  Kosongkan umur manfaat kalau aset ini memang tidak disusutkan (tanah, barang di bawah batas kapitalisasi).
+                </div>
+              </div>
+              <div className="col-4">
+                <label className="form-label">Umur Manfaat (bulan)</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  value={form.useful_life_months}
+                  onChange={(e) => setForm({ ...form, useful_life_months: e.target.value })}
+                  min="1"
+                  placeholder="mis. 60"
+                />
+              </div>
+              <div className="col-4">
+                <label className="form-label">Nilai Residu</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  value={form.salvage_value}
+                  onChange={(e) => setForm({ ...form, salvage_value: e.target.value })}
+                  min="0"
+                />
+              </div>
+              <div className="col-4">
+                <label className="form-label">Metode</label>
+                <select
+                  className="form-select"
+                  value={form.depreciation_method}
+                  onChange={(e) => setForm({ ...form, depreciation_method: e.target.value })}
+                >
+                  <option value="STRAIGHT_LINE">Garis Lurus</option>
+                  <option value="DECLINING_BALANCE">Saldo Menurun Ganda</option>
+                </select>
+              </div>
+              <div className="col-6">
+                <label className="form-label">Mulai Disusutkan</label>
+                <input
+                  type="date"
+                  className="form-control"
+                  value={form.depreciation_start_date}
+                  onChange={(e) => setForm({ ...form, depreciation_start_date: e.target.value })}
+                />
+                <div className="form-text">Kosong = mengikuti tanggal perolehan.</div>
+              </div>
               <div className="col-12">
                 <label className="form-label">Catatan</label>
                 <input

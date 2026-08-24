@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/enterprise-digital-platform/asset-service/internal/financeclient"
 	"github.com/enterprise-digital-platform/asset-service/internal/httpapi"
 	"github.com/enterprise-digital-platform/asset-service/internal/store"
 	"github.com/enterprise-digital-platform/asset-service/migrations"
@@ -80,17 +81,71 @@ func newCompanyID(t *testing.T) string {
 	return uuid.NewString()
 }
 
-// newServer wires the real handler; asset-service has no outbound
-// cross-service clients at all (no product master, no stock involvement --
-// see the migrations/001_init.sql comment), so there's nothing to stub.
+// newServer wires the real handler with a finance client pointed at an
+// unreachable address -- fine for every endpoint except postDepreciationRun,
+// which has its own stub setup below. Asset data itself involves no other
+// service (no product master, no stock -- see migrations/001_init.sql);
+// finance-service only enters the picture when depreciation is posted to the
+// general ledger.
 func newServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	handler := httpapi.NewHandler(pool, nil)
+	handler := httpapi.NewHandler(pool, nil, financeclient.New("http://127.0.0.1:1"))
 	mux := http.NewServeMux()
 	handler.Register(mux)
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// financeStubCall records one request the handler sent to the (stubbed)
+// finance-service, so tests can assert on the journal asset-service built.
+type financeStubCall struct {
+	path string
+	body []byte
+}
+
+// newFinanceStub fakes just enough of finance-service's contract
+// (POST /journal-entries -> {id,status}, POST /journal-entries/{id}/post -> 200)
+// for financeclient.CreateAndPostJournalEntry to succeed, without pulling in
+// finance-service itself. failOnCreate exercises the "finance-service
+// unreachable/erroring" path, which must leave the run DRAFT and the assets'
+// accumulated depreciation untouched.
+func newFinanceStub(t *testing.T, failOnCreate bool) (*httptest.Server, *[]financeStubCall) {
+	t.Helper()
+	calls := &[]financeStubCall{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /journal-entries", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		*calls = append(*calls, financeStubCall{path: r.URL.Path, body: body})
+		if failOnCreate {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":"simulated finance-service failure"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": uuid.NewString(), "status": "DRAFT"})
+	})
+	mux.HandleFunc("POST /journal-entries/{id}/post", func(w http.ResponseWriter, r *http.Request) {
+		*calls = append(*calls, financeStubCall{path: r.URL.Path})
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "POSTED"})
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, calls
+}
+
+func newServerWithFinanceStub(t *testing.T, failOnCreate bool) (*httptest.Server, *[]financeStubCall) {
+	t.Helper()
+	stub, calls := newFinanceStub(t, failOnCreate)
+	handler := httpapi.NewHandler(pool, nil, financeclient.New(stub.URL))
+	mux := http.NewServeMux()
+	handler.Register(mux)
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, calls
 }
 
 type apiResponse struct {

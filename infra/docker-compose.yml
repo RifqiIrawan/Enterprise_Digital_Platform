@@ -438,10 +438,12 @@ services:
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/asset_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
+      FINANCE_SERVICE_URL: http://finance-service:8085
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - kafka
+      - finance-service
     ports:
       - "8092:8092"
     networks:

@@ -7,6 +7,7 @@ import (
 
 	"github.com/enterprise-digital-platform/asset-service/internal/config"
 	"github.com/enterprise-digital-platform/asset-service/internal/eventbus"
+	"github.com/enterprise-digital-platform/asset-service/internal/financeclient"
 	"github.com/enterprise-digital-platform/asset-service/internal/httpapi"
 	"github.com/enterprise-digital-platform/asset-service/internal/logging"
 	"github.com/enterprise-digital-platform/asset-service/internal/metrics"
@@ -39,7 +40,9 @@ func main() {
 	events := eventbus.NewPublisher(cfg.KafkaBrokers)
 	defer events.Close()
 
-	handler := httpapi.NewHandler(pool, events)
+	finance := financeclient.New(cfg.FinanceServiceURL)
+
+	handler := httpapi.NewHandler(pool, events, finance)
 
 	mux := http.NewServeMux()
 	handler.Register(mux)
