@@ -36,3 +36,7 @@ Thumbs.db
 # menjalankannya meninggalkan cache bytecode.
 __pycache__/
 *.pyc
+
+# Hasil infra/scripts/backup-postgres.ps1 -- berisi data sungguhan
+# (dump 18 database), tidak boleh masuk git.
+backups/

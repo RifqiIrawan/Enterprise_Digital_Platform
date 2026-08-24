@@ -103,6 +103,22 @@ Distributed tracing (Jaeger) sengaja belum dikerjakan — menyusul sebagai
 pass terpisah kalau dibutuhkan, mengikuti pola "satu pilar sekaligus" yang
 sama seperti pengerjaan Data Warehouse bertahap sebelumnya.
 
+### Backup & Disaster Recovery (Fase 12)
+
+`infra/scripts/backup-postgres.ps1` mem-backup ke-18 database service (satu
+dump `-Fc` per database + `manifest.json` ber-sha256), `restore-postgres.ps1`
+memulihkan satu database per perintah. Runbook lengkapnya beserta skenario
+pemulihan ada di [`DISASTER_RECOVERY.md`](./DISASTER_RECOVERY.md) — termasuk
+alasan **ClickHouse & MinIO sengaja tidak di-backup** (data turunan, dibangun
+ulang dari Postgres) dan hasil latihan pemulihan yang sudah dijalankan.
+
+```powershell
+$env:PGPASSWORD = "platform"
+./scripts/backup-postgres.ps1
+```
+
+`backups/` ada di `.gitignore`; dump berisi data sungguhan.
+
 ### Alerting (Fase 11)
 
 Tujuh aturan alert di `infra/prometheus/rules/edp-alerts.yml`, dikelompokkan

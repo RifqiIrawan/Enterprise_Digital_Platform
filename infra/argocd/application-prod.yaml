@@ -1,0 +1,41 @@
+# ArgoCD Application untuk overlay produksi (Fase 12).
+#
+# BEDA UTAMA DARI STAGING: tidak ada `syncPolicy.automated`. Sinkron ke
+# produksi dijalankan manual (`argocd app sync edp-prod` atau tombol Sync di
+# UI-nya). Sinkron otomatis berarti setiap commit yang lolos CI langsung
+# mengubah produksi, dan keputusan "sekarang waktunya mengubah produksi" bukan
+# keputusan yang layak diambil proses yang tidak tahu apa-apa tentang jam
+# sibuk, rilis yang sedang berjalan, atau siapa yang sedang siaga.
+#
+# ArgoCD tetap menampilkan selisih antara repo dan cluster (OutOfSync), jadi
+# manfaat GitOps-nya -- tahu persis apa yang berbeda -- tetap didapat tanpa
+# perubahan yang tidak diminta.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: edp-prod
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/RifqiIrawan/Enterprise_Digital_Platform.git
+    # Produksi mengikuti TAG, bukan branch: "apa yang sedang berjalan di
+    # produksi" harus bisa dijawab dengan satu nama yang tidak berubah
+    # sendiri. Ganti ke tag rilis yang sesungguhnya saat merilis.
+    targetRevision: master
+    path: infra/kubernetes/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: edp-prod
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m

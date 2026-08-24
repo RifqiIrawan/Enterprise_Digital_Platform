@@ -23,6 +23,7 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 9 — Business Intelligence per peran** (6 dashboard: Eksekutif/Sales/Finance/Gudang/Manufaktur/SDM, role baru `executive`, `?sections=` di ringkasan ai-bi) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Belum ada penyaring periode & tombol export. |
 | **Fase 10 — AI lanjutan** (Predictive Maintenance & Recommendation Engine; keduanya heuristik yang dijelaskan) | 🚧 Dua dari tiga selesai & tertutup test (sesi 2026-08-25, detail paling bawah). **RAG Chatbot belum** — butuh penyedia LLM, penyimpan vektor, dan keputusan soal data apa yang boleh masuk prompt. |
 | **Fase 11 — Monitoring** (aturan alert Prometheus + Alertmanager + dashboard Alerts & SLO + CI validasi konfigurasi) | ✅ Selesai (sesi 2026-08-25, detail paling bawah). **Catatan**: promtool/amtool belum dijalankan di mesin ini (Docker mati) — validasinya berjalan di GitHub Actions. |
+| **Fase 12 — DevOps** (backup 18 database + runbook DR + latihan pemulihan sungguhan + ArgoCD) | ✅ Selesai (sesi 2026-08-25, detail paling bawah). Jenkins & Helm sengaja dilewati. **Sisa penting**: backup belum offsite & belum terjadwal. |
 | Frontend — DataTable (search+sort+pagination) di semua halaman list | ✅ Selesai |
 | Frontend — Company/Branch switcher (menggantikan asumsi single-company `data[0]`) | ✅ Selesai & diverifikasi sesi ini di 29 halaman (lihat detail di bawah) |
 | Kafka/Redis/MinIO/ClickHouse (docker-compose) | ✅ Sudah jalan & diverifikasi sesi ini (lihat detail di bawah) — Docker Desktop ternyata sehat sesi ini, bukan gagal permanen seperti diduga sesi-sesi sebelumnya |
@@ -2130,3 +2131,105 @@ ditambahkan ke `.gitignore` karena sekarang ada skrip Python di repo.
   aturan.
 - Recording rules untuk ekspresi rasio 5xx yang dipakai berulang di alert &
   dashboard.
+
+---
+
+## Backup, Disaster Recovery & ArgoCD — FASE 12 SELESAI (sesi 2026-08-25, lanjutan lagi)
+
+Fase 12 di roadmap: GitHub Actions, Jenkins, Helm, ArgoCD, Backup, Disaster
+Recovery. GitHub Actions sudah ada tiga workflow; sesi ini mengerjakan backup,
+DR, dan ArgoCD — dan **sengaja melewatkan Jenkins & Helm** dengan alasan yang
+ditulis, bukan karena lupa.
+
+### Cakupan backup = 18 database Postgres. Titik.
+
+Keputusan yang membentuk seluruh bagian ini: **ClickHouse dan MinIO tidak
+di-backup**, karena keduanya data TURUNAN. dw-service membangun ke-16 fact
+table dari Postgres lewat ETL, dan data lake bronze adalah dual-write dari ETL
+yang sama. Yang perlu diselamatkan adalah sumbernya. Kafka juga tidak — dia
+alat angkut, dan jejak auditnya sudah mendarat di `audit_service`. Redis cache.
+
+Konsekuensi yang menyenangkan: "backup platform ini" cukup satu skrip.
+Konsekuensi yang harus disadari: data yang sudah dihapus dari Postgres tidak
+akan kembali di ClickHouse setelah sinkron ulang — **gudang datanya mengikuti
+sumber, dia bukan arsip.**
+
+### `backup-postgres.ps1`
+
+- Satu dump `-Fc` per database (bukan satu dump raksasa): kalau yang rusak cuma
+  finance_service, tidak ada alasan menyentuh 17 database lain.
+- Daftar database **ditemukan dari server** (`LIKE '%\_service'`), bukan ditulis
+  tetap. Modul baru datang dengan database baru — daftar tetap akan diam-diam
+  melewatkan yang terbaru, persis database yang paling belum tentu ada
+  salinannya di tempat lain. Kalau polanya tidak cocok satu pun, skrip GAGAL
+  alih-alih "berhasil mem-backup nol database".
+- `manifest.json` menyimpan ukuran, durasi, dan **sha256** tiap berkas.
+- Database `*_test` dilewati (dibuat ulang tiap `go test`).
+- **Gagal satu, exit 1.** Backup yang melaporkan sukses padahal sebagian gagal
+  lebih berbahaya daripada tidak ada backup: yang pertama membuat orang
+  berhenti khawatir.
+- Retensi hanya menghapus folder yang benar-benar berpola tanggal, supaya salah
+  ketik `-OutputRoot` tidak berujung menghapus isi folder lain.
+
+### `restore-postgres.ps1` — empat penjaga
+
+1. sha256 dicocokkan dengan manifest sebelum memulihkan (berkas rusak separuh
+   menghasilkan database yang *terlihat* pulih).
+2. Database yang sudah ada tidak ditimpa tanpa `-Force`; dengan `-Force`, sesi
+   lain diputus dulu supaya DROP DATABASE tidak menggantung.
+3. Satu database per perintah — tidak ada mode "pulihkan semuanya".
+4. Jumlah tabel dilaporkan dari database HASIL, bukan sekadar exit code
+   `pg_restore` (yang juga 1 untuk peringatan tidak fatal).
+
+### Latihan pemulihan yang benar-benar dijalankan
+
+Backup yang tidak pernah dipulihkan belum terbukti bisa dipulihkan, jadi
+jalurnya dicoba sungguhan terhadap Postgres native yang hidup di mesin ini:
+
+| Langkah | Hasil |
+|---|---|
+| Backup seluruh database | **18/18 berhasil**, 0,3 MB |
+| Verifikasi sha256 | cocok |
+| Pulihkan `rbac_service` → `rbac_service_dr_drill` | 7 tabel, 1,8 detik |
+| Bandingkan sumber vs hasil | `modules=17 menus=59 roles=21 perms=290 migrations=18` — **identik** |
+| Bersihkan | database latihan dihapus |
+
+### ArgoCD
+
+Dua `Application` (`infra/argocd/`) yang menunjuk overlay Kustomize yang sudah
+ada — ArgoCD **mengonsumsi** Kustomize, tidak menggantikannya, jadi bagian ini
+memang kecil dan tidak menambah sumber kebenaran kedua.
+
+Beda perlakuan yang disengaja: staging auto-sync (prune + selfHeal), **produksi
+sinkron manual**. Sinkron otomatis ke produksi berarti setiap commit yang lolos
+CI langsung mengubah produksi, dan keputusan "sekarang waktunya mengubah
+produksi" bukan keputusan yang layak diambil proses yang tidak tahu apa-apa
+tentang jam sibuk atau siapa yang sedang siaga. ArgoCD tetap menampilkan
+selisih repo vs cluster, jadi manfaat GitOps-nya tetap didapat.
+
+Diverifikasi: kedua manifes mem-parse, dan path yang ditunjuknya benar-benar
+bisa di-render (`kubectl kustomize infra/kubernetes/overlays/{staging,prod}`).
+Belum pernah dijalankan terhadap cluster sungguhan (tidak ada cluster di sini).
+
+### Jenkins & Helm — dilewati dengan alasan
+
+- **Jenkins**: repo ini sudah punya tiga workflow GitHub Actions yang
+  benar-benar berjalan. Jenkinsfile berarti dua definisi pipeline untuk
+  pekerjaan yang sama, dan yang kedua tidak akan pernah dijalankan siapa pun di
+  sini — pipeline yang tidak pernah jalan akan diam-diam menjadi salah.
+- **Helm**: deployment repo ini memakai Kustomize (base + 3 overlay) dan ArgoCD
+  sudah mengonsumsinya. Chart Helm di sampingnya bukan tambahan kemampuan,
+  melainkan salinan kedua dari manifes yang sama. Kalau nanti benar-benar
+  butuh Helm (mis. mendistribusikan platform ini untuk dipasang pihak lain),
+  pindahnya sebaiknya MENGGANTIKAN Kustomize.
+
+### Belum dikerjakan (kalau mau dilanjutkan) — dan yang ini penting
+
+- **Penyimpanan offsite.** Backup mendarat di disk yang sama dengan
+  databasenya; satu disk mati = keduanya hilang. Ini kelemahan terbesar yang
+  tersisa.
+- **Enkripsi dump** — berisi data pegawai & keuangan, disimpan apa adanya.
+- **Penjadwalan otomatis** (Task Scheduler/cron): tanpa itu, RPO belum punya
+  angka pasti karena backupnya masih manual.
+- Uji pemulihan otomatis & berkala.
+- Workflow CD yang membangun & mendorong image ke registry (belum ada registry).
