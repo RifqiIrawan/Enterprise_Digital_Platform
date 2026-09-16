@@ -55,11 +55,14 @@ function RoleDashboard({ title, description, sections, tiles, charts }) {
         .then(({ data }) => {
           // dw-service mengirim angka desimal sebagai string (ClickHouse
           // Decimal); chart butuh number, jadi tiap field seri dikonversi di
-          // satu tempat alih-alih di setiap grafik.
+          // satu tempat alih-alih di setiap grafik. null DIBIARKAN null:
+          // sejak chart OEE, sebagian deret memang punya bulan yang nilainya
+          // tidak bisa dihitung, dan mengubahnya jadi 0 di sini akan membuat
+          // tooltip-nya mengklaim angka yang tidak pernah ada.
           const rows = data.map((row) => {
             const converted = { ...row }
             chart.series.forEach((s) => {
-              converted[s.key] = Number(row[s.key] ?? 0)
+              converted[s.key] = row[s.key] == null ? null : Number(row[s.key])
             })
             return converted
           })

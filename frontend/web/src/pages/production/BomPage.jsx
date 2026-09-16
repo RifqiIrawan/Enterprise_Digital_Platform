@@ -5,8 +5,18 @@ import DataTable from '../../components/common/DataTable.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
 import { usePagePermission } from '../../store/PermissionContext.jsx'
 
-const emptyLine = { component_product_id: '', quantity_per_unit: 1 }
-const emptyForm = { bom_code: '', name: '', product_id: '', lines: [{ ...emptyLine }] }
+const emptyLine = { component_product_id: '', quantity_per_unit: 1, percentage: '' }
+const emptyForm = { bom_code: '', name: '', product_id: '', bom_type: 'UNIT', batch_size: '', lines: [{ ...emptyLine }] }
+
+// Formula (industri proses) ditulis sebagai persen dari satu batch, bukan
+// "sekian per unit produk". Jumlah persentase dan yield-nya dihitung ulang di
+// sini HANYA untuk diperlihatkan selagi mengetik -- yang menolak formula di
+// bawah 100% tetap production-service, supaya satu aturan tidak hidup di dua
+// tempat dengan dua versi.
+function formulaTotals(lines) {
+  const total = lines.reduce((sum, l) => sum + (Number(l.percentage) || 0), 0)
+  return { total, yield: total > 0 ? (100 / total) * 100 : 0 }
+}
 
 function BomPage() {
   const { companyId, branchId } = useCompany()
@@ -72,15 +82,25 @@ function BomPage() {
     setSaving(true)
     setFormError('')
     try {
+      const isBatch = form.bom_type === 'BATCH'
       await apiClient.post('/api/production/boms', {
         company_id: companyId,
         branch_id: branchId || null,
         bom_code: form.bom_code,
         name: form.name,
         product_id: form.product_id,
+        bom_type: form.bom_type,
+        // batch_size dan percentage/quantity_per_unit saling meniadakan di
+        // backend: mengirim keduanya ditolak, jadi yang tidak dipakai tidak
+        // ikut dikirim sama sekali.
+        ...(isBatch ? { batch_size: Number(form.batch_size) || 0 } : {}),
         lines: form.lines
           .filter((l) => l.component_product_id)
-          .map((l) => ({ component_product_id: l.component_product_id, quantity_per_unit: Number(l.quantity_per_unit) || 0 })),
+          .map((l) =>
+            isBatch
+              ? { component_product_id: l.component_product_id, percentage: Number(l.percentage) || 0 }
+              : { component_product_id: l.component_product_id, quantity_per_unit: Number(l.quantity_per_unit) || 0 },
+          ),
       })
       setCreating(false)
       loadBoms(companyId, branchId)
@@ -116,6 +136,16 @@ function BomPage() {
     { key: 'bom_code', label: 'Kode BOM', render: (b) => <code>{b.bom_code}</code> },
     { key: 'name', label: 'Nama' },
     { key: 'product_id', label: 'Produk Jadi', render: (b) => productName(b.product_id), sortValue: (b) => productName(b.product_id) },
+    {
+      key: 'bom_type',
+      label: 'Tipe',
+      render: (b) =>
+        b.bom_type === 'BATCH' ? (
+          <span className="badge text-bg-info">Formula &middot; batch {b.batch_size}</span>
+        ) : (
+          <span className="badge text-bg-light text-body-secondary">Per Unit</span>
+        ),
+    },
     {
       key: 'is_active',
       label: 'Status',
@@ -209,6 +239,36 @@ function BomPage() {
                   ))}
                 </select>
               </div>
+              <div className={form.bom_type === 'BATCH' ? 'col-6' : 'col-12'}>
+                <label className="form-label">Tipe Resep</label>
+                <select
+                  className="form-select"
+                  value={form.bom_type}
+                  onChange={(e) => setForm({ ...form, bom_type: e.target.value })}
+                >
+                  <option value="UNIT">Per Unit (manufaktur diskrit)</option>
+                  <option value="BATCH">Formula / Batch (industri proses)</option>
+                </select>
+                <div className="form-text">
+                  {form.bom_type === 'BATCH'
+                    ? 'Komponen ditulis sebagai persen dari satu batch. Work order hanya boleh kelipatan bulat ukuran batch.'
+                    : 'Komponen ditulis sebagai jumlah per satu unit produk jadi.'}
+                </div>
+              </div>
+              {form.bom_type === 'BATCH' && (
+                <div className="col-6">
+                  <label className="form-label">Ukuran Batch (hasil 1 batch)</label>
+                  <input
+                    type="number"
+                    className="form-control"
+                    value={form.batch_size}
+                    onChange={(e) => setForm({ ...form, batch_size: e.target.value })}
+                    min="0"
+                    step="0.0001"
+                    required
+                  />
+                </div>
+              )}
             </div>
 
             <div>
@@ -224,7 +284,7 @@ function BomPage() {
                   <thead>
                     <tr>
                       <th>Komponen</th>
-                      <th style={{ width: 140 }}>Qty per Unit</th>
+                      <th style={{ width: 140 }}>{form.bom_type === 'BATCH' ? '% dari Batch' : 'Qty per Unit'}</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -244,14 +304,28 @@ function BomPage() {
                           </select>
                         </td>
                         <td>
-                          <input
-                            type="number"
-                            className="form-control form-control-sm"
-                            value={l.quantity_per_unit}
-                            onChange={(e) => updateLine(i, { quantity_per_unit: e.target.value })}
-                            min="0"
-                            step="0.01"
-                          />
+                          {form.bom_type === 'BATCH' ? (
+                            <div className="input-group input-group-sm">
+                              <input
+                                type="number"
+                                className="form-control form-control-sm"
+                                value={l.percentage}
+                                onChange={(e) => updateLine(i, { percentage: e.target.value })}
+                                min="0"
+                                step="0.0001"
+                              />
+                              <span className="input-group-text">%</span>
+                            </div>
+                          ) : (
+                            <input
+                              type="number"
+                              className="form-control form-control-sm"
+                              value={l.quantity_per_unit}
+                              onChange={(e) => updateLine(i, { quantity_per_unit: e.target.value })}
+                              min="0"
+                              step="0.01"
+                            />
+                          )}
                         </td>
                         <td>
                           {form.lines.length > 1 && (
@@ -265,6 +339,9 @@ function BomPage() {
                   </tbody>
                 </table>
               </div>
+              {form.bom_type === 'BATCH' && (
+                <FormulaTotals lines={form.lines} batchSize={Number(form.batch_size) || 0} />
+              )}
             </div>
           </form>
         </Modal>
@@ -309,6 +386,29 @@ function BomPage() {
             </div>
           </form>
         </Modal>
+      )}
+    </div>
+  )
+}
+
+// Dua angka yang membuat formula bisa dibaca sekali lihat: jumlah persentase
+// (harus >= 100% -- neraca massa) dan yield yang mengikutinya. Susut proses
+// 5% ditulis sebagai input 105%, dan tanpa baris ini orang harus
+// menjumlahkannya di kepala untuk tahu formulanya sudah utuh atau belum.
+function FormulaTotals({ lines, batchSize }) {
+  const { total, yield: yieldPct } = formulaTotals(lines)
+  const short = total < 100 - 0.0001
+  return (
+    <div className={`small mt-2 ${short ? 'text-danger' : 'text-secondary'}`}>
+      Total {total.toFixed(4).replace(/\.?0+$/, '')}%
+      {short ? (
+        <> &mdash; kurang dari 100%, satu batch penuh tidak bisa keluar dari input yang lebih sedikit.</>
+      ) : (
+        <>
+          {' '}
+          &middot; yield {yieldPct.toFixed(2)}%
+          {batchSize > 0 && <> &middot; input {((total / 100) * batchSize).toFixed(2)} untuk hasil {batchSize}</>}
+        </>
       )}
     </div>
   )

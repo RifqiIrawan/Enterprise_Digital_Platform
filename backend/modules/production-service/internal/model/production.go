@@ -2,6 +2,14 @@ package model
 
 import "time"
 
+// BOMType membedakan BOM diskrit (UNIT, "sekian per unit produk") dari
+// formula industri proses (BATCH, "sekian persen dari satu batch"). BatchSize
+// hanya terisi untuk BATCH; lihat migrations/003_formula_bom.sql.
+const (
+	BOMTypeUnit  = "UNIT"
+	BOMTypeBatch = "BATCH"
+)
+
 type BillOfMaterial struct {
 	ID        string    `json:"id" db:"id"`
 	CompanyID string    `json:"company_id" db:"company_id"`
@@ -9,6 +17,8 @@ type BillOfMaterial struct {
 	BOMCode   string    `json:"bom_code" db:"bom_code"`
 	Name      string    `json:"name" db:"name"`
 	ProductID string    `json:"product_id" db:"product_id"`
+	BOMType   string    `json:"bom_type" db:"bom_type"`
+	BatchSize *float64  `json:"batch_size" db:"batch_size"`
 	IsActive  bool      `json:"is_active" db:"is_active"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
@@ -20,6 +30,10 @@ type BOMLine struct {
 	LineNumber         int16   `json:"line_number" db:"line_number"`
 	ComponentProductID string  `json:"component_product_id" db:"component_product_id"`
 	QuantityPerUnit    float64 `json:"quantity_per_unit" db:"quantity_per_unit"`
+	// Percentage terisi hanya untuk baris BOM BATCH (formula): bagian baris
+	// ini dari satu batch. Itulah angka yang dipakai menghitung kebutuhan
+	// work order -- QuantityPerUnit-nya turunan (percentage / 100).
+	Percentage *float64 `json:"percentage" db:"percentage"`
 }
 
 type WorkOrder struct {
@@ -31,6 +45,7 @@ type WorkOrder struct {
 	ProductID        string     `json:"product_id" db:"product_id"`
 	WarehouseID      string     `json:"warehouse_id" db:"warehouse_id"`
 	QuantityPlanned  float64    `json:"quantity_planned" db:"quantity_planned"`
+	BatchCount       *int       `json:"batch_count" db:"batch_count"`
 	QuantityProduced *float64   `json:"quantity_produced" db:"quantity_produced"`
 	Status           string     `json:"status" db:"status"`
 	PlannedStartDate time.Time  `json:"planned_start_date" db:"planned_start_date"`

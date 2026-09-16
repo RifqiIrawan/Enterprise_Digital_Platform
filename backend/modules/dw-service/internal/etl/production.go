@@ -80,3 +80,92 @@ func SyncProduction(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, 
 	}
 	return len(out), nil
 }
+
+const productionOEESourceTable = "production_oee"
+
+// Hanya run CLOSED yang diekstrak. Itu aturan yang sama dengan halaman OEE di
+// production-service: run yang masih berjalan belum punya jumlah unit, dan
+// downtime-nya masih boleh bertambah (menambah downtime TIDAK menyentuh
+// production_runs.updated_at, jadi baris OPEN yang terlanjur tersalin bisa
+// ketinggalan menitnya). Begitu run ditutup, updated_at-nya naik -- jadi tidak
+// ada run yang lolos dari watermark, hanya tertunda sampai angkanya final.
+//
+// LATERAL, bukan JOIN biasa ke downtime_logs: satu run dengan 3 catatan
+// downtime akan menggandakan barisnya 3 kali kalau di-join langsung, dan
+// planned_minutes-nya ikut tergandakan.
+const productionOEEExtractSQL = `
+	SELECT pr.id, pr.company_id, pr.branch_id, pr.run_number,
+	       pr.work_order_id, wo.wo_number, pr.machine_id, m.code, m.name,
+	       pr.shift_id, s.code, pr.run_date, pr.planned_minutes,
+	       COALESCE(dt.minutes, 0), COALESCE(pr.quantity_good, 0), COALESCE(pr.quantity_reject, 0),
+	       m.ideal_cycle_time_minutes, pr.status, pr.updated_at
+	FROM production_runs pr
+	JOIN machines m ON m.id = pr.machine_id
+	JOIN shifts s ON s.id = pr.shift_id
+	JOIN work_orders wo ON wo.id = pr.work_order_id
+	LEFT JOIN LATERAL (
+	    SELECT COALESCE(SUM(minutes), 0) AS minutes FROM downtime_logs WHERE production_run_id = pr.id
+	) dt ON TRUE
+	WHERE pr.status = 'CLOSED' AND pr.updated_at >= $1
+	ORDER BY pr.updated_at`
+
+// SyncProductionOEE memuat fact_production_oee: satu baris per production run
+// yang sudah ditutup, lengkap dengan menit downtime-nya dan ideal cycle time
+// mesinnya. Berbeda dari SyncProduction (yang fact-nya adalah RENCANA: work
+// order), fact ini adalah PELAKSANAAN di lantai produksi -- keduanya berdiri
+// sendiri karena satu work order bisa punya banyak run, dan menggabungkannya
+// akan memaksa salah satu pertanyaan dijawab dengan angka yang digandakan.
+//
+// Berbeda juga dari fact lain yang tidak berani JOIN lintas service: mesin,
+// shift, dan work order semuanya ada di database production_service yang sama
+// dengan production_runs, jadi ini join biasa, bukan penyeberangan sumber.
+func SyncProductionOEE(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
+	watermark, err := dest.GetWatermark(ctx, productionOEESourceTable)
+	if err != nil {
+		return 0, fmt.Errorf("get production oee watermark: %w", err)
+	}
+
+	rows, err := source.Query(ctx, productionOEEExtractSQL, watermark)
+	if err != nil {
+		return 0, fmt.Errorf("extract production oee rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.ProductionOEERow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.ProductionOEERow
+		if err := rows.Scan(
+			&r.RunID, &r.CompanyID, &r.BranchID, &r.RunNumber,
+			&r.WorkOrderID, &r.WONumber, &r.MachineID, &r.MachineCode, &r.MachineName,
+			&r.ShiftID, &r.ShiftCode, &r.RunDate, &r.PlannedMinutes,
+			&r.DowntimeMinutes, &r.QuantityGood, &r.QuantityReject,
+			&r.IdealCycleTimeMinutes, &r.Status, &r.UpdatedAt,
+		); err != nil {
+			return 0, fmt.Errorf("scan production oee row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterate production oee rows: %w", err)
+	}
+
+	if len(out) == 0 {
+		return 0, nil
+	}
+
+	syncedAt := time.Now()
+	if err := dest.InsertProductionOEE(ctx, out, syncedAt); err != nil {
+		return 0, fmt.Errorf("load production oee rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, productionOEESourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", productionOEESourceTable, err)
+	}
+	if err := dest.SetWatermark(ctx, productionOEESourceTable, maxWatermark); err != nil {
+		return 0, fmt.Errorf("advance production oee watermark: %w", err)
+	}
+	return len(out), nil
+}

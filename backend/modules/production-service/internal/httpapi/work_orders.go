@@ -16,11 +16,11 @@ import (
 	"github.com/enterprise-digital-platform/production-service/internal/warehouseclient"
 )
 
-const workOrderColumns = `id, company_id, branch_id, wo_number, bom_id, product_id, warehouse_id, quantity_planned, quantity_produced, status, planned_start_date, planned_end_date, notes, created_at, updated_at`
+const workOrderColumns = `id, company_id, branch_id, wo_number, bom_id, product_id, warehouse_id, quantity_planned, batch_count, quantity_produced, status, planned_start_date, planned_end_date, notes, created_at, updated_at`
 
 func scanWorkOrder(row pgx.Row, wo *model.WorkOrder) error {
 	return row.Scan(&wo.ID, &wo.CompanyID, &wo.BranchID, &wo.WONumber, &wo.BOMID, &wo.ProductID, &wo.WarehouseID,
-		&wo.QuantityPlanned, &wo.QuantityProduced, &wo.Status, &wo.PlannedStartDate, &wo.PlannedEndDate, &wo.Notes, &wo.CreatedAt, &wo.UpdatedAt)
+		&wo.QuantityPlanned, &wo.BatchCount, &wo.QuantityProduced, &wo.Status, &wo.PlannedStartDate, &wo.PlannedEndDate, &wo.Notes, &wo.CreatedAt, &wo.UpdatedAt)
 }
 
 func (h *Handler) listWorkOrders(w http.ResponseWriter, r *http.Request) {
@@ -72,9 +72,47 @@ type workOrderWithLines struct {
 	Lines []model.WorkOrderLine `json:"lines"`
 }
 
-// createWorkOrder men-snapshot bom_lines * quantity_planned ke
-// work_order_lines saat dibuat, supaya perubahan BOM setelahnya tidak
-// mengubah kebutuhan komponen work order yang sudah berjalan.
+// batchPlan menerjemahkan quantity_planned sebuah work order menjadi jumlah
+// batch untuk BOM formula (bom_type = BATCH). Satu batch adalah isi satu alat
+// -- tangki 1.000 kg tidak bisa diisi 1.500 kg hanya karena permintaannya
+// segitu -- jadi quantity_planned yang bukan kelipatan bulat batch_size
+// DITOLAK, bukan diam-diam dibulatkan. Pesannya menyebut dua angka terdekat
+// yang sah supaya orangnya tahu harus mengetik apa, bukan hanya bahwa dia
+// salah. BOM UNIT tidak punya batch; batch_count-nya nil dan perilakunya
+// persis seperti sebelum Formula ada.
+func batchPlan(bom model.BillOfMaterial, quantityPlanned float64) (*int, string) {
+	if bom.BOMType != model.BOMTypeBatch || bom.BatchSize == nil {
+		return nil, ""
+	}
+	size := *bom.BatchSize
+	if size <= 0 {
+		return nil, "BOM formula ini tidak punya batch_size yang sah"
+	}
+	exact := quantityPlanned / size
+	rounded := math.Round(exact)
+	// Toleransi 0,0001 batch: sisa pembulatan pecahan biner (mis. 3 x 0,1),
+	// bukan setengah batch yang benar-benar diminta.
+	if math.Abs(exact-rounded) > 0.0001 || rounded < 1 {
+		lower := math.Floor(exact)
+		if lower < 1 {
+			lower = 1
+		}
+		return nil, fmt.Sprintf("quantity_planned (%g) harus kelipatan bulat batch_size (%g) -- BOM ini formula batch; gunakan %g atau %g",
+			quantityPlanned, size, lower*size, (lower+1)*size)
+	}
+	count := int(rounded)
+	return &count, ""
+}
+
+// createWorkOrder men-snapshot kebutuhan komponen ke work_order_lines saat
+// dibuat, supaya perubahan BOM setelahnya tidak mengubah kebutuhan work order
+// yang sudah berjalan. Dua cara menghitungnya, sesuai tipe BOM-nya:
+//
+//   - UNIT  : quantity_per_unit x quantity_planned, seperti sejak Fase 2.
+//   - BATCH : percentage / 100 x batch_size x batch_count -- lewat percentage
+//     yang ditulis orang, BUKAN lewat quantity_per_unit turunannya, supaya
+//     persentase pecahan (mis. 33,3333%) tidak dibulatkan dua kali: sekali
+//     saat disimpan ke NUMERIC(15,4), sekali lagi saat dikalikan.
 func (h *Handler) createWorkOrder(w http.ResponseWriter, r *http.Request) {
 	var req createWorkOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -122,6 +160,12 @@ func (h *Handler) createWorkOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	batchCount, msg := batchPlan(bom, req.QuantityPlanned)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+
 	bomLines, err := h.fetchBOMLines(ctx, bom.ID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat komponen BOM")
@@ -141,10 +185,10 @@ func (h *Handler) createWorkOrder(w http.ResponseWriter, r *http.Request) {
 
 	var wo model.WorkOrder
 	err = scanWorkOrder(tx.QueryRow(ctx, `
-		INSERT INTO work_orders (company_id, branch_id, wo_number, bom_id, product_id, warehouse_id, quantity_planned, planned_start_date, planned_end_date, notes)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		INSERT INTO work_orders (company_id, branch_id, wo_number, bom_id, product_id, warehouse_id, quantity_planned, batch_count, planned_start_date, planned_end_date, notes)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING `+workOrderColumns,
-		req.CompanyID, req.BranchID, woNumber, bom.ID, bom.ProductID, req.WarehouseID, req.QuantityPlanned, plannedStart, plannedEnd, req.Notes,
+		req.CompanyID, req.BranchID, woNumber, bom.ID, bom.ProductID, req.WarehouseID, req.QuantityPlanned, batchCount, plannedStart, plannedEnd, req.Notes,
 	), &wo)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal membuat work order")
@@ -154,6 +198,9 @@ func (h *Handler) createWorkOrder(w http.ResponseWriter, r *http.Request) {
 	lines := make([]model.WorkOrderLine, 0, len(bomLines))
 	for i, bl := range bomLines {
 		quantityRequired := bl.QuantityPerUnit * req.QuantityPlanned
+		if batchCount != nil && bl.Percentage != nil {
+			quantityRequired = *bl.Percentage / 100 * *bom.BatchSize * float64(*batchCount)
+		}
 		var line model.WorkOrderLine
 		err := tx.QueryRow(ctx, `
 			INSERT INTO work_order_lines (work_order_id, line_number, component_product_id, quantity_required)

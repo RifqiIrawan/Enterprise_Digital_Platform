@@ -18,7 +18,7 @@ Terakhir dikerjakan: **2026-08-10**. Dokumen ini ringkasan supaya sesi besok bis
 | **Fase 2 — QC module** (Standar Mutu per produk, Inspeksi Kualitas dengan hasil PASS/FAIL/PARTIAL otomatis, opsional terhubung ke PO/Work Order) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — Asset module** (Pendataan Aset, Maintenance Schedule dengan overdue indicator, complete/cancel) | ✅ Selesai & diverifikasi end-to-end di browser (Playwright) |
 | **Fase 2 — AI & BI** | ✅ **Selesai semua** — BI Dashboards, Forecasting (proyeksi tren linear sederhana), dan Anomaly Detection (heuristik z-score) semuanya sudah jalan & diverifikasi (lihat detail di bawah). **Ini menandai seluruh Fase 2 platform ini SELESAI** (Finance, HR, Sales, Purchasing, Warehouse, Production, QC, Asset, AI & BI). |
-| **Fase 3 — Manufacturing/MES** (Mesin, Shift Produksi, Eksekusi Produksi + downtime, OEE; dijahit ke penyelesaian Work Order) | 🚧 Inti MES selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). **Belum**: Formula (BOM berbasis persentase) dan fact table OEE di dw-service. |
+| **Fase 3 — Manufacturing/MES** (Mesin, Shift Produksi, Eksekusi Produksi + downtime, OEE; dijahit ke penyelesaian Work Order) | ✅ **SELESAI** (sesi 2026-09-16). Inti MES sejak 2026-08-25; dua potongan terakhir — **Formula** (BOM batch/persentase, `003_formula_bom.sql`) dan **`fact_production_oee`** di dw-service + grafik OEE ke-18 — ditutup di sesi 2026-09-16, lihat bagian paling bawah. |
 | **Fase 5 — Asset lanjutan** (Kalibrasi + Penyusutan dengan posting ke GL) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Sisa yang diketahui: jurnal pelepasan aset (disposal) belum ada. |
 | **Fase 9 — Business Intelligence per peran** (6 dashboard: Eksekutif/Sales/Finance/Gudang/Manufaktur/SDM, role baru `executive`, `?sections=` di ringkasan ai-bi) | ✅ Selesai & tertutup test (sesi 2026-08-25, lihat detail paling bawah). Belum ada penyaring periode & tombol export. |
 | **Fase 10 — AI lanjutan** (Predictive Maintenance & Recommendation Engine; keduanya heuristik yang dijelaskan) | 🚧 Dua dari tiga selesai & tertutup test (sesi 2026-08-25, detail paling bawah). **RAG Chatbot belum** — butuh penyedia LLM, penyimpan vektor, dan keputusan soal data apa yang boleh masuk prompt. |
@@ -2382,3 +2382,121 @@ melanjutkan: izinkan `localhost` di ekstensi, lalu buka
 `AST-E2E-1` beserta run penyusutan 2026-01 yang **sudah diposting ke GL**
 (jurnal JE-202601-0001, tidak bisa dihapus lewat API -- memang begitu
 seharusnya), dan saldo SKU-RAW-01 yang jadi -320 akibat WO uji itu.
+
+---
+
+## Formula (BOM batch/persentase) + `fact_production_oee`: FASE 3 SELESAI (sesi 2026-09-16)
+
+Dua potongan yang tersisa dari Fase 3 dikerjakan bersama karena keduanya
+menyentuh production-service: **Formula** (BOM industri proses) di sisi
+perencanaan, dan **fact_production_oee** di sisi pelaporan.
+
+### 1. Formula — `003_formula_bom.sql`
+
+`bill_of_materials.bom_type` (`UNIT`/`BATCH`) + `batch_size`,
+`bom_lines.percentage`, dan `work_orders.batch_count`. Seluruh BOM yang sudah
+ada otomatis `UNIT` dan berperilaku persis seperti sebelumnya — jalur lama
+tidak berubah artinya sedikit pun, dan itu dijaga
+`TestCreateBOM_DefaultsToUnitType`.
+
+Tiga aturan yang membuat ini bukan sekadar kolom tambahan, semuanya di Go
+(CHECK constraint hanya melihat satu baris, ketiganya lintas baris/tabel):
+
+1. **Neraca massa.** Jumlah `percentage` seluruh baris wajib ≥ 100%. Satu batch
+   1.000 kg tidak bisa keluar dari input 900 kg. Kelebihan di atas 100% justru
+   SAH — itulah cara susut proses ditulis — dan `yield_percent` (= 100 / total
+   × 100) ikut dikirim di respons supaya UI tidak menghitungnya dengan rumus
+   versinya sendiri. Formula 63% + 42% → yield 95,24%.
+2. **Setengah batch ditolak.** `quantity_planned` work order dari BOM formula
+   wajib kelipatan bulat `batch_size`. Pesannya menyebut dua angka yang sah
+   ("gunakan 1000 atau 2000") — tanpa itu orangnya cuma tahu dia salah, bukan
+   harus mengetik apa. Sengaja TIDAK dibulatkan diam-diam: pola yang sama
+   dengan `quantity_produced` vs total run di `checkProductionRuns`.
+3. **Snapshot lewat percentage, bukan lewat turunannya.** `work_order_lines`
+   dihitung `percentage / 100 × batch_size × batch_count`. Lewat
+   `quantity_per_unit` (yang disimpan sebagai NUMERIC(15,4)) persentase seperti
+   33,3333% akan dibulatkan dua kali: 3 batch × 1.000 kg jadi 999,9 kg, bukan
+   999,999 kg. Selisih 0,099 kg itu tidak pernah muncul sebagai galat, hanya
+   sebagai stok yang pelan-pelan tidak cocok. Dijaga
+   `TestCreateWorkOrder_Formula_KeepsFractionalPercentPrecision`.
+
+`quantity_per_unit` tetap DIISI untuk baris formula (= percentage / 100) supaya
+kolom lama tidak kosong untuk pembaca lama; yang dipakai menghitung tetap
+percentage-nya.
+
+Frontend: BomPage punya pemilih tipe resep, kolom "% dari Batch" yang
+menggantikan "Qty per Unit", dan baris total berjalan yang menyebut yield serta
+jumlah input untuk ukuran batch itu. WorkOrdersPage memberi tahu ukuran batch
+BOM yang dipilih dan menghitung jumlah batch selagi mengetik (yang MENOLAK
+tetap backend — satu aturan tidak boleh hidup di dua tempat dengan dua versi).
+
+### 2. `fact_production_oee` (fact table ke-17) + grafik ke-18
+
+Satu baris = satu production run **yang sudah ditutup**, dengan menit
+downtime-nya sudah dijumlahkan ke dalam baris (LATERAL, bukan JOIN biasa — satu
+run dengan 3 catatan downtime akan menggandakan `planned_minutes`-nya 3 kali)
+dan `ideal_cycle_time_minutes` mesinnya ikut disalin. Alasan menyalin: itu
+penyebut faktor Performance, dan mesin yang kecepatan rancangannya diperbarui
+tahun depan tidak boleh diam-diam mengubah OEE bulan lalu — alasan yang sama
+seperti `production_runs` men-snapshot `planned_minutes` dari shift.
+
+Kenapa hanya CLOSED: run yang masih berjalan belum punya jumlah unit, dan
+menambah downtime TIDAK menyentuh `production_runs.updated_at` — baris OPEN
+yang terlanjur tersalin bisa ketinggalan menitnya. Begitu run ditutup
+updated_at-nya naik, jadi tidak ada run yang lolos watermark, hanya tertunda
+sampai angkanya final.
+
+`GET /api/dw/analytics/production-oee-monthly-summary` memakai rumus yang SAMA
+PERSIS dengan `aggregateOEE` di production-service, termasuk pemotongan
+Performance di 100% dan penandaan `performance_capped`. Menit ideal dijumlahkan
+per baris sebelum dibandingkan dengan total run time — dua mesin dengan
+kecepatan rancangan berbeda tidak boleh diratakan lebih dulu. Faktor yang tidak
+bisa dihitung dikirim **null, bukan nol**: nol berarti "mesinnya tidak
+menghasilkan apa-apa", dan itu klaim yang berbeda dari "belum ada angkanya".
+Karena itu `RoleDashboard.jsx` ikut berubah: konversi angkanya sekarang
+membiarkan null tetap null alih-alih menjadikannya 0.
+
+Kebijakan gateway tidak perlu ditambah — endpoint ini tertangkap wildcard
+`GET /api/dw/analytics/*` yang memang untuk angka agregat perusahaan.
+
+### Satu daftar yang ternyata sudah ketinggalan
+
+`GET /api/dw/sync/status` hanya menyebut 12 fact; empat fact yang ditambahkan
+setelahnya (hr_leave_requests, hr_kpi_reviews, delivery_orders, timesheets)
+tidak pernah masuk daftar, jadi baris & watermark-nya tak pernah terlihat di
+halaman Sync Status. Sekarang lengkap 17.
+
+### Verifikasi
+
+| Yang diuji | Hasil |
+|---|---|
+| production-service | 9 test Formula baru (+ seluruh test lama) hijau terhadap Postgres native |
+| dw-service | 5 test OEE baru hijau terhadap **ClickHouse 24.3 sungguhan** (container `infra-clickhouse-1`) |
+| Frontend | 61 test Vitest hijau, ESLint bersih |
+| Migrasi 003 di database dev | Terpasang otomatis saat production-service start, di atas tabel yang sudah berisi data |
+| Formula lewat HTTP sungguhan | 90% → **400** dengan menyebut "90.0000%"; 63/42 → tersimpan, yield **95,238%**; WO 1500 → **400** ("gunakan 1000 atau 2000"); WO 2000 → **201**, `batch_count` 2, kebutuhan **1260** & **840** |
+| ETL + endpoint OEE sungguhan | `POST /sync` → `production_oee 1`; endpoint mengembalikan **A 85,71 / P 88,89 / Q 93,75 / OEE 71,43** untuk run E2E sesi lalu — **sama persis** dengan yang dilaporkan production-service waktu itu |
+| `check-deploy-config.py` | 21 service, OK (tidak ada env var baru) |
+
+Angka terakhir itu yang paling penting: itulah bukti bahwa gudang data dan
+layar operasional tidak menjawab pertanyaan yang sama dengan dua angka berbeda.
+
+### Data uji yang ditinggalkan di database dev
+
+BOM `FRM-E2E-1` (formula 1.000 kg, 63/42) dan `WO-202609-0001` (DRAFT, 2 batch)
+di `production_service`. Keduanya tidak menyentuh stok dan tidak diposting ke
+mana pun. `FRM-E2E-BAD` TIDAK ada — memang ditolak.
+
+### Belum dikerjakan (kalau mau dilanjutkan)
+
+- **Verifikasi tampilan di browser** untuk halaman BOM/Work Order formula dan
+  grafik OEE ke-18 (Playwright) — sama seperti catatan sesi sebelumnya,
+  terhalang izin situs ekstensi untuk `localhost:3000`.
+- Formula belum bisa **diedit** (endpoint PUT /boms/{id} tetap hanya nama &
+  status, seperti BOM UNIT). Mengubah resep = membuat BOM baru.
+- `fact_production_oee` belum punya endpoint Pareto downtime; alasan berhentinya
+  memang tidak ikut disalin ke gudang data (yang disalin totalnya saja).
+  Pareto-nya sudah ada di halaman OEE operasional.
+- Sisa roadmap seluruh platform tinggal dua, dan keduanya butuh dependency baru
+  di luar pola Go yang dipakai sekarang: **Silver/Gold data lake** (Spark/dbt)
+  dan **RAG Chatbot** (penyedia LLM + penyimpan vektor).

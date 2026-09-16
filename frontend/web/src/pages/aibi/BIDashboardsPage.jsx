@@ -12,12 +12,14 @@ import {
   HR_KPI_SERIES,
   HR_LEAVE_SERIES,
   PAYROLL_SERIES,
+  PRODUCTION_OEE_SERIES,
   PRODUCTION_SERIES,
   PROJECT_COST_SERIES,
   PURCHASING_SUPPLIER_SERIES,
   QC_SERIES,
   SALES_SERIES,
   STOCK_SERIES,
+  formatPercent,
   TICKETING_SERIES,
 } from '../bi/chartSeries.js'
 
@@ -84,6 +86,29 @@ function describeAchievement(rows) {
   const last = withPct[withPct.length - 1]
   const pct = new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(last.achievement_pct)
   return `Pencapaian ${last.month.slice(0, 7)}: ${pct}% (realisasi hanya dari work order yang sudah selesai).`
+}
+
+// OEE bulan terakhir ditulis sebagai kalimat, bukan dibiarkan dibaca dari
+// batang: yang penting bukan cuma angkanya, tapi faktor mana yang menyeretnya
+// -- itu yang menentukan siapa yang harus bertindak (maintenance, setelan
+// mesin, atau mutu). Penanda performance_capped ikut disebut apa adanya:
+// Performance di atas 100% berarti salah satu angkanya keliru, dan menyimpannya
+// diam-diam membuat OEE-nya terlihat lebih baik daripada kenyataannya.
+function describeOEE(rows) {
+  const withOEE = rows.filter((r) => r.oee_pct != null)
+  if (withOEE.length === 0) return 'Belum ada production run tertutup yang bisa dihitung OEE-nya.'
+  const last = withOEE[withOEE.length - 1]
+  const fmt = (v) => new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(v)
+  const factors = [
+    { label: 'Availability', value: last.availability_pct },
+    { label: 'Performance', value: last.performance_pct },
+    { label: 'Quality', value: last.quality_pct },
+  ].filter((f) => f.value != null)
+  const lowest = factors.reduce((a, b) => (b.value < a.value ? b : a), factors[0])
+  const capped = last.performance_capped
+    ? ' Performance dipotong di 100% — cycle time mesin atau catatan downtime-nya perlu diperiksa.'
+    : ''
+  return `OEE ${last.month.slice(0, 7)}: ${fmt(last.oee_pct)}%, paling tertahan oleh ${lowest.label} (${fmt(lowest.value)}%).${capped}`
 }
 
 function describeResolveHours(rows) {
@@ -202,6 +227,8 @@ function BIDashboardsPage() {
   const [qcError, setQcError] = useState('')
   const [production, setProduction] = useState(null)
   const [productionError, setProductionError] = useState('')
+  const [productionOee, setProductionOee] = useState(null)
+  const [productionOeeError, setProductionOeeError] = useState('')
   const [purchasingSupplier, setPurchasingSupplier] = useState(null)
   const [purchasingSupplierError, setPurchasingSupplierError] = useState('')
   const [ticketing, setTicketing] = useState(null)
@@ -410,6 +437,24 @@ function BIDashboardsPage() {
       .catch(() => setProductionError('Gagal memuat ringkasan produksi. Pastikan dw-service aktif.'))
   }
 
+  function loadProductionOee(cid) {
+    setProductionOeeError('')
+    apiClient
+      .get('/api/dw/analytics/production-oee-monthly-summary', { params: { company_id: cid } })
+      .then(({ data }) =>
+        setProductionOee(
+          data.map((d) => ({
+            ...d,
+            availability_pct: d.availability_pct == null ? null : Number(d.availability_pct),
+            performance_pct: d.performance_pct == null ? null : Number(d.performance_pct),
+            quality_pct: d.quality_pct == null ? null : Number(d.quality_pct),
+            oee_pct: d.oee_pct == null ? null : Number(d.oee_pct),
+          })),
+        ),
+      )
+      .catch(() => setProductionOeeError('Gagal memuat ringkasan OEE. Pastikan dw-service aktif.'))
+  }
+
   function loadPurchasingSupplier(cid) {
     setPurchasingSupplierError('')
     apiClient
@@ -516,6 +561,7 @@ function BIDashboardsPage() {
     loadHrKpiDept(companyId)
     loadQc(companyId)
     loadProduction(companyId)
+    loadProductionOee(companyId)
     loadPurchasingSupplier(companyId)
     loadTicketing(companyId)
     loadPayroll(companyId)
@@ -816,6 +862,27 @@ function BIDashboardsPage() {
                   )}
                   {!productionError && production != null && production.length > 0 && (
                     <GroupedBarChart data={production} series={PRODUCTION_SERIES} formatValue={(v) => formatQty(v)} />
+                  )}
+                </div>
+              </div>
+
+              <div className="col-md-6">
+                <div className="card p-3 h-100">
+                  <h6 className="mb-1">OEE Mesin per Bulan (dari Data Warehouse)</h6>
+                  {!productionOeeError && productionOee != null && productionOee.length > 0 && (
+                    <div className="text-secondary small mb-3">{describeOEE(productionOee)}</div>
+                  )}
+                  {productionOeeError && <div className="alert alert-warning py-2 small mb-0">{productionOeeError}</div>}
+                  {!productionOeeError && productionOee == null && <div className="text-secondary small">Memuat...</div>}
+                  {!productionOeeError && productionOee != null && productionOee.length === 0 && (
+                    <div className="text-secondary small">Belum ada production run yang sudah ditutup.</div>
+                  )}
+                  {!productionOeeError && productionOee != null && productionOee.length > 0 && (
+                    <GroupedBarChart
+                      data={productionOee}
+                      series={PRODUCTION_OEE_SERIES}
+                      formatValue={formatPercent}
+                    />
                   )}
                 </div>
               </div>

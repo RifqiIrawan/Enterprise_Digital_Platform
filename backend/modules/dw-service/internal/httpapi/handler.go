@@ -38,6 +38,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /analytics/hr-kpi-department-summary", h.hrKPIDepartmentSummary)
 	mux.HandleFunc("GET /analytics/qc-monthly-summary", h.qcMonthlySummary)
 	mux.HandleFunc("GET /analytics/production-monthly-summary", h.productionMonthlySummary)
+	mux.HandleFunc("GET /analytics/production-oee-monthly-summary", h.productionOEEMonthlySummary)
 	mux.HandleFunc("GET /analytics/purchasing-supplier-summary", h.purchasingSupplierSummary)
 	mux.HandleFunc("GET /analytics/ticketing-monthly-summary", h.ticketingMonthlySummary)
 	mux.HandleFunc("GET /analytics/payroll-period-summary", h.payrollPeriodSummary)
@@ -116,6 +117,12 @@ func RunSync(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake
 		results = append(results, syncResult{Fact: "production_work_orders", Rows: n})
 	}
 
+	if n, err := etl.SyncProductionOEE(ctx, sources.Production, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "production_oee", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "production_oee", Rows: n})
+	}
+
 	if n, err := etl.SyncQC(ctx, sources.QC, dest, lake); err != nil {
 		results = append(results, syncResult{Fact: "qc_inspections", Error: err.Error()})
 	} else {
@@ -190,14 +197,19 @@ func (h *Handler) syncStatus(w http.ResponseWriter, r *http.Request) {
 		{"sales_order_lines", "fact_sales_order_lines"},
 		{"inventory_movements", "fact_inventory_movements"},
 		{"hr_payroll_details", "fact_hr_payroll_details"},
+		{"hr_leave_requests", "fact_hr_leave_requests"},
+		{"hr_kpi_reviews", "fact_hr_kpi_reviews"},
 		{"purchasing_order_lines", "fact_purchasing_order_lines"},
 		{"production_work_orders", "fact_production_work_orders"},
+		{"production_oee", "fact_production_oee"},
 		{"qc_inspections", "fact_qc_inspections"},
 		{"asset_maintenance", "fact_asset_maintenance"},
 		{"iot_readings", "fact_iot_readings"},
 		{"opportunities", "fact_crm_opportunities"},
 		{"tickets", "fact_ticketing_tickets"},
 		{"order_items", "fact_ecommerce_order_lines"},
+		{"delivery_orders", "fact_fleet_delivery_orders"},
+		{"timesheets", "fact_project_timesheets"},
 	}
 
 	type factStatus struct {

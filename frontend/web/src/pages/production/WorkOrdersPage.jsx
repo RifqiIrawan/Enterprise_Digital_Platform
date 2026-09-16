@@ -56,6 +56,13 @@ function WorkOrdersPage() {
   }, [companyId, branchId])
 
   const bomName = (id) => boms.find((b) => b.id === id)?.name ?? id
+  // BOM formula (bom_type BATCH) hanya bisa dijalankan dalam batch utuh.
+  // Hitungan di bawah cuma untuk memberi tahu selagi mengetik; yang menolak
+  // setengah batch tetap production-service.
+  const selectedBom = boms.find((b) => b.id === form.bom_id)
+  const batchSize = selectedBom?.bom_type === 'BATCH' ? Number(selectedBom.batch_size) || 0 : 0
+  const plannedBatches = batchSize > 0 ? (Number(form.quantity_planned) || 0) / batchSize : 0
+  const wholeBatches = Math.abs(plannedBatches - Math.round(plannedBatches)) < 0.0001 && plannedBatches >= 1
   const productName = (id) => {
     const p = products.find((p) => p.id === id)
     return p ? `${p.sku} - ${p.name}` : id
@@ -132,7 +139,19 @@ function WorkOrdersPage() {
     { key: 'product_id', label: 'Produk Jadi', render: (o) => productName(o.product_id), sortValue: (o) => productName(o.product_id) },
     { key: 'bom_id', label: 'BOM', render: (o) => bomName(o.bom_id), sortValue: (o) => bomName(o.bom_id) },
     { key: 'warehouse_id', label: 'Gudang', render: (o) => warehouseName(o.warehouse_id), sortValue: (o) => warehouseName(o.warehouse_id) },
-    { key: 'quantity_planned', label: 'Rencana', className: 'text-end', cellClassName: 'text-end' },
+    {
+      key: 'quantity_planned',
+      label: 'Rencana',
+      className: 'text-end',
+      cellClassName: 'text-end',
+      sortValue: (o) => o.quantity_planned,
+      render: (o) => (
+        <>
+          {o.quantity_planned}
+          {o.batch_count != null && <div className="text-secondary small">{o.batch_count} batch</div>}
+        </>
+      ),
+    },
     {
       key: 'quantity_produced',
       label: 'Hasil',
@@ -244,6 +263,14 @@ function WorkOrdersPage() {
                   min="0"
                   required
                 />
+                {batchSize > 0 && (
+                  <div className={`form-text ${wholeBatches ? '' : 'text-danger'}`}>
+                    BOM formula: 1 batch = {batchSize}.{' '}
+                    {wholeBatches
+                      ? `${Math.round(plannedBatches)} batch akan dijalankan.`
+                      : `Qty harus kelipatan bulat ${batchSize} (mis. ${Math.max(1, Math.floor(plannedBatches)) * batchSize} atau ${(Math.max(1, Math.floor(plannedBatches)) + 1) * batchSize}).`}
+                  </div>
+                )}
               </div>
               <div className="col-6">
                 <label className="form-label">Tanggal Mulai</label>

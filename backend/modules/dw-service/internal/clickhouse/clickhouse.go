@@ -1,5 +1,5 @@
 // Package clickhouse adalah wrapper di atas driver native
-// github.com/ClickHouse/clickhouse-go/v2, dipakai untuk membuat skema (12
+// github.com/ClickHouse/clickhouse-go/v2, dipakai untuk membuat skema (17
 // fact table + 1 tabel state watermark) dan batch-insert hasil ETL.
 // ClickHouse dipilih sebagai destinasi (bukan Postgres) karena ini kolom-
 // store OLAP -- tabel fact di sini sengaja denormalized (pre-joined ke
@@ -10,6 +10,7 @@ package clickhouse
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
@@ -142,6 +143,26 @@ CREATE TABLE IF NOT EXISTS fact_production_work_orders (
     planned_end_date Nullable(Date), updated_at DateTime, synced_at DateTime
 ) ENGINE = ReplacingMergeTree(synced_at)
 PARTITION BY toYYYYMM(planned_start_date) ORDER BY (company_id, wo_id);
+
+-- fact_production_oee: satu baris = satu production run yang SUDAH DITUTUP,
+-- dengan menit downtime-nya sudah dijumlahkan ke dalam baris (bukan tabel
+-- terpisah) -- tiga faktor OEE butuh angka itu bersama planned_minutes, dan
+-- memisahnya berarti setiap query analitik harus menjahitnya lagi.
+--
+-- ideal_cycle_time_minutes ikut disalin dari mesinnya, bukan dibaca saat
+-- query: itu penyebut faktor Performance, dan mesin yang kecepatan
+-- rancangannya diperbarui tahun depan tidak boleh diam-diam mengubah OEE
+-- bulan lalu -- alasan yang sama seperti production_runs men-snapshot
+-- planned_minutes dari shift.
+CREATE TABLE IF NOT EXISTS fact_production_oee (
+    run_id UUID, company_id UUID, branch_id Nullable(UUID), run_number String,
+    work_order_id UUID, wo_number String, machine_id UUID, machine_code String,
+    machine_name String, shift_id UUID, shift_code String, run_date Date,
+    planned_minutes Int32, downtime_minutes Int32, quantity_good Decimal(15,2),
+    quantity_reject Decimal(15,2), ideal_cycle_time_minutes Decimal(10,4),
+    status String, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(run_date) ORDER BY (company_id, run_id);
 
 CREATE TABLE IF NOT EXISTS fact_qc_inspections (
     inspection_id UUID, company_id UUID, branch_id Nullable(UUID), inspection_number String,
@@ -910,6 +931,102 @@ func (c *Client) ProductionMonthlySummary(ctx context.Context, companyID uuid.UU
 	return out, rows.Err()
 }
 
+type ProductionOEEMonthlyRow struct {
+	Month             string   `json:"month"`
+	RunCount          uint64   `json:"run_count"`
+	PlannedMinutes    int64    `json:"planned_minutes"`
+	DowntimeMinutes   int64    `json:"downtime_minutes"`
+	RunTimeMinutes    int64    `json:"run_time_minutes"`
+	AvailabilityPct   *float64 `json:"availability_pct"`
+	PerformancePct    *float64 `json:"performance_pct"`
+	QualityPct        *float64 `json:"quality_pct"`
+	OEEPct            *float64 `json:"oee_pct"`
+	PerformanceCapped bool     `json:"performance_capped"`
+}
+
+// ProductionOEEMonthlySummary menghitung Availability x Performance x Quality
+// per bulan dari fact_production_oee. Rumusnya SENGAJA sama persis dengan
+// aggregateOEE di production-service (internal/httpapi/oee.go) -- termasuk
+// pemotongan Performance di 100% dan penandaannya -- supaya halaman OEE
+// operasional dan grafik BI tidak pernah menunjukkan dua angka berbeda untuk
+// periode yang sama.
+//
+// Menit ideal dijumlahkan PER BARIS (ideal_cycle_time_minutes x unit baris
+// itu) sebelum dibandingkan dengan total run time: dua mesin dengan kecepatan
+// rancangan berbeda tidak boleh diratakan lebih dulu, karena hasilnya bukan
+// Performance mesin mana pun.
+//
+// Angkanya dikirim dalam persen (0-100), bukan pecahan 0-1: seluruh grafik BI
+// lain memakai satuan yang langsung ditampilkan, dan pembagian 100 yang
+// tercecer di UI adalah tempat khas munculnya "OEE 0,71%".
+func (c *Client) ProductionOEEMonthlySummary(ctx context.Context, companyID uuid.UUID) ([]ProductionOEEMonthlyRow, error) {
+	rows, err := c.conn.Query(ctx, `
+		SELECT
+			toString(toStartOfMonth(run_date)) AS month,
+			count() AS run_count,
+			sum(planned_minutes) AS planned_total,
+			sum(downtime_minutes) AS downtime_total,
+			greatest(toInt64(planned_total) - toInt64(downtime_total), 0) AS run_time_total,
+			sum(toFloat64(ideal_cycle_time_minutes) * toFloat64(quantity_good + quantity_reject)) AS ideal_minutes,
+			sum(toFloat64(quantity_good)) AS good_total,
+			sum(toFloat64(quantity_good + quantity_reject)) AS unit_total,
+			if(planned_total > 0, run_time_total / planned_total, NULL) AS availability,
+			if(run_time_total > 0 AND ideal_minutes > 0, least(ideal_minutes / run_time_total, 1.0), NULL) AS performance,
+			if(unit_total > 0, good_total / unit_total, NULL) AS quality,
+			-- Faktor yang tidak bisa dihitung (tidak ada unit, tidak ada waktu
+			-- jalan) membuat OEE-nya NULL juga, BUKAN nol: nol berarti "mesin
+			-- tidak menghasilkan apa-apa", dan itu klaim yang berbeda dari
+			-- "belum ada angkanya".
+			availability * performance * quality AS oee,
+			-- Dikirim sebagai 0/1, bukan hasil perbandingan mentah: tipe
+			-- UInt8 ClickHouse tidak bisa langsung di-scan ke bool Go, dan
+			-- toBool() belum tentu ada di semua versi server.
+			if(ideal_minutes > run_time_total, 1, 0) AS performance_capped
+		FROM fact_production_oee FINAL
+		WHERE company_id = ? AND status = 'CLOSED'
+		GROUP BY month
+		ORDER BY month
+	`, companyID)
+	if err != nil {
+		return nil, fmt.Errorf("query production oee monthly summary: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ProductionOEEMonthlyRow{}
+	for rows.Next() {
+		var (
+			r                                       ProductionOEEMonthlyRow
+			idealMinutes, goodTotal, unitTotal      float64
+			availability, performance, quality, oee *float64
+			capped                                  uint8
+		)
+		if err := rows.Scan(&r.Month, &r.RunCount, &r.PlannedMinutes, &r.DowntimeMinutes, &r.RunTimeMinutes,
+			&idealMinutes, &goodTotal, &unitTotal,
+			&availability, &performance, &quality, &oee, &capped); err != nil {
+			return nil, fmt.Errorf("scan production oee monthly summary row: %w", err)
+		}
+		r.PerformanceCapped = capped == 1
+		r.AvailabilityPct = toPercent(availability)
+		r.PerformancePct = toPercent(performance)
+		r.QualityPct = toPercent(quality)
+		r.OEEPct = toPercent(oee)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// toPercent membulatkan ke 2 desimal DALAM persen (bukan 4 desimal dalam
+// pecahan): itu ketelitian yang benar-benar terbaca di grafik, dan
+// membulatkannya di sini membuat seluruh pemanggil memakai pembulatan yang
+// sama.
+func toPercent(fraction *float64) *float64 {
+	if fraction == nil {
+		return nil
+	}
+	pct := math.Round(*fraction*100*100) / 100
+	return &pct
+}
+
 type PurchasingSupplierSummaryRow struct {
 	SupplierCode string          `json:"supplier_code"`
 	SupplierName string          `json:"supplier_name"`
@@ -1645,6 +1762,49 @@ func (c *Client) InsertProductionWorkOrders(ctx context.Context, rows []Producti
 			r.PlannedStartDate, r.PlannedEndDate, r.UpdatedAt, syncedAt,
 		); err != nil {
 			return fmt.Errorf("append production row %s: %w", r.WOID, err)
+		}
+	}
+	return batch.Send()
+}
+
+type ProductionOEERow struct {
+	RunID                 uuid.UUID
+	CompanyID             uuid.UUID
+	BranchID              *uuid.UUID
+	RunNumber             string
+	WorkOrderID           uuid.UUID
+	WONumber              string
+	MachineID             uuid.UUID
+	MachineCode           string
+	MachineName           string
+	ShiftID               uuid.UUID
+	ShiftCode             string
+	RunDate               time.Time
+	PlannedMinutes        int32
+	DowntimeMinutes       int32
+	QuantityGood          float64
+	QuantityReject        float64
+	IdealCycleTimeMinutes float64
+	Status                string
+	UpdatedAt             time.Time
+}
+
+func (c *Client) InsertProductionOEE(ctx context.Context, rows []ProductionOEERow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_production_oee")
+	if err != nil {
+		return fmt.Errorf("prepare production oee batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.RunID, r.CompanyID, r.BranchID, r.RunNumber, r.WorkOrderID, r.WONumber,
+			r.MachineID, r.MachineCode, r.MachineName, r.ShiftID, r.ShiftCode, r.RunDate,
+			r.PlannedMinutes, r.DowntimeMinutes, toDecimal(r.QuantityGood), toDecimal(r.QuantityReject),
+			decimal.NewFromFloat(r.IdealCycleTimeMinutes).Round(4), r.Status, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append production oee row %s: %w", r.RunID, err)
 		}
 	}
 	return batch.Send()

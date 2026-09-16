@@ -118,3 +118,29 @@ export const FLEET_DELIVERY_SERIES = [
   { key: 'delivered_count', label: 'Selesai', color: 'var(--bs-primary)' },
   { key: 'cancelled_count', label: 'Dibatalkan', color: 'var(--bs-orange)' },
 ]
+
+// Chart ke-18 (fact table ke-17: fact_production_oee). Tiga faktor OEE plus
+// hasil kalinya, semuanya dalam persen sehingga satu sumbu Y sudah cukup --
+// ini satu-satunya chart di sini yang seluruh serinya berbagi satuan yang
+// sama, dan justru itu yang membuat empat seri bisa dibaca berdampingan.
+//
+// OEE (hasil kali ketiganya) diberi warna primer yang penuh, ketiga faktornya
+// warna yang lebih redup: yang pertama dicari orang adalah satu angka OEE-nya,
+// tiga faktor di sebelahnya menjawab "kenapa segitu". Merah/hijau SENGAJA
+// dihindari seperti di seluruh halaman ini -- 70% OEE bagus untuk satu pabrik
+// dan buruk untuk pabrik lain, dan warna tidak boleh memutuskan itu.
+export const PRODUCTION_OEE_SERIES = [
+  { key: 'availability_pct', label: 'Availability', color: 'rgba(var(--bs-primary-rgb), 0.35)' },
+  { key: 'performance_pct', label: 'Performance', color: 'rgba(var(--bs-primary-rgb), 0.55)' },
+  { key: 'quality_pct', label: 'Quality', color: 'rgba(var(--bs-primary-rgb), 0.75)' },
+  { key: 'oee_pct', label: 'OEE', color: 'var(--bs-primary)' },
+]
+
+// Satu-satunya formatter yang ikut tinggal di modul ini, dengan alasan yang
+// sama seperti warnanya: faktor OEE yang TIDAK BISA dihitung (bulan tanpa unit
+// selesai) bernilai null, dan menampilkannya sebagai "0%" adalah klaim yang
+// berbeda -- "mesinnya tidak menghasilkan apa-apa" versus "belum ada angkanya".
+export function formatPercent(v) {
+  if (v == null) return '—'
+  return `${new Intl.NumberFormat('id-ID', { maximumFractionDigits: 1 }).format(v)}%`
+}

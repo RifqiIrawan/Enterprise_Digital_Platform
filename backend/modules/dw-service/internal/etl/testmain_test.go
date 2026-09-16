@@ -247,6 +247,47 @@ CREATE TABLE IF NOT EXISTS work_orders (
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Lapisan MES production-service (Fase 3): mesin, shift, catatan pelaksanaan
+-- per mesin per shift, dan downtime-nya. Dipakai extract SQL fact_production_oee
+-- di production.go -- HANYA kolom yang benar-benar dibacanya.
+CREATE TABLE IF NOT EXISTS machines (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	code VARCHAR(30) NOT NULL,
+	name VARCHAR(200) NOT NULL,
+	ideal_cycle_time_minutes NUMERIC(10,4) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS shifts (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	code VARCHAR(30) NOT NULL,
+	name VARCHAR(200) NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS production_runs (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	company_id UUID NOT NULL,
+	branch_id UUID,
+	run_number VARCHAR(30) NOT NULL,
+	work_order_id UUID NOT NULL REFERENCES work_orders(id),
+	machine_id UUID NOT NULL REFERENCES machines(id),
+	shift_id UUID NOT NULL REFERENCES shifts(id),
+	run_date DATE NOT NULL,
+	planned_minutes INTEGER NOT NULL,
+	quantity_good NUMERIC(15,2),
+	quantity_reject NUMERIC(15,2),
+	status VARCHAR(20) NOT NULL DEFAULT 'OPEN',
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS downtime_logs (
+	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+	production_run_id UUID NOT NULL REFERENCES production_runs(id) ON DELETE CASCADE,
+	reason_code VARCHAR(30) NOT NULL,
+	minutes INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS quality_standards (
 	id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 	standard_code VARCHAR(30) NOT NULL,
