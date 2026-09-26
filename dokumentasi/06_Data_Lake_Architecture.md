@@ -120,3 +120,32 @@ Satu-satunya pemakaian reflection di seluruh codebase — trade-off yang disenga
 - ClickHouse tetap menjadi tempat query analitik interaktif; Gold di MinIO adalah salinan agregat yang bisa dikonsumsi alat lain tanpa menyentuh ClickHouse.
 
 **Batas yang perlu diketahui**: Gold baru dua dataset (yang punya padanan ClickHouse untuk dibandingkan). Dataset lain ditambahkan dengan pola yang sama, bersama padanannya. Kalau Silver satu fact gagal dibangun, Gold tetap dihitung dari Silver lama — baca `errors` di respons build sebelum mempercayai angka Gold.
+
+## Batas Skala (hasil uji, 2026-09-27)
+
+Diukur pada satu fact (`sales_order_lines`, baris ±350 byte, 5 baris per order) dengan instance dw-service terpisah, database Postgres sumber sementara, database ClickHouse dan bucket MinIO per tahap; data dev tidak disentuh dan semuanya dihapus setelahnya. Mesin: 15 GB RAM, 12 core, Postgres/ClickHouse/MinIO lokal. Angka "selisih" = waktu dikurangi baseline 0 baris (sync 4,7 dtk, build 3,2 dtk, backfill 3,0 dtk: biaya tetap 16 fact lain dan koneksi).
+
+| Baris sales | Sync awal (selisih) | Puncak memori | Build Silver+Gold (selisih) | Puncak memori | Backfill (selisih) |
+|---:|---:|---:|---:|---:|---:|
+| 100 rb | 5,7 dtk (+1,0) | 227 MB | 7,5 dtk (+4,3) | 462 MB | 4,0 dtk (+1,0) |
+| 250 rb | 8,3 dtk (+3,6) | 460 MB | 14,4 dtk (+11,2) | 941 MB | 5,9 dtk (+2,9) |
+| 500 rb | 12,0 dtk (+7,3) | 1.025 MB | 25,7 dtk (+22,5) | 1.786 MB | 7,7 dtk (+4,7) |
+
+Semuanya **linear**: sync ±15 µs dan ±2 KB per baris (±68 rb baris/dtk), build ±45 µs dan ±3,5 KB per baris, backfill ±9 µs dan ±3,3 KB per baris. Jumlah baris di ClickHouse cocok persis di tiap tahap. Build kedua (setelah Bronze berisi hasil sync DAN backfill, jadi dua kali lipat baris) lebih lama 28% pada 500 rb (32,9 dtk): biaya build mengikuti jumlah baris **Bronze**, bukan baris unik.
+
+**Proyeksi linear ke target roadmap** (Sales 5 jt, Purchase 2 jt, Inventory 10 jt, HRIS 2 jt, Manufacturing 15 jt, IoT 50 jt = ±84 jt baris fact; log sistem 100 jt tidak masuk lake):
+
+- Satu fact 5 jt baris: sync awal ±75 dtk dan ±10 GB; build ±225 dtk dan **±17,5 GB** — melebihi RAM mesin ini.
+- Semua fact berurutan: build ±63 menit, **lebih lama dari interval 1 jam** ticker; fact terbesar (IoT 50 jt) butuh ±175 GB.
+- Di mesin 15 GB dengan layanan lain berjalan, batas praktisnya sekitar **2–3 jt baris per fact**.
+
+**Penyebab (dari kode, bukan dugaan):**
+
+1. `BuildSilver` membaca tiap objek Bronze utuh ke memori lalu menyimpan salinan setiap baris unik di map `latest`.
+2. Daftar kunci hidup (pemangkasan) meng-ekstrak SELURUH baris bertipe ke memori hanya untuk mengambil dua kolom kunci.
+3. Sync dan backfill menaruh seluruh hasil ekstrak dalam satu slice, satu batch insert ClickHouse, dan satu objek JSONL — muatan awal tabel besar jadi satu objek raksasa.
+4. Build membaca ulang SELURUH Bronze tiap putaran, dan Bronze terus bertambah (baris batas watermark ditulis ulang tiap sync, plus backfill).
+
+**Perbaikan yang bisa dilakukan sebelum pindah ke Spark/dbt** (belum dikerjakan; urut menurut dampak): (a) daftar kunci hidup hanya menyimpan kunci sebagai pasangan UUID 16 byte, bukan baris utuh; (b) Silver inkremental — pertahankan Silver sebelumnya dan gabungkan hanya objek Bronze yang lebih baru dari penanda build terakhir, sehingga biaya mengikuti data baru, bukan seluruh riwayat; (c) sync/backfill berpotongan (mis. 100 rb baris per objek dan per batch insert) dengan memori terbatas; (d) pemadatan Bronze untuk objek yang sudah sepenuhnya tertimpa. Di atas puluhan juta baris per fact, Spark/dbt seperti yang diantisipasi di awal menjadi masuk akal, dan kontrak yang sudah ada (aturan kunci, invarian `bronze = silver + duplikat + rejected + pruned`, rekonsiliasi) bisa dipindahkan sebagai test.
+
+**Yang TIDAK diukur:** fact lain (diasumsikan orde yang sama; baris IoT lebih sempit sehingga memori per baris lebih kecil), waktu `count(*) ... FINAL` untuk rekonsiliasi dan query analitik ClickHouse pada puluhan juta baris, biaya sort ekstrak Postgres tanpa indeks `updated_at`, dan ruang disk. Tahap tertinggi yang dijalankan adalah 500 rb baris — 1 jt akan butuh ±3,5 GB sementara hanya ±3,4 GB RAM yang bebas — sehingga angka di atasnya adalah ekstrapolasi.
