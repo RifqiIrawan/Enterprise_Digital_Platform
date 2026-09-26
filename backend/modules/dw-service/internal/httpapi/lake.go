@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
 
+	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
 	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 	"github.com/enterprise-digital-platform/dw-service/internal/etl"
 )
@@ -121,15 +123,22 @@ func (h *Handler) lakeReconcile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "ClickHouse tidak tersedia")
 		return
 	}
-	ctx := r.Context()
+	consistent, facts := reconcileAll(r.Context(), h.dest, h.lake)
+	writeJSON(w, http.StatusOK, map[string]any{"consistent": consistent, "facts": facts})
+}
+
+// reconcileAll membandingkan Silver dengan ClickHouse untuk semua fact. Dipakai
+// handler GET /lake/reconcile dan job berkala (RunLakeCycle), supaya keduanya
+// tidak bisa berselisih soal apa artinya "cocok".
+func reconcileAll(ctx context.Context, dest *ch.Client, lake *datalake.Client) (bool, []reconcileFact) {
 	facts := make([]reconcileFact, 0, len(etl.Facts))
 	consistent := true
 	for _, f := range etl.Facts {
 		rf := reconcileFact{Fact: f.Name}
-		silver, err := h.lake.ReadSilver(ctx, f.Name)
+		silver, err := lake.ReadSilver(ctx, f.Name)
 		if err != nil {
 			rf.Status, rf.Error = reconcileError, err.Error()
-		} else if n, err := h.dest.CountCurrentRows(ctx, f.Table); err != nil {
+		} else if n, err := dest.CountCurrentRows(ctx, f.Table); err != nil {
 			rf.Status, rf.Error = reconcileError, err.Error()
 		} else {
 			rf.SilverRows, rf.ClickHouseRows = len(silver), n
@@ -140,7 +149,7 @@ func (h *Handler) lakeReconcile(w http.ResponseWriter, r *http.Request) {
 		}
 		facts = append(facts, rf)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"consistent": consistent, "facts": facts})
+	return consistent, facts
 }
 
 // classifyReconcile mengubah dua hitungan menjadi selisih (ClickHouse - Silver)

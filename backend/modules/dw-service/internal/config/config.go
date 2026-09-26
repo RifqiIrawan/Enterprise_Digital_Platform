@@ -32,7 +32,12 @@ type Config struct {
 	MinIOUseSSL           bool
 	SyncEnabled           bool
 	SyncIntervalSeconds   int
-	OTLPEndpoint          string
+	// LakeBuildSeconds: seberapa sering Silver/Gold dibangun ulang dan dicocokkan
+	// dengan ClickHouse. <= 0 mematikannya. Terpisah dari interval sync karena
+	// build membaca SELURUH Bronze (yang terus bertambah, lihat dokumentasi/06),
+	// jadi tidak masuk akal dijalankan tiap 5 menit.
+	LakeBuildSeconds int
+	OTLPEndpoint     string
 	// Kafka Streaming ETL — melengkapi batch ETL, best-effort (disabled =
 	// streaming consumer tidak dijalankan, batch tetap jalan normal).
 	KafkaBrokers     string
@@ -68,6 +73,7 @@ func Load() *Config {
 		MinIOUseSSL:           getEnv("MINIO_USE_SSL", "false") == "true",
 		SyncEnabled:           getEnv("DW_SYNC_ENABLED", "true") == "true",
 		SyncIntervalSeconds:   getEnvInt("DW_SYNC_INTERVAL_SECONDS", 300),
+		LakeBuildSeconds:      getEnvInt("DW_LAKE_BUILD_INTERVAL_SECONDS", 3600),
 		OTLPEndpoint:          getEnv("OTLP_ENDPOINT", "localhost:4318"),
 		KafkaBrokers:          getEnv("KAFKA_BROKERS", "localhost:9092"),
 		KafkaGroupID:          getEnv("KAFKA_GROUP_ID", "dw-service-streaming"),

@@ -79,6 +79,12 @@ func main() {
 		go runTicker(ctx, sources, dest, lake, time.Duration(cfg.SyncIntervalSeconds)*time.Second)
 	}
 
+	// Build Silver/Gold + rekonsiliasi berkala. Butuh lake DAN ClickHouse; tanpa
+	// salah satunya tidak ada yang bisa dibandingkan.
+	if cfg.LakeBuildSeconds > 0 && dest != nil && lake != nil {
+		go runLakeTicker(ctx, dest, lake, time.Duration(cfg.LakeBuildSeconds)*time.Second)
+	}
+
 	if cfg.StreamingEnabled {
 		streaming.Start(ctx, cfg.KafkaBrokers, cfg.KafkaGroupID, sources, dest, lake)
 	}
@@ -104,6 +110,28 @@ func runTicker(ctx context.Context, sources *sourcedb.Pools, dest *clickhouse.Cl
 			} else if r.Rows > 0 {
 				log.Printf("dw-service: synced %d rows into %s", r.Rows, r.Fact)
 			}
+		}
+	}
+}
+
+// runLakeTicker menjalankan httpapi.RunLakeCycle tiap interval. Putaran pertama
+// menunggu satu interval penuh (bukan langsung saat start) supaya start ulang
+// service tidak memicu pembacaan seluruh Bronze; kalau perlu segera, panggil
+// POST /api/dw/lake/build.
+func runLakeTicker(ctx context.Context, dest *clickhouse.Client, lake *datalake.Client, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	prev := map[string]string{}
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		var lines []string
+		lines, prev = httpapi.RunLakeCycle(ctx, dest, lake, prev)
+		for _, l := range lines {
+			log.Printf("dw-service: %s", l)
 		}
 	}
 }
