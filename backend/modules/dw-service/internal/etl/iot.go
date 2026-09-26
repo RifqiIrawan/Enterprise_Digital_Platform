@@ -38,30 +38,9 @@ func SyncIoT(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *d
 		return 0, fmt.Errorf("get iot watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, iotExtractSQL, watermark)
+	out, maxWatermark, err := extractIoT(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract iot rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.IoTReadingRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.IoTReadingRow
-		var createdAt time.Time
-		if err := rows.Scan(
-			&r.ReadingID, &r.CompanyID, &r.BranchID, &r.DeviceID, &r.DeviceCode, &r.DeviceType,
-			&r.ReadingType, &r.ValueNumeric, &r.ValueText, &r.RecordedAt, &createdAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan iot row: %w", err)
-		}
-		out = append(out, r)
-		if createdAt.After(maxWatermark) {
-			maxWatermark = createdAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate iot rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -79,4 +58,37 @@ func SyncIoT(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *d
 		return 0, fmt.Errorf("advance iot watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractIoT adalah bagian "tarik dari Postgres" milik SyncIoT, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractIoT(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.IoTReadingRow, time.Time, error) {
+	rows, err := source.Query(ctx, iotExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract iot rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.IoTReadingRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.IoTReadingRow
+		var createdAt time.Time
+		if err := rows.Scan(
+			&r.ReadingID, &r.CompanyID, &r.BranchID, &r.DeviceID, &r.DeviceCode, &r.DeviceType,
+			&r.ReadingType, &r.ValueNumeric, &r.ValueText, &r.RecordedAt, &createdAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan iot row: %w", err)
+		}
+		out = append(out, r)
+		if createdAt.After(maxWatermark) {
+			maxWatermark = createdAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate iot rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

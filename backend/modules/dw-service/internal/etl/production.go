@@ -38,30 +38,9 @@ func SyncProduction(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, 
 		return 0, fmt.Errorf("get production watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, productionExtractSQL, watermark)
+	out, maxWatermark, err := extractProduction(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract production rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.ProductionWorkOrderRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.ProductionWorkOrderRow
-		if err := rows.Scan(
-			&r.WOID, &r.CompanyID, &r.BranchID, &r.WONumber, &r.BOMID, &r.ProductID,
-			&r.WarehouseID, &r.QuantityPlanned, &r.QuantityProduced, &r.Status,
-			&r.PlannedStartDate, &r.PlannedEndDate, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan production row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate production rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -79,6 +58,39 @@ func SyncProduction(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, 
 		return 0, fmt.Errorf("advance production watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractProduction adalah bagian "tarik dari Postgres" milik SyncProduction, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractProduction(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProductionWorkOrderRow, time.Time, error) {
+	rows, err := source.Query(ctx, productionExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract production rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.ProductionWorkOrderRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.ProductionWorkOrderRow
+		if err := rows.Scan(
+			&r.WOID, &r.CompanyID, &r.BranchID, &r.WONumber, &r.BOMID, &r.ProductID,
+			&r.WarehouseID, &r.QuantityPlanned, &r.QuantityProduced, &r.Status,
+			&r.PlannedStartDate, &r.PlannedEndDate, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan production row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate production rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }
 
 const productionOEESourceTable = "production_oee"
@@ -125,32 +137,9 @@ func SyncProductionOEE(ctx context.Context, source *pgxpool.Pool, dest *ch.Clien
 		return 0, fmt.Errorf("get production oee watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, productionOEEExtractSQL, watermark)
+	out, maxWatermark, err := extractProductionOEE(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract production oee rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.ProductionOEERow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.ProductionOEERow
-		if err := rows.Scan(
-			&r.RunID, &r.CompanyID, &r.BranchID, &r.RunNumber,
-			&r.WorkOrderID, &r.WONumber, &r.MachineID, &r.MachineCode, &r.MachineName,
-			&r.ShiftID, &r.ShiftCode, &r.RunDate, &r.PlannedMinutes,
-			&r.DowntimeMinutes, &r.QuantityGood, &r.QuantityReject,
-			&r.IdealCycleTimeMinutes, &r.Status, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan production oee row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate production oee rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -168,4 +157,39 @@ func SyncProductionOEE(ctx context.Context, source *pgxpool.Pool, dest *ch.Clien
 		return 0, fmt.Errorf("advance production oee watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractProductionOEE adalah bagian "tarik dari Postgres" milik SyncProductionOEE, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractProductionOEE(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProductionOEERow, time.Time, error) {
+	rows, err := source.Query(ctx, productionOEEExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract production oee rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.ProductionOEERow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.ProductionOEERow
+		if err := rows.Scan(
+			&r.RunID, &r.CompanyID, &r.BranchID, &r.RunNumber,
+			&r.WorkOrderID, &r.WONumber, &r.MachineID, &r.MachineCode, &r.MachineName,
+			&r.ShiftID, &r.ShiftCode, &r.RunDate, &r.PlannedMinutes,
+			&r.DowntimeMinutes, &r.QuantityGood, &r.QuantityReject,
+			&r.IdealCycleTimeMinutes, &r.Status, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan production oee row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate production oee rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

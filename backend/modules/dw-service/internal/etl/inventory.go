@@ -37,31 +37,9 @@ func SyncInventory(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, l
 		return 0, fmt.Errorf("get inventory watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, inventoryExtractSQL, watermark)
+	out, maxWatermark, err := extractInventory(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract inventory rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.InventoryMovementRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.InventoryMovementRow
-		var createdAt time.Time
-		if err := rows.Scan(
-			&r.MovementID, &r.CompanyID, &r.BranchID, &r.WarehouseID, &r.WarehouseCode, &r.WarehouseName,
-			&r.ProductID, &r.ProductSKU, &r.ProductName, &r.MovementType, &r.Quantity, &r.ReferenceType,
-			&r.ReferenceID, &r.MovementDate, &createdAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan inventory row: %w", err)
-		}
-		out = append(out, r)
-		if createdAt.After(maxWatermark) {
-			maxWatermark = createdAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate inventory rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -79,4 +57,38 @@ func SyncInventory(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, l
 		return 0, fmt.Errorf("advance inventory watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractInventory adalah bagian "tarik dari Postgres" milik SyncInventory, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractInventory(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.InventoryMovementRow, time.Time, error) {
+	rows, err := source.Query(ctx, inventoryExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract inventory rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.InventoryMovementRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.InventoryMovementRow
+		var createdAt time.Time
+		if err := rows.Scan(
+			&r.MovementID, &r.CompanyID, &r.BranchID, &r.WarehouseID, &r.WarehouseCode, &r.WarehouseName,
+			&r.ProductID, &r.ProductSKU, &r.ProductName, &r.MovementType, &r.Quantity, &r.ReferenceType,
+			&r.ReferenceID, &r.MovementDate, &createdAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan inventory row: %w", err)
+		}
+		out = append(out, r)
+		if createdAt.After(maxWatermark) {
+			maxWatermark = createdAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate inventory rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

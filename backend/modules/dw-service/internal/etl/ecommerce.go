@@ -37,30 +37,9 @@ func SyncEcommerce(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, l
 		return 0, fmt.Errorf("get ecommerce watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, ecommerceExtractSQL, watermark)
+	out, maxWatermark, err := extractEcommerce(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract ecommerce rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.EcommerceOrderLineRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.EcommerceOrderLineRow
-		if err := rows.Scan(
-			&r.LineID, &r.OrderID, &r.CompanyID, &r.BranchID, &r.OrderNumber, &r.OrderDate, &r.OrderStatus,
-			&r.CustomerName, &r.CustomerEmail, &r.ProductID, &r.ProductSKU, &r.ProductName,
-			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan ecommerce row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate ecommerce rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -78,4 +57,37 @@ func SyncEcommerce(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, l
 		return 0, fmt.Errorf("advance ecommerce watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractEcommerce adalah bagian "tarik dari Postgres" milik SyncEcommerce, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractEcommerce(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.EcommerceOrderLineRow, time.Time, error) {
+	rows, err := source.Query(ctx, ecommerceExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract ecommerce rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.EcommerceOrderLineRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.EcommerceOrderLineRow
+		if err := rows.Scan(
+			&r.LineID, &r.OrderID, &r.CompanyID, &r.BranchID, &r.OrderNumber, &r.OrderDate, &r.OrderStatus,
+			&r.CustomerName, &r.CustomerEmail, &r.ProductID, &r.ProductSKU, &r.ProductName,
+			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan ecommerce row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate ecommerce rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

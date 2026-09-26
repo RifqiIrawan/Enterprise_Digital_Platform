@@ -38,31 +38,9 @@ func SyncFinance(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lak
 		return 0, fmt.Errorf("get finance watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, financeExtractSQL, watermark)
+	out, maxWatermark, err := extractFinance(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract finance rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.FinanceJournalLineRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.FinanceJournalLineRow
-		var wm time.Time
-		if err := rows.Scan(
-			&r.LineID, &r.JournalID, &r.CompanyID, &r.BranchID, &r.EntryNumber, &r.EntryDate,
-			&r.Period, &r.ReferenceType, &r.EntryStatus, &r.AccountID, &r.AccountCode, &r.AccountName,
-			&r.AccountType, &r.DebitAmount, &r.CreditAmount, &r.PostedAt, &wm,
-		); err != nil {
-			return 0, fmt.Errorf("scan finance row: %w", err)
-		}
-		out = append(out, r)
-		if wm.After(maxWatermark) {
-			maxWatermark = wm
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate finance rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -80,4 +58,38 @@ func SyncFinance(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lak
 		return 0, fmt.Errorf("advance finance watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractFinance adalah bagian "tarik dari Postgres" milik SyncFinance, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractFinance(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.FinanceJournalLineRow, time.Time, error) {
+	rows, err := source.Query(ctx, financeExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract finance rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.FinanceJournalLineRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.FinanceJournalLineRow
+		var wm time.Time
+		if err := rows.Scan(
+			&r.LineID, &r.JournalID, &r.CompanyID, &r.BranchID, &r.EntryNumber, &r.EntryDate,
+			&r.Period, &r.ReferenceType, &r.EntryStatus, &r.AccountID, &r.AccountCode, &r.AccountName,
+			&r.AccountType, &r.DebitAmount, &r.CreditAmount, &r.PostedAt, &wm,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan finance row: %w", err)
+		}
+		out = append(out, r)
+		if wm.After(maxWatermark) {
+			maxWatermark = wm
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate finance rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

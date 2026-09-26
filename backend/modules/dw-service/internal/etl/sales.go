@@ -37,30 +37,9 @@ func SyncSales(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 		return 0, fmt.Errorf("get sales watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, salesExtractSQL, watermark)
+	out, maxWatermark, err := extractSales(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract sales rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.SalesOrderLineRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.SalesOrderLineRow
-		if err := rows.Scan(
-			&r.LineID, &r.SalesOrderID, &r.CompanyID, &r.BranchID, &r.SONumber, &r.OrderDate,
-			&r.OrderStatus, &r.CustomerID, &r.CustomerCode, &r.CustomerName, &r.ProductName,
-			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan sales row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate sales rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -78,4 +57,37 @@ func SyncSales(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 		return 0, fmt.Errorf("advance sales watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractSales adalah bagian "tarik dari Postgres" milik SyncSales, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractSales(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.SalesOrderLineRow, time.Time, error) {
+	rows, err := source.Query(ctx, salesExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract sales rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.SalesOrderLineRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.SalesOrderLineRow
+		if err := rows.Scan(
+			&r.LineID, &r.SalesOrderID, &r.CompanyID, &r.BranchID, &r.SONumber, &r.OrderDate,
+			&r.OrderStatus, &r.CustomerID, &r.CustomerCode, &r.CustomerName, &r.ProductName,
+			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan sales row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate sales rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

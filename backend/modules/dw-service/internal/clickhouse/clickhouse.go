@@ -405,6 +405,19 @@ func (c *Client) CountRows(ctx context.Context, table string) (uint64, error) {
 	return n, nil
 }
 
+// CountCurrentRows menghitung baris fact yang BERLAKU: FINAL menyatukan versi
+// ganda hasil dual-write (batch + streaming) dan re-sync, sama dengan yang
+// dilihat query analitik. CountRows (tanpa FINAL) bisa lebih besar dan cocok
+// untuk "berapa baris fisik", bukan untuk dibandingkan dengan data lake.
+func (c *Client) CountCurrentRows(ctx context.Context, table string) (uint64, error) {
+	row := c.conn.QueryRow(ctx, "SELECT count(*) FROM "+table+" FINAL")
+	var n uint64
+	if err := row.Scan(&n); err != nil {
+		return 0, fmt.Errorf("count current %s: %w", table, err)
+	}
+	return n, nil
+}
+
 // MonthlyFinanceSummaryRow adalah satu baris hasil agregasi bulanan revenue
 // (kredit akun REVENUE) dan expense (debit akun EXPENSE) dari journal entry
 // yang sudah POSTED.

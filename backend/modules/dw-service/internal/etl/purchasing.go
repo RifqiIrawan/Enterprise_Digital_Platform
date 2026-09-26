@@ -38,30 +38,9 @@ func SyncPurchasing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, 
 		return 0, fmt.Errorf("get purchasing watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, purchasingExtractSQL, watermark)
+	out, maxWatermark, err := extractPurchasing(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract purchasing rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.PurchasingOrderLineRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.PurchasingOrderLineRow
-		if err := rows.Scan(
-			&r.LineID, &r.PurchaseOrderID, &r.CompanyID, &r.BranchID, &r.PONumber, &r.OrderDate,
-			&r.OrderStatus, &r.SupplierID, &r.SupplierCode, &r.SupplierName, &r.ProductName,
-			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan purchasing row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate purchasing rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -79,4 +58,37 @@ func SyncPurchasing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, 
 		return 0, fmt.Errorf("advance purchasing watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractPurchasing adalah bagian "tarik dari Postgres" milik SyncPurchasing, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractPurchasing(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.PurchasingOrderLineRow, time.Time, error) {
+	rows, err := source.Query(ctx, purchasingExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract purchasing rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.PurchasingOrderLineRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.PurchasingOrderLineRow
+		if err := rows.Scan(
+			&r.LineID, &r.PurchaseOrderID, &r.CompanyID, &r.BranchID, &r.PONumber, &r.OrderDate,
+			&r.OrderStatus, &r.SupplierID, &r.SupplierCode, &r.SupplierName, &r.ProductName,
+			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan purchasing row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate purchasing rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

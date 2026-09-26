@@ -50,31 +50,11 @@ func SyncHRLeave(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lak
 		return 0, fmt.Errorf("get hr leave watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, hrLeaveExtractSQL, watermark)
+	out, maxWatermark, err := extractHRLeave(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract hr leave rows: %w", err)
+		return 0, err
 	}
-	defer rows.Close()
 
-	var out []ch.HRLeaveRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.HRLeaveRow
-		if err := rows.Scan(
-			&r.LeaveID, &r.CompanyID, &r.BranchID, &r.EmployeeID, &r.EmployeeCode,
-			&r.EmployeeName, &r.Department, &r.LeaveType, &r.Status,
-			&r.StartDate, &r.EndDate, &r.TotalDays, &r.DecidedAt, &r.CreatedAt, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan hr leave row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate hr leave rows: %w", err)
-	}
 	if len(out) == 0 {
 		return 0, nil
 	}
@@ -92,6 +72,39 @@ func SyncHRLeave(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lak
 	return len(out), nil
 }
 
+// extractHRLeave adalah bagian "tarik dari Postgres" milik SyncHRLeave, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractHRLeave(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.HRLeaveRow, time.Time, error) {
+	rows, err := source.Query(ctx, hrLeaveExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract hr leave rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.HRLeaveRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.HRLeaveRow
+		if err := rows.Scan(
+			&r.LeaveID, &r.CompanyID, &r.BranchID, &r.EmployeeID, &r.EmployeeCode,
+			&r.EmployeeName, &r.Department, &r.LeaveType, &r.Status,
+			&r.StartDate, &r.EndDate, &r.TotalDays, &r.DecidedAt, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan hr leave row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate hr leave rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
+}
+
 // SyncHRKPI memuat kepala penilaian KPI (nilai total & rating) ke
 // fact_hr_kpi_reviews. Rincian per indikator sengaja tidak ikut -- lihat
 // komentar HRKPIReviewRow.
@@ -101,31 +114,11 @@ func SyncHRKPI(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 		return 0, fmt.Errorf("get hr kpi watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, hrKPIExtractSQL, watermark)
+	out, maxWatermark, err := extractHRKPI(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract hr kpi rows: %w", err)
+		return 0, err
 	}
-	defer rows.Close()
 
-	var out []ch.HRKPIReviewRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.HRKPIReviewRow
-		if err := rows.Scan(
-			&r.ReviewID, &r.CompanyID, &r.BranchID, &r.EmployeeID, &r.EmployeeCode,
-			&r.EmployeeName, &r.Department, &r.Period, &r.Status,
-			&r.TotalScore, &r.Rating, &r.DecidedAt, &r.CreatedAt, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan hr kpi row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate hr kpi rows: %w", err)
-	}
 	if len(out) == 0 {
 		return 0, nil
 	}
@@ -141,4 +134,37 @@ func SyncHRKPI(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 		return 0, fmt.Errorf("set hr kpi watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractHRKPI adalah bagian "tarik dari Postgres" milik SyncHRKPI, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractHRKPI(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.HRKPIReviewRow, time.Time, error) {
+	rows, err := source.Query(ctx, hrKPIExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract hr kpi rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.HRKPIReviewRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.HRKPIReviewRow
+		if err := rows.Scan(
+			&r.ReviewID, &r.CompanyID, &r.BranchID, &r.EmployeeID, &r.EmployeeCode,
+			&r.EmployeeName, &r.Department, &r.Period, &r.Status,
+			&r.TotalScore, &r.Rating, &r.DecidedAt, &r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan hr kpi row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate hr kpi rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

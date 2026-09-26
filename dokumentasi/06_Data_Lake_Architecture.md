@@ -28,6 +28,13 @@ Data lake EDP adalah **medallion tiga lapis (Bronze → Silver → Gold)** di at
 
 **Endpoint** (lewat gateway): `POST /api/dw/lake/build` (Create pada menu Sync Status) membangun ulang seluruh Silver lalu Gold; `GET /api/dw/lake/gold/{finance-monthly|sales-monthly}?company_id=` membaca Gold. Build tidak berjalan otomatis di ticker — dipicu manual.
 
+**Backfill dan rekonsiliasi.** ETL biasa hanya membaca baris di atas watermark, jadi baris yang sudah tersalin ke ClickHouse *sebelum* lake dipasang (atau saat penulisan ke lake gagal) tidak pernah masuk Bronze — dan Gold yang dibangun di atasnya kekurangan angka. (Watermark disimpan sebagai `DateTime` detik penuh dan ekstraknya `>=`, jadi baris terbaru dibaca ulang tiap sync; itu sebabnya Bronze penuh duplikat, dan celahnya hanya menimpa baris yang sudah *di bawah* watermark.) Dua endpoint menutupnya:
+
+- `POST /api/dw/lake/backfill` (Create pada menu Sync Status) menulis SELURUH isi tiap tabel sumber ke Bronze dengan SQL ekstrak yang sama persis dengan sync biasa, tanpa menyentuh ClickHouse maupun watermark. Tumpang tindih dengan Bronze lama aman: di Silver versi terbaru menang. Kegagalan menulis ke lake di sini adalah galat, bukan sekadar log.
+- `GET /api/dw/lake/reconcile` (View) membandingkan jumlah baris Silver dengan `count(*) ... FINAL` ClickHouse per fact: `MATCH`, `MISSING_FROM_LAKE` (jalankan backfill), atau `EXTRA_IN_LAKE` (selidiki).
+
+Urutan setelah menambah/memasang lake: `backfill` → `build` → `reconcile`. Batas pemeriksaan ini: ia membandingkan **hitungan**, bukan isi — selisih yang saling meniadakan lolos sebagai MATCH — dan Silver yang usang terbaca sebagai selisih, jadi `build` dulu. `EXTRA_IN_LAKE` yang wajar: Bronze append-only tidak tahu baris sumber yang dihapus (di dev: 2 baris `hr_kpi_reviews` yang sudah dihapus dari Postgres dan ClickHouse masih ada di lake).
+
 ---
 
 ## Struktur Path

@@ -2518,9 +2518,19 @@ Dua sisa terakhir roadmap dikerjakan. Tidak ada lagi fase yang belum disentuh.
 - Endpoint `POST /api/dw/lake/build` dan `GET /api/dw/lake/gold/{finance-monthly|sales-monthly}?company_id=`; rule gateway ditambahkan di `policy.go`.
 - Verifikasi: 5 test Silver hijau terhadap MinIO sungguhan; `TestGold_AgreesWithClickHouse` membandingkan Gold dengan ClickHouse 24.3 sungguhan pada data yang memuat baris berubah status (DRAFT→POSTED, CONFIRMED→CANCELLED) — angkanya sama. `TestSilverFactsCoverEveryFact` mengunci daftar Silver ke 17 fact ETL. Seluruh test dw-service dan api-gateway hijau.
 
+### Backfill + rekonsiliasi (sesi 2026-09-27) — celah yang ditemukan lewat HTTP sungguhan
+
+Memanggil endpoint lake lewat gateway menemukan bahwa Gold kekurangan pendapatan Juli (5.000.000) dan penjualan Juli (24.000) yang ada di ClickHouse: baris itu tersalin 2026-07-14, sebelum dual-write MinIO dipasang 2026-07-17 (`6d5fd35`), dan watermark membuatnya tak pernah dibaca lagi. `TestGold_AgreesWithClickHouse` lolos karena kedua sisinya diberi data yang sama. Perbaikannya:
+
+- `etl/facts.go` — satu daftar `Facts` (nama, tabel ClickHouse, pool sumber, backfill) yang dipakai backfill, rekonsiliasi, dan `/sync/status`. Tiap `SyncX` dipecah jadi `extractX` + load (perilaku sync tidak berubah; seluruh test ETL lama tetap hijau); `BackfillX` memakai `extractX` dengan watermark nol.
+- `POST /api/dw/lake/backfill` dan `GET /api/dw/lake/reconcile` (rule gateway ditambahkan). `clickhouse.CountCurrentRows` memakai `FINAL`; `CountRows` (tanpa FINAL, dipakai /sync/status) bisa lebih besar.
+- Hasil di stack dev: sebelum backfill 10 dari 17 fact `MISSING_FROM_LAKE` (mis. iot_readings 1 vs 22, finance 8 vs 36); backfill menulis 100 baris; sesudah build+reconcile 16 fact `MATCH`, dan Gold finance/sales sama persis dengan ClickHouse.
+- `TestBackfill_ClosesRowsThatPredateTheLake` mereproduksi celahnya dengan ETL sungguhan (jeda 1,1 detik karena watermark hanya sedetik-presisi) lalu membuktikan backfill menutupnya tanpa menggeser watermark dan idempotent.
+- **Sisa `EXTRA_IN_LAKE`**: `hr_kpi_reviews` lake 2 vs ClickHouse 0 vs Postgres 0 — Bronze append-only tidak tahu penghapusan di sumber. Belum ditangani (butuh keputusan: tombstone, atau Silver dibangun ulang hanya dari Postgres).
+- Pemeriksaan ini hanya membandingkan hitungan (lihat `dokumentasi/06`).
+
 ### Belum dikerjakan
 
-- Endpoint HTTP `lake/*` belum diuji lewat HTTP sungguhan (handler tipis, logikanya diuji di level package).
 - Build Silver/Gold hanya manual, belum di ticker.
 - Gold baru dua dataset; belum ada UI untuknya.
 - ~~Verifikasi browser BOM/Work Order formula dan grafik OEE~~ — SUDAH (2026-09-27): daftar BOM membedakan "Formula · batch 1000" dari Per Unit; form Buat BOM mode Formula menampilkan Ukuran Batch, komponen dalam % dan peringatan total <100% secara langsung; WO formula tampil "2000 / 2 batch"; halaman OEE menampilkan 71,4 / 85,7 / 88,9 / 93,8 (sama dengan endpoint DW) beserta grafik tiga faktor dan Pareto downtime; nol error konsol. Untuk menjalankannya: warehouse-service harus di port alternatif (8089 dipakai aplikasi PHP lain) dan production-service + gateway diberi `WAREHOUSE_SERVICE_URL`.

@@ -34,29 +34,9 @@ func SyncAsset(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 		return 0, fmt.Errorf("get asset watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, assetExtractSQL, watermark)
+	out, maxWatermark, err := extractAsset(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract asset rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.AssetMaintenanceRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.AssetMaintenanceRow
-		if err := rows.Scan(
-			&r.ScheduleID, &r.CompanyID, &r.BranchID, &r.AssetID, &r.AssetCode, &r.AssetName,
-			&r.MaintenanceType, &r.ScheduledDate, &r.CompletedDate, &r.Status, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan asset row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate asset rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -74,4 +54,36 @@ func SyncAsset(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 		return 0, fmt.Errorf("advance asset watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractAsset adalah bagian "tarik dari Postgres" milik SyncAsset, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractAsset(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.AssetMaintenanceRow, time.Time, error) {
+	rows, err := source.Query(ctx, assetExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract asset rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.AssetMaintenanceRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.AssetMaintenanceRow
+		if err := rows.Scan(
+			&r.ScheduleID, &r.CompanyID, &r.BranchID, &r.AssetID, &r.AssetCode, &r.AssetName,
+			&r.MaintenanceType, &r.ScheduledDate, &r.CompletedDate, &r.Status, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan asset row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate asset rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

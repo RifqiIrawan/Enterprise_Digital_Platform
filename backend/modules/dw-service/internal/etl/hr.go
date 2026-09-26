@@ -38,32 +38,9 @@ func SyncHR(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *da
 		return 0, fmt.Errorf("get hr watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, hrExtractSQL, watermark)
+	out, maxWatermark, err := extractHR(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract hr rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.HRPayrollDetailRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.HRPayrollDetailRow
-		var wm time.Time
-		if err := rows.Scan(
-			&r.DetailID, &r.PayrollRunID, &r.CompanyID, &r.BranchID, &r.Period, &r.RunStatus,
-			&r.EmployeeID, &r.EmployeeCode, &r.EmployeeName, &r.Department,
-			&r.BasicSalary, &r.GrossSalary, &r.TotalDeduction, &r.NetSalary,
-			&r.WorkingDays, &r.PresentDays, &r.PostedAt, &wm,
-		); err != nil {
-			return 0, fmt.Errorf("scan hr row: %w", err)
-		}
-		out = append(out, r)
-		if wm.After(maxWatermark) {
-			maxWatermark = wm
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate hr rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -81,4 +58,39 @@ func SyncHR(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *da
 		return 0, fmt.Errorf("advance hr watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractHR adalah bagian "tarik dari Postgres" milik SyncHR, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractHR(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.HRPayrollDetailRow, time.Time, error) {
+	rows, err := source.Query(ctx, hrExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract hr rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.HRPayrollDetailRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.HRPayrollDetailRow
+		var wm time.Time
+		if err := rows.Scan(
+			&r.DetailID, &r.PayrollRunID, &r.CompanyID, &r.BranchID, &r.Period, &r.RunStatus,
+			&r.EmployeeID, &r.EmployeeCode, &r.EmployeeName, &r.Department,
+			&r.BasicSalary, &r.GrossSalary, &r.TotalDeduction, &r.NetSalary,
+			&r.WorkingDays, &r.PresentDays, &r.PostedAt, &wm,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan hr row: %w", err)
+		}
+		out = append(out, r)
+		if wm.After(maxWatermark) {
+			maxWatermark = wm
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate hr rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

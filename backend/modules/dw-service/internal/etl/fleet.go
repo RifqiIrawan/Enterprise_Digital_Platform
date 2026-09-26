@@ -51,33 +51,9 @@ func SyncFleet(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 		return 0, fmt.Errorf("get fleet watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, fleetExtractSQL, watermark)
+	out, maxWatermark, err := extractFleet(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract fleet rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.FleetDeliveryOrderRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.FleetDeliveryOrderRow
-		if err := rows.Scan(
-			&r.DeliveryID, &r.CompanyID, &r.BranchID, &r.DeliveryNumber,
-			&r.VehicleID, &r.VehicleCode, &r.VehicleType,
-			&r.DriverID, &r.DriverCode, &r.DriverName,
-			&r.EcommerceOrderID, &r.ReferenceNumber, &r.RecipientName,
-			&r.ScheduledDate, &r.Status, &r.DispatchedAt, &r.DeliveredAt, &r.CancelledAt,
-			&r.CreatedAt, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan fleet row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate fleet rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -95,4 +71,40 @@ func SyncFleet(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 		return 0, fmt.Errorf("advance fleet watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractFleet adalah bagian "tarik dari Postgres" milik SyncFleet, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractFleet(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.FleetDeliveryOrderRow, time.Time, error) {
+	rows, err := source.Query(ctx, fleetExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract fleet rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.FleetDeliveryOrderRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.FleetDeliveryOrderRow
+		if err := rows.Scan(
+			&r.DeliveryID, &r.CompanyID, &r.BranchID, &r.DeliveryNumber,
+			&r.VehicleID, &r.VehicleCode, &r.VehicleType,
+			&r.DriverID, &r.DriverCode, &r.DriverName,
+			&r.EcommerceOrderID, &r.ReferenceNumber, &r.RecipientName,
+			&r.ScheduledDate, &r.Status, &r.DispatchedAt, &r.DeliveredAt, &r.CancelledAt,
+			&r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan fleet row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate fleet rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

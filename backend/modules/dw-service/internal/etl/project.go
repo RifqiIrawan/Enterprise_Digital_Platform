@@ -51,34 +51,9 @@ func SyncProject(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lak
 		return 0, fmt.Errorf("get project watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, projectExtractSQL, watermark)
+	out, maxWatermark, err := extractProject(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract project rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.ProjectTimesheetRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.ProjectTimesheetRow
-		if err := rows.Scan(
-			&r.TimesheetID, &r.CompanyID, &r.BranchID, &r.ProjectID,
-			&r.ProjectCode, &r.ProjectName, &r.ProjectStatus,
-			&r.TaskID, &r.TaskNumber,
-			&r.EmployeeID, &r.EmployeeName, &r.WorkDate,
-			&r.Hours, &r.HourlyRate, &r.Amount,
-			&r.Status, &r.ApprovedAt, &r.PostedAt, &r.JournalEntryID,
-			&r.CreatedAt, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan project row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate project rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -96,4 +71,41 @@ func SyncProject(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lak
 		return 0, fmt.Errorf("advance project watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractProject adalah bagian "tarik dari Postgres" milik SyncProject, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractProject(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProjectTimesheetRow, time.Time, error) {
+	rows, err := source.Query(ctx, projectExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract project rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.ProjectTimesheetRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.ProjectTimesheetRow
+		if err := rows.Scan(
+			&r.TimesheetID, &r.CompanyID, &r.BranchID, &r.ProjectID,
+			&r.ProjectCode, &r.ProjectName, &r.ProjectStatus,
+			&r.TaskID, &r.TaskNumber,
+			&r.EmployeeID, &r.EmployeeName, &r.WorkDate,
+			&r.Hours, &r.HourlyRate, &r.Amount,
+			&r.Status, &r.ApprovedAt, &r.PostedAt, &r.JournalEntryID,
+			&r.CreatedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan project row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate project rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

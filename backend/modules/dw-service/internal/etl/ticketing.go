@@ -39,30 +39,9 @@ func SyncTicketing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, l
 		return 0, fmt.Errorf("get ticketing watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, ticketingExtractSQL, watermark)
+	out, maxWatermark, err := extractTicketing(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract ticketing rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.TicketingTicketRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.TicketingTicketRow
-		if err := rows.Scan(
-			&r.TicketID, &r.CompanyID, &r.BranchID, &r.TicketNumber, &r.CategoryID, &r.CategoryName,
-			&r.Subject, &r.Priority, &r.Status, &r.RequesterName, &r.RequesterEmail, &r.AssignedTo,
-			&r.CreatedAt, &r.ResolvedAt, &r.ClosedAt, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan ticketing row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate ticketing rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -80,4 +59,37 @@ func SyncTicketing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, l
 		return 0, fmt.Errorf("advance ticketing watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractTicketing adalah bagian "tarik dari Postgres" milik SyncTicketing, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractTicketing(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.TicketingTicketRow, time.Time, error) {
+	rows, err := source.Query(ctx, ticketingExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract ticketing rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.TicketingTicketRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.TicketingTicketRow
+		if err := rows.Scan(
+			&r.TicketID, &r.CompanyID, &r.BranchID, &r.TicketNumber, &r.CategoryID, &r.CategoryName,
+			&r.Subject, &r.Priority, &r.Status, &r.RequesterName, &r.RequesterEmail, &r.AssignedTo,
+			&r.CreatedAt, &r.ResolvedAt, &r.ClosedAt, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan ticketing row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate ticketing rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

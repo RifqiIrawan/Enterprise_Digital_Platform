@@ -37,31 +37,9 @@ func SyncQC(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *da
 		return 0, fmt.Errorf("get qc watermark: %w", err)
 	}
 
-	rows, err := source.Query(ctx, qcExtractSQL, watermark)
+	out, maxWatermark, err := extractQC(ctx, source, watermark)
 	if err != nil {
-		return 0, fmt.Errorf("extract qc rows: %w", err)
-	}
-	defer rows.Close()
-
-	var out []ch.QCInspectionRow
-	maxWatermark := watermark
-	for rows.Next() {
-		var r ch.QCInspectionRow
-		if err := rows.Scan(
-			&r.InspectionID, &r.CompanyID, &r.BranchID, &r.InspectionNumber, &r.StandardID, &r.StandardCode,
-			&r.ProductID, &r.ReferenceType, &r.ReferenceID, &r.ReferenceNumber,
-			&r.InspectedQuantity, &r.PassedQuantity, &r.FailedQuantity, &r.Result,
-			&r.InspectionDate, &r.UpdatedAt,
-		); err != nil {
-			return 0, fmt.Errorf("scan qc row: %w", err)
-		}
-		out = append(out, r)
-		if r.UpdatedAt.After(maxWatermark) {
-			maxWatermark = r.UpdatedAt
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("iterate qc rows: %w", err)
+		return 0, err
 	}
 
 	if len(out) == 0 {
@@ -79,4 +57,38 @@ func SyncQC(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *da
 		return 0, fmt.Errorf("advance qc watermark: %w", err)
 	}
 	return len(out), nil
+}
+
+// extractQC adalah bagian "tarik dari Postgres" milik SyncQC, dipisah supaya
+// Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
+// = seluruh baris) tanpa menyentuh ClickHouse.
+func extractQC(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.QCInspectionRow, time.Time, error) {
+	rows, err := source.Query(ctx, qcExtractSQL, watermark)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("extract qc rows: %w", err)
+	}
+	defer rows.Close()
+
+	var out []ch.QCInspectionRow
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.QCInspectionRow
+		if err := rows.Scan(
+			&r.InspectionID, &r.CompanyID, &r.BranchID, &r.InspectionNumber, &r.StandardID, &r.StandardCode,
+			&r.ProductID, &r.ReferenceType, &r.ReferenceID, &r.ReferenceNumber,
+			&r.InspectedQuantity, &r.PassedQuantity, &r.FailedQuantity, &r.Result,
+			&r.InspectionDate, &r.UpdatedAt,
+		); err != nil {
+			return nil, time.Time{}, fmt.Errorf("scan qc row: %w", err)
+		}
+		out = append(out, r)
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, time.Time{}, fmt.Errorf("iterate qc rows: %w", err)
+	}
+
+	return out, maxWatermark, nil
 }

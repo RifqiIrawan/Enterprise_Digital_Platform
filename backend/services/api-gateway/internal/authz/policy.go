@@ -428,6 +428,10 @@ var Rules = []Rule{
 	// setara dengan memicu sync: Create pada menu yang sama. Membaca Gold
 	// mengikuti dashboard yang memang menampilkan angka keuangan/penjualan.
 	{"POST", "/api/dw/lake/build", need("/dw/sync-status", Create)},
+	// Backfill membaca SELURUH tabel sumber, jadi Create seperti sync. Rekonsiliasi
+	// hanya membandingkan hitungan, tanpa isi baris: cukup View.
+	{"POST", "/api/dw/lake/backfill", need("/dw/sync-status", Create)},
+	{"GET", "/api/dw/lake/reconcile", need("/dw/sync-status", View)},
 	{"GET", "/api/dw/lake/gold/*", viewAny("/ai-bi/dashboards", "/bi/executive", "/bi/finance", "/bi/sales")},
 
 	// ---------- rag-service (Fase 10) ----------

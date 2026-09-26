@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
+	"github.com/enterprise-digital-platform/dw-service/internal/etl"
 )
 
 // lakeBuild membangun ulang Silver semua fact lalu Gold. Sinkron, seperti
@@ -65,4 +66,93 @@ func (h *Handler) lakeGold(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// lakeBackfill menulis seluruh isi tabel sumber ke Bronze. Ini menutup celah
+// baris yang sudah tersalin ke ClickHouse sebelum lake ada (atau saat penulisan
+// ke lake gagal): watermark membuat ETL biasa tidak pernah membacanya lagi.
+// Setelah ini jalankan POST /lake/build lalu GET /lake/reconcile.
+func (h *Handler) lakeBackfill(w http.ResponseWriter, r *http.Request) {
+	if h.lake == nil {
+		writeError(w, http.StatusServiceUnavailable, "Data lake (MinIO) tidak tersedia")
+		return
+	}
+	results := etl.BackfillAll(r.Context(), h.sources, h.lake)
+	status := http.StatusOK
+	for _, res := range results {
+		if res.Error != "" {
+			status = http.StatusMultiStatus
+			break
+		}
+	}
+	writeJSON(w, status, results)
+}
+
+type reconcileFact struct {
+	Fact           string `json:"fact"`
+	SilverRows     int    `json:"silver_rows"`
+	ClickHouseRows uint64 `json:"clickhouse_rows"`
+	// Difference = ClickHouse - Silver. Positif: ada baris di ClickHouse yang
+	// tidak ada di lake (jalankan backfill). Negatif: lake punya baris yang
+	// tidak ada di ClickHouse (selidiki; bukan sesuatu yang diperbaiki otomatis).
+	Difference int64  `json:"difference"`
+	Status     string `json:"status"`
+	Error      string `json:"error,omitempty"`
+}
+
+const (
+	reconcileMatch   = "MATCH"
+	reconcileMissing = "MISSING_FROM_LAKE"
+	reconcileExtra   = "EXTRA_IN_LAKE"
+	reconcileError   = "ERROR"
+)
+
+// lakeReconcile membandingkan jumlah baris Silver dengan baris ClickHouse yang
+// berlaku (FINAL) untuk tiap fact. Ini pemeriksaan HITUNGAN, bukan isi: dua
+// selisih yang saling meniadakan (lake kelebihan satu baris, kekurangan satu
+// baris lain) lolos sebagai MATCH. Silver yang usang juga terbaca sebagai
+// selisih, jadi jalankan POST /lake/build dulu kalau baru ada sync atau backfill.
+func (h *Handler) lakeReconcile(w http.ResponseWriter, r *http.Request) {
+	if h.lake == nil {
+		writeError(w, http.StatusServiceUnavailable, "Data lake (MinIO) tidak tersedia")
+		return
+	}
+	if h.dest == nil {
+		writeError(w, http.StatusServiceUnavailable, "ClickHouse tidak tersedia")
+		return
+	}
+	ctx := r.Context()
+	facts := make([]reconcileFact, 0, len(etl.Facts))
+	consistent := true
+	for _, f := range etl.Facts {
+		rf := reconcileFact{Fact: f.Name}
+		silver, err := h.lake.ReadSilver(ctx, f.Name)
+		if err != nil {
+			rf.Status, rf.Error = reconcileError, err.Error()
+		} else if n, err := h.dest.CountCurrentRows(ctx, f.Table); err != nil {
+			rf.Status, rf.Error = reconcileError, err.Error()
+		} else {
+			rf.SilverRows, rf.ClickHouseRows = len(silver), n
+			rf.Difference, rf.Status = classifyReconcile(len(silver), n)
+		}
+		if rf.Status != reconcileMatch {
+			consistent = false
+		}
+		facts = append(facts, rf)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"consistent": consistent, "facts": facts})
+}
+
+// classifyReconcile mengubah dua hitungan menjadi selisih (ClickHouse - Silver)
+// dan statusnya.
+func classifyReconcile(silverRows int, clickhouseRows uint64) (int64, string) {
+	diff := int64(clickhouseRows) - int64(silverRows)
+	switch {
+	case diff == 0:
+		return 0, reconcileMatch
+	case diff > 0:
+		return diff, reconcileMissing
+	default:
+		return diff, reconcileExtra
+	}
 }

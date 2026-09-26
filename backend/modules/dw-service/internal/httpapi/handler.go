@@ -28,6 +28,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /sync", h.sync)
 	mux.HandleFunc("GET /sync/status", h.syncStatus)
 	mux.HandleFunc("POST /lake/build", h.lakeBuild)
+	mux.HandleFunc("POST /lake/backfill", h.lakeBackfill)
+	mux.HandleFunc("GET /lake/reconcile", h.lakeReconcile)
 	mux.HandleFunc("GET /lake/gold/{dataset}", h.lakeGold)
 	mux.HandleFunc("GET /analytics/finance-monthly-summary", h.financeMonthlySummary)
 	mux.HandleFunc("GET /analytics/stock-movement-monthly-summary", h.stockMovementMonthlySummary)
@@ -191,28 +193,7 @@ func (h *Handler) syncStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	facts := []struct {
-		name  string
-		table string
-	}{
-		{"finance_journal_lines", "fact_finance_journal_lines"},
-		{"sales_order_lines", "fact_sales_order_lines"},
-		{"inventory_movements", "fact_inventory_movements"},
-		{"hr_payroll_details", "fact_hr_payroll_details"},
-		{"hr_leave_requests", "fact_hr_leave_requests"},
-		{"hr_kpi_reviews", "fact_hr_kpi_reviews"},
-		{"purchasing_order_lines", "fact_purchasing_order_lines"},
-		{"production_work_orders", "fact_production_work_orders"},
-		{"production_oee", "fact_production_oee"},
-		{"qc_inspections", "fact_qc_inspections"},
-		{"asset_maintenance", "fact_asset_maintenance"},
-		{"iot_readings", "fact_iot_readings"},
-		{"opportunities", "fact_crm_opportunities"},
-		{"tickets", "fact_ticketing_tickets"},
-		{"order_items", "fact_ecommerce_order_lines"},
-		{"delivery_orders", "fact_fleet_delivery_orders"},
-		{"timesheets", "fact_project_timesheets"},
-	}
+	facts := etl.Facts
 
 	type factStatus struct {
 		Fact         string `json:"fact"`
@@ -222,17 +203,17 @@ func (h *Handler) syncStatus(w http.ResponseWriter, r *http.Request) {
 
 	status := make([]factStatus, 0, len(facts))
 	for _, f := range facts {
-		count, err := h.dest.CountRows(ctx, f.table)
+		count, err := h.dest.CountRows(ctx, f.Table)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal memuat status sync: "+err.Error())
 			return
 		}
-		watermark, err := h.dest.GetWatermark(ctx, f.name)
+		watermark, err := h.dest.GetWatermark(ctx, f.Name)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal memuat watermark: "+err.Error())
 			return
 		}
-		fs := factStatus{Fact: f.name, RowCount: count}
+		fs := factStatus{Fact: f.Name, RowCount: count}
 		if !watermark.IsZero() {
 			fs.LastSyncedAt = watermark.Format("2006-01-02T15:04:05Z07:00")
 		}
