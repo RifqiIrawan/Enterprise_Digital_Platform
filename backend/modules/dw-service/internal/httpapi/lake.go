@@ -10,6 +10,7 @@ import (
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
 	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 	"github.com/enterprise-digital-platform/dw-service/internal/etl"
+	"github.com/enterprise-digital-platform/dw-service/internal/sourcedb"
 )
 
 // lakeBuild membangun ulang Silver semua fact lalu Gold. Sinkron, seperti
@@ -20,7 +21,7 @@ func (h *Handler) lakeBuild(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "Data lake (MinIO) tidak tersedia")
 		return
 	}
-	res := h.lake.BuildAll(r.Context())
+	res := h.lake.BuildAll(r.Context(), liveKeyFuncs(h.sources))
 	status := http.StatusOK
 	if len(res.Errors) > 0 {
 		// 207 bukan 500: sebagian fact berhasil dibangun, dan hasil per-fact
@@ -28,6 +29,23 @@ func (h *Handler) lakeBuild(w http.ResponseWriter, r *http.Request) {
 		status = http.StatusMultiStatus
 	}
 	writeJSON(w, status, res)
+}
+
+// liveKeyFuncs menyiapkan, untuk tiap fact, cara menanyakan ke sumber baris mana
+// yang masih ada -- dipakai Silver untuk memangkas baris yang dihapus di sumber.
+// sources nil (mis. di test tanpa Postgres) berarti tidak ada pemangkasan.
+func liveKeyFuncs(sources *sourcedb.Pools) map[string]datalake.LiveKeys {
+	if sources == nil {
+		return nil
+	}
+	out := make(map[string]datalake.LiveKeys, len(etl.Facts))
+	for _, f := range etl.Facts {
+		f := f
+		out[f.Name] = func(ctx context.Context) (map[string]struct{}, error) {
+			return f.LiveKeys(ctx, f.Source(sources))
+		}
+	}
+	return out
 }
 
 var goldDatasets = map[string]string{

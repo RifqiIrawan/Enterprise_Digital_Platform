@@ -57,8 +57,14 @@ var SilverFacts = map[string]string{
 	"order_items":            "LineID",
 }
 
+// LiveKeys mengembalikan kunci ("<CompanyID>/<id>") semua baris yang MASIH ADA
+// di sumber untuk satu fact. Bronze append-only tidak pernah tahu bahwa sebuah
+// baris dihapus di sumber, jadi tanpa ini Silver menyimpan baris hantu
+// selamanya. nil = jangan memangkas.
+type LiveKeys func(ctx context.Context) (map[string]struct{}, error)
+
 // SilverStats meringkas satu build Silver. BronzeRows = SilverRows +
-// DuplicatesDropped + Rejected selalu berlaku; itu invarian yang diuji.
+// DuplicatesDropped + Rejected + Pruned selalu berlaku; itu invarian yang diuji.
 type SilverStats struct {
 	Fact              string `json:"fact"`
 	BronzeObjects     int    `json:"bronze_objects"`
@@ -66,6 +72,10 @@ type SilverStats struct {
 	SilverRows        int    `json:"silver_rows"`
 	DuplicatesDropped int    `json:"duplicates_dropped"`
 	Rejected          int    `json:"rejected"`
+	// Pruned: baris yang ada di Bronze tetapi sudah dihapus di sumber. Bronze
+	// tetap menyimpannya sebagai riwayat; hanya Silver (keadaan terkini) yang
+	// membuangnya.
+	Pruned int `json:"pruned"`
 }
 
 func silverKey(fact string) string       { return silverPrefix + fact + "/current.jsonl" }
@@ -77,18 +87,18 @@ func silverRejectKey(fact string) string { return silverPrefix + fact + "/reject
 // tanpa data baru menghasilkan berkas yang byte-per-byte sama. Seluruh
 // fact ditampung di memori (map kunci -> baris); kalau Bronze tumbuh sampai
 // itu jadi masalah, itulah saatnya berpindah ke Spark/dbt.
-func (c *Client) BuildSilver(ctx context.Context, fact string) (SilverStats, error) {
+func (c *Client) BuildSilver(ctx context.Context, fact string, live LiveKeys) (SilverStats, error) {
 	idField, ok := SilverFacts[fact]
 	if !ok {
 		return SilverStats{Fact: fact}, fmt.Errorf("datalake: fact %q tidak dikenal", fact)
 	}
-	return c.buildSilver(ctx, fact, idField)
+	return c.buildSilver(ctx, fact, idField, live)
 }
 
 // buildSilver adalah BuildSilver dengan field id yang sudah ditentukan;
 // dipisah supaya test bisa memakai nama fact sekali-pakai tanpa menyentuh
 // Bronze fact sungguhan di bucket yang sama.
-func (c *Client) buildSilver(ctx context.Context, fact, idField string) (SilverStats, error) {
+func (c *Client) buildSilver(ctx context.Context, fact, idField string, live LiveKeys) (SilverStats, error) {
 	stats := SilverStats{Fact: fact}
 	if c == nil {
 		return stats, fmt.Errorf("datalake: data lake tidak tersedia")
@@ -117,23 +127,36 @@ func (c *Client) buildSilver(ctx context.Context, fact, idField string) (SilverS
 			}
 			stats.BronzeRows++
 
-			var probe map[string]json.RawMessage
-			if err := json.Unmarshal(line, &probe); err != nil {
-				rejected = append(rejected, append([]byte(nil), line...))
-				continue
-			}
-			rowID := unquote(probe[idField])
-			companyID := unquote(probe["CompanyID"])
-			if !validID(rowID) || !validID(companyID) {
+			key, ok := rowKey(idField, line)
+			if !ok {
 				rejected = append(rejected, append([]byte(nil), line...))
 				continue
 			}
 			// Bronze dibaca dari yang terlama ke terbaru, jadi menimpa = versi
 			// terbaru menang.
-			latest[companyID+"/"+rowID] = append([]byte(nil), line...)
+			latest[key] = append([]byte(nil), line...)
 		}
 		if err := sc.Err(); err != nil {
 			return stats, fmt.Errorf("scan %s: %w", k, err)
+		}
+	}
+
+	// Memangkas baris yang sudah dihapus di sumber. URUTANNYA penting: Bronze
+	// dibaca DULU, kunci hidup diambil SESUDAHNYA. Kebalikannya bisa memangkas
+	// baris yang baru dibuat di antara dua langkah itu (ada di Bronze, belum ada
+	// di daftar kunci hidup yang lebih tua). Kalau sumber tidak bisa ditanya,
+	// build fact ini GAGAL dan Silver lama dibiarkan -- lebih baik usang daripada
+	// menerbitkan baris hantu atau, lebih buruk, menghapus baris yang masih ada.
+	if live != nil {
+		alive, err := live(ctx)
+		if err != nil {
+			return stats, fmt.Errorf("ambil kunci hidup dari sumber: %w", err)
+		}
+		for k := range latest {
+			if _, ok := alive[k]; !ok {
+				delete(latest, k)
+				stats.Pruned++
+			}
 		}
 	}
 
@@ -150,7 +173,7 @@ func (c *Client) buildSilver(ctx context.Context, fact, idField string) (SilverS
 	}
 	stats.SilverRows = len(latest)
 	stats.Rejected = len(rejected)
-	stats.DuplicatesDropped = stats.BronzeRows - stats.SilverRows - stats.Rejected
+	stats.DuplicatesDropped = stats.BronzeRows - stats.SilverRows - stats.Rejected - stats.Pruned
 
 	if err := c.put(ctx, silverKey(fact), out.Bytes()); err != nil {
 		return stats, err
@@ -219,6 +242,38 @@ func (c *Client) Put(ctx context.Context, key string, data []byte) error {
 
 func (c *Client) Remove(ctx context.Context, key string) error {
 	return c.mc.RemoveObject(ctx, c.bucket, key, minio.RemoveObjectOptions{})
+}
+
+// rowKey adalah SATU-SATUNYA aturan kunci baris: "<CompanyID>/<id>". Silver
+// memakainya untuk mendeduplikasi, dan RowKey (di bawah) memakainya untuk
+// daftar kunci hidup dari sumber -- kalau keduanya berbeda satu karakter pun,
+// pemangkasan akan membuang baris yang masih ada.
+func rowKey(idField string, line []byte) (string, bool) {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(line, &probe); err != nil {
+		return "", false
+	}
+	rowID := unquote(probe[idField])
+	companyID := unquote(probe["CompanyID"])
+	if !validID(rowID) || !validID(companyID) {
+		return "", false
+	}
+	return companyID + "/" + rowID, true
+}
+
+// RowKey menghitung kunci Silver sebuah baris fact dari bentuk JSON-nya (baris
+// hasil ekstrak sumber di-marshal dengan encoding/json yang sama dengan
+// WriteJSONLines, jadi kuncinya identik dengan yang ada di Bronze).
+func RowKey(fact string, row any) (string, bool) {
+	idField, ok := SilverFacts[fact]
+	if !ok {
+		return "", false
+	}
+	b, err := json.Marshal(row)
+	if err != nil {
+		return "", false
+	}
+	return rowKey(idField, b)
 }
 
 func unquote(raw json.RawMessage) string {

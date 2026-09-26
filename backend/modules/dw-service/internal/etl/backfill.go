@@ -132,3 +132,122 @@ func BackfillTicketing(ctx context.Context, source *pgxpool.Pool, lake *datalake
 		return rows, err
 	})
 }
+
+func LiveKeysAsset(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(assetSourceTable, func() ([]ch.AssetMaintenanceRow, error) {
+		rows, _, err := extractAsset(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysCRM(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(crmSourceTable, func() ([]ch.CRMOpportunityRow, error) {
+		rows, _, err := extractCRM(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysEcommerce(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(ecommerceSourceTable, func() ([]ch.EcommerceOrderLineRow, error) {
+		rows, _, err := extractEcommerce(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysFinance(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(financeSourceTable, func() ([]ch.FinanceJournalLineRow, error) {
+		rows, _, err := extractFinance(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysFleet(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(fleetSourceTable, func() ([]ch.FleetDeliveryOrderRow, error) {
+		rows, _, err := extractFleet(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysHR(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(hrSourceTable, func() ([]ch.HRPayrollDetailRow, error) {
+		rows, _, err := extractHR(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysHRLeave(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(hrLeaveSourceTable, func() ([]ch.HRLeaveRow, error) {
+		rows, _, err := extractHRLeave(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysHRKPI(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(hrKPISourceTable, func() ([]ch.HRKPIReviewRow, error) {
+		rows, _, err := extractHRKPI(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysInventory(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(inventorySourceTable, func() ([]ch.InventoryMovementRow, error) {
+		rows, _, err := extractInventory(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysIoT(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(iotSourceTable, func() ([]ch.IoTReadingRow, error) {
+		rows, _, err := extractIoT(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysProduction(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(productionSourceTable, func() ([]ch.ProductionWorkOrderRow, error) {
+		rows, _, err := extractProduction(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysProductionOEE(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(productionOEESourceTable, func() ([]ch.ProductionOEERow, error) {
+		rows, _, err := extractProductionOEE(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysProject(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(projectSourceTable, func() ([]ch.ProjectTimesheetRow, error) {
+		rows, _, err := extractProject(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysPurchasing(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(purchasingSourceTable, func() ([]ch.PurchasingOrderLineRow, error) {
+		rows, _, err := extractPurchasing(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysQC(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(qcSourceTable, func() ([]ch.QCInspectionRow, error) {
+		rows, _, err := extractQC(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysSales(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(salesSourceTable, func() ([]ch.SalesOrderLineRow, error) {
+		rows, _, err := extractSales(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
+func LiveKeysTicketing(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error) {
+	return liveKeys(ticketingSourceTable, func() ([]ch.TicketingTicketRow, error) {
+		rows, _, err := extractTicketing(ctx, source, time.Time{})
+		return rows, err
+	})
+}

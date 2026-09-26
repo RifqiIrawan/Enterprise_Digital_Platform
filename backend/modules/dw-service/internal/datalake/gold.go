@@ -208,7 +208,9 @@ type BuildResult struct {
 	Errors []string      `json:"errors,omitempty"`
 }
 
-func (c *Client) BuildAll(ctx context.Context) BuildResult {
+// BuildAll: live berisi LiveKeys per fact (boleh nil, atau tanpa entri untuk
+// fact tertentu = fact itu tidak dipangkas).
+func (c *Client) BuildAll(ctx context.Context, live map[string]LiveKeys) BuildResult {
 	var res BuildResult
 	facts := make([]string, 0, len(SilverFacts))
 	for f := range SilverFacts {
@@ -216,7 +218,7 @@ func (c *Client) BuildAll(ctx context.Context) BuildResult {
 	}
 	sort.Strings(facts)
 	for _, f := range facts {
-		s, err := c.BuildSilver(ctx, f)
+		s, err := c.BuildSilver(ctx, f, live[f])
 		if err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("silver %s: %v", f, err))
 			continue

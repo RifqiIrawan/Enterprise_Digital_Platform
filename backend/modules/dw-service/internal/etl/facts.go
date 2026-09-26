@@ -21,26 +21,31 @@ type Fact struct {
 	Table    string
 	Source   func(*sourcedb.Pools) *pgxpool.Pool
 	Backfill func(ctx context.Context, source *pgxpool.Pool, lake *datalake.Client) (int, error)
+	// LiveKeys: kunci Silver semua baris yang masih ada di sumber, dari ekstrak
+	// yang sama dengan sync (jadi "masih ada" berarti "masih akan disalin sync",
+	// mis. production_oee hanya run CLOSED). Dipakai Silver untuk memangkas baris
+	// yang sudah dihapus di sumber.
+	LiveKeys func(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error)
 }
 
 var Facts = []Fact{
-	{financeSourceTable, "fact_finance_journal_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Finance }, BackfillFinance},
-	{salesSourceTable, "fact_sales_order_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Sales }, BackfillSales},
-	{inventorySourceTable, "fact_inventory_movements", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Warehouse }, BackfillInventory},
-	{hrSourceTable, "fact_hr_payroll_details", func(p *sourcedb.Pools) *pgxpool.Pool { return p.HR }, BackfillHR},
-	{hrLeaveSourceTable, "fact_hr_leave_requests", func(p *sourcedb.Pools) *pgxpool.Pool { return p.HR }, BackfillHRLeave},
-	{hrKPISourceTable, "fact_hr_kpi_reviews", func(p *sourcedb.Pools) *pgxpool.Pool { return p.HR }, BackfillHRKPI},
-	{purchasingSourceTable, "fact_purchasing_order_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Purchasing }, BackfillPurchasing},
-	{productionSourceTable, "fact_production_work_orders", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Production }, BackfillProduction},
-	{productionOEESourceTable, "fact_production_oee", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Production }, BackfillProductionOEE},
-	{qcSourceTable, "fact_qc_inspections", func(p *sourcedb.Pools) *pgxpool.Pool { return p.QC }, BackfillQC},
-	{assetSourceTable, "fact_asset_maintenance", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Asset }, BackfillAsset},
-	{iotSourceTable, "fact_iot_readings", func(p *sourcedb.Pools) *pgxpool.Pool { return p.IoT }, BackfillIoT},
-	{crmSourceTable, "fact_crm_opportunities", func(p *sourcedb.Pools) *pgxpool.Pool { return p.CRM }, BackfillCRM},
-	{ticketingSourceTable, "fact_ticketing_tickets", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Ticketing }, BackfillTicketing},
-	{ecommerceSourceTable, "fact_ecommerce_order_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Ecommerce }, BackfillEcommerce},
-	{fleetSourceTable, "fact_fleet_delivery_orders", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Fleet }, BackfillFleet},
-	{projectSourceTable, "fact_project_timesheets", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Project }, BackfillProject},
+	{financeSourceTable, "fact_finance_journal_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Finance }, BackfillFinance, LiveKeysFinance},
+	{salesSourceTable, "fact_sales_order_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Sales }, BackfillSales, LiveKeysSales},
+	{inventorySourceTable, "fact_inventory_movements", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Warehouse }, BackfillInventory, LiveKeysInventory},
+	{hrSourceTable, "fact_hr_payroll_details", func(p *sourcedb.Pools) *pgxpool.Pool { return p.HR }, BackfillHR, LiveKeysHR},
+	{hrLeaveSourceTable, "fact_hr_leave_requests", func(p *sourcedb.Pools) *pgxpool.Pool { return p.HR }, BackfillHRLeave, LiveKeysHRLeave},
+	{hrKPISourceTable, "fact_hr_kpi_reviews", func(p *sourcedb.Pools) *pgxpool.Pool { return p.HR }, BackfillHRKPI, LiveKeysHRKPI},
+	{purchasingSourceTable, "fact_purchasing_order_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Purchasing }, BackfillPurchasing, LiveKeysPurchasing},
+	{productionSourceTable, "fact_production_work_orders", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Production }, BackfillProduction, LiveKeysProduction},
+	{productionOEESourceTable, "fact_production_oee", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Production }, BackfillProductionOEE, LiveKeysProductionOEE},
+	{qcSourceTable, "fact_qc_inspections", func(p *sourcedb.Pools) *pgxpool.Pool { return p.QC }, BackfillQC, LiveKeysQC},
+	{assetSourceTable, "fact_asset_maintenance", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Asset }, BackfillAsset, LiveKeysAsset},
+	{iotSourceTable, "fact_iot_readings", func(p *sourcedb.Pools) *pgxpool.Pool { return p.IoT }, BackfillIoT, LiveKeysIoT},
+	{crmSourceTable, "fact_crm_opportunities", func(p *sourcedb.Pools) *pgxpool.Pool { return p.CRM }, BackfillCRM, LiveKeysCRM},
+	{ticketingSourceTable, "fact_ticketing_tickets", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Ticketing }, BackfillTicketing, LiveKeysTicketing},
+	{ecommerceSourceTable, "fact_ecommerce_order_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Ecommerce }, BackfillEcommerce, LiveKeysEcommerce},
+	{fleetSourceTable, "fact_fleet_delivery_orders", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Fleet }, BackfillFleet, LiveKeysFleet},
+	{projectSourceTable, "fact_project_timesheets", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Project }, BackfillProject, LiveKeysProject},
 }
 
 // BackfillResult adalah hasil backfill satu fact.
@@ -94,4 +99,24 @@ func backfill[T any](ctx context.Context, lake *datalake.Client, table string, e
 		return 0, fmt.Errorf("backfill %s: %w", table, err)
 	}
 	return len(rows), nil
+}
+
+// liveKeys mengubah hasil ekstrak (watermark nol = seluruh baris) menjadi
+// himpunan kunci Silver. Baris yang kuncinya tidak bisa dihitung membuat
+// pemanggilan GAGAL: daftar kunci yang bolong akan memangkas baris yang masih
+// ada, dan itu lebih buruk daripada tidak memangkas.
+func liveKeys[T any](fact string, extract func() ([]T, error)) (map[string]struct{}, error) {
+	rows, err := extract()
+	if err != nil {
+		return nil, err
+	}
+	keys := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		k, ok := datalake.RowKey(fact, r)
+		if !ok {
+			return nil, fmt.Errorf("live keys %s: baris sumber tanpa kunci yang valid", fact)
+		}
+		keys[k] = struct{}{}
+	}
+	return keys, nil
 }

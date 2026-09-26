@@ -67,3 +67,22 @@ func TestLakeCycle_UncheckableFactIsReported(t *testing.T) {
 		t.Errorf("error status not described: %v", lines)
 	}
 }
+
+func TestLakeCycle_PrunedRowsAreLoggedOnceUntilTheyChange(t *testing.T) {
+	facts := []reconcileFact{fact("kpi", reconcileMatch, 0, 0)}
+	build := datalake.BuildResult{Silver: []datalake.SilverStats{{Fact: "kpi", Pruned: 2}}}
+
+	lines, next := describeLakeCycle(build, true, facts, nil)
+	if len(lines) == 0 || !strings.Contains(lines[0], "kpi pruned 2 rows from Silver") {
+		t.Fatalf("first prune not reported: %v", lines)
+	}
+	// Bronze remembers the rows forever, so the same count comes back every hour.
+	if again, next2 := describeLakeCycle(build, true, facts, next); len(again) != 0 {
+		t.Errorf("an unchanged prune count was logged again: %v", again)
+	} else {
+		build.Silver[0].Pruned = 3
+		if changed, _ := describeLakeCycle(build, true, facts, next2); len(changed) == 0 || !strings.Contains(changed[0], "pruned 3 rows") {
+			t.Errorf("a changed prune count was not reported: %v", changed)
+		}
+	}
+}

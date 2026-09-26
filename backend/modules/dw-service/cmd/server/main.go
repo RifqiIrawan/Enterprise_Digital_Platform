@@ -82,7 +82,7 @@ func main() {
 	// Build Silver/Gold + rekonsiliasi berkala. Butuh lake DAN ClickHouse; tanpa
 	// salah satunya tidak ada yang bisa dibandingkan.
 	if cfg.LakeBuildSeconds > 0 && dest != nil && lake != nil {
-		go runLakeTicker(ctx, dest, lake, time.Duration(cfg.LakeBuildSeconds)*time.Second)
+		go runLakeTicker(ctx, sources, dest, lake, time.Duration(cfg.LakeBuildSeconds)*time.Second)
 	}
 
 	if cfg.StreamingEnabled {
@@ -118,7 +118,7 @@ func runTicker(ctx context.Context, sources *sourcedb.Pools, dest *clickhouse.Cl
 // menunggu satu interval penuh (bukan langsung saat start) supaya start ulang
 // service tidak memicu pembacaan seluruh Bronze; kalau perlu segera, panggil
 // POST /api/dw/lake/build.
-func runLakeTicker(ctx context.Context, dest *clickhouse.Client, lake *datalake.Client, interval time.Duration) {
+func runLakeTicker(ctx context.Context, sources *sourcedb.Pools, dest *clickhouse.Client, lake *datalake.Client, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	prev := map[string]string{}
@@ -129,7 +129,7 @@ func runLakeTicker(ctx context.Context, dest *clickhouse.Client, lake *datalake.
 		case <-ticker.C:
 		}
 		var lines []string
-		lines, prev = httpapi.RunLakeCycle(ctx, dest, lake, prev)
+		lines, prev = httpapi.RunLakeCycle(ctx, sources, dest, lake, prev)
 		for _, l := range lines {
 			log.Printf("dw-service: %s", l)
 		}

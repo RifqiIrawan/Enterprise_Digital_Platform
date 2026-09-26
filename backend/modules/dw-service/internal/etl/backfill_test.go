@@ -57,7 +57,7 @@ func TestBackfill_ClosesRowsThatPredateTheLake(t *testing.T) {
 	if _, err := SyncFinance(ctx, sourcePool, chClient, lake); err != nil {
 		t.Fatalf("SyncFinance with lake: %v", err)
 	}
-	if _, err := lake.BuildSilver(ctx, financeSourceTable); err != nil {
+	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil); err != nil {
 		t.Fatal(err)
 	}
 	if found, _ := silverHasLine(t, lineID); found {
@@ -76,7 +76,7 @@ func TestBackfill_ClosesRowsThatPredateTheLake(t *testing.T) {
 	if n < 1 {
 		t.Fatalf("BackfillFinance wrote %d rows, want at least the seeded one", n)
 	}
-	if _, err := lake.BuildSilver(ctx, financeSourceTable); err != nil {
+	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil); err != nil {
 		t.Fatal(err)
 	}
 	found, total := silverHasLine(t, lineID)
@@ -97,7 +97,7 @@ func TestBackfill_ClosesRowsThatPredateTheLake(t *testing.T) {
 	if _, err := BackfillFinance(ctx, sourcePool, lake); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lake.BuildSilver(ctx, financeSourceTable); err != nil {
+	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, total2 := silverHasLine(t, lineID); total2 != total {
@@ -124,5 +124,62 @@ func TestFactsRegistryIsConsistent(t *testing.T) {
 		if f.Table == "" || f.Source == nil || f.Backfill == nil {
 			t.Errorf("fact %q has an incomplete registry entry", f.Name)
 		}
+	}
+}
+
+// TestSilver_PrunesRowsDeletedFromPostgres is the dev-stack case (hr_kpi_reviews:
+// lake 2, Postgres 0) reproduced with the real ETL and the real source database.
+// It also proves the other half, which is what a key-format mismatch would
+// break: a row that still exists must SURVIVE pruning.
+func TestSilver_PrunesRowsDeletedFromPostgres(t *testing.T) {
+	ctx := context.Background()
+	lake := testLake(t)
+	live := func(ctx context.Context) (map[string]struct{}, error) {
+		return LiveKeysFinance(ctx, sourcePool)
+	}
+
+	keep, _ := mustSeedJournalEntryWithLine(t, uuid.New(), "POSTED")
+	gone, _ := mustSeedJournalEntryWithLine(t, uuid.New(), "POSTED")
+	if _, err := SyncFinance(ctx, sourcePool, chClient, lake); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := lake.BuildSilver(ctx, financeSourceTable, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if found, _ := silverHasLine(t, keep); !found {
+		t.Fatal("a row that still exists at the source was pruned: the live-key format differs from Silver's")
+	}
+	if found, _ := silverHasLine(t, gone); !found {
+		t.Fatal("premise broken: the row is missing from Silver before it was deleted")
+	}
+
+	if _, err := sourcePool.Exec(ctx, `DELETE FROM journal_lines WHERE id = $1`, gone); err != nil {
+		t.Fatal(err)
+	}
+	st, err = lake.BuildSilver(ctx, financeSourceTable, live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Pruned < 1 {
+		t.Errorf("Pruned = %d, want at least the deleted line", st.Pruned)
+	}
+	if st.BronzeRows != st.SilverRows+st.DuplicatesDropped+st.Rejected+st.Pruned {
+		t.Errorf("invariant broken: %+v", st)
+	}
+	if found, _ := silverHasLine(t, gone); found {
+		t.Error("the deleted line is still in Silver")
+	}
+	if found, _ := silverHasLine(t, keep); !found {
+		t.Error("the surviving line was lost")
+	}
+
+	// Bronze keeps the history: an unpruned rebuild brings the row back.
+	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil); err != nil {
+		t.Fatal(err)
+	}
+	if found, _ := silverHasLine(t, gone); !found {
+		t.Error("Bronze must still hold the deleted row as history")
 	}
 }

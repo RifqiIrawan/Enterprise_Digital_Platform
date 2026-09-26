@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 
 	ch "github.com/enterprise-digital-platform/dw-service/internal/clickhouse"
 	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
+	"github.com/enterprise-digital-platform/dw-service/internal/sourcedb"
 )
 
 // RunLakeCycle adalah satu putaran perawatan data lake yang dijalankan berkala
@@ -23,8 +25,8 @@ import (
 // Backfill TIDAK dijalankan di sini. Ia membaca seluruh tabel sumber, dan
 // menjalankannya otomatis akan menyembunyikan penyebab selisih alih-alih
 // memperlihatkannya; log hanya menunjuk ke endpoint-nya.
-func RunLakeCycle(ctx context.Context, dest *ch.Client, lake *datalake.Client, prev map[string]string) ([]string, map[string]string) {
-	build := lake.BuildAll(ctx)
+func RunLakeCycle(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client, prev map[string]string) ([]string, map[string]string) {
+	build := lake.BuildAll(ctx, liveKeyFuncs(sources))
 	consistent, facts := reconcileAll(ctx, dest, lake)
 	return describeLakeCycle(build, consistent, facts, prev)
 }
@@ -38,6 +40,17 @@ func describeLakeCycle(build datalake.BuildResult, consistent bool, facts []reco
 	next := make(map[string]string, len(facts))
 	matching := 0
 	var changed []string
+
+	// Baris yang dipangkas dari Silver karena sudah dihapus di sumber. Angkanya
+	// sama tiap putaran (Bronze tidak pernah melupakannya), jadi dicatat hanya
+	// saat berubah, dengan kunci "pruned:<fact>" di state yang sama.
+	for _, s := range build.Silver {
+		key := "pruned:" + s.Fact
+		next[key] = strconv.Itoa(s.Pruned)
+		if s.Pruned > 0 && prev[key] != next[key] {
+			changed = append(changed, fmt.Sprintf("lake build: %s pruned %d rows from Silver that were deleted at the source (kept in Bronze as history)", s.Fact, s.Pruned))
+		}
+	}
 	for _, f := range facts {
 		next[f.Fact] = f.Status
 		if f.Status == reconcileMatch {
@@ -67,9 +80,9 @@ func describeFact(f reconcileFact, before string) string {
 	case reconcileMatch:
 		return fmt.Sprintf("lake reconcile: %s now matches ClickHouse (was %s)", f.Fact, before)
 	case reconcileMissing:
-		return fmt.Sprintf("lake reconcile: %s is missing %d rows from the lake (silver %d, clickhouse %d); run POST /api/dw/lake/backfill", f.Fact, f.Difference, f.SilverRows, f.ClickHouseRows)
+		return fmt.Sprintf("lake reconcile: %s is missing %d rows from the lake (silver %d, clickhouse %d); run POST /api/dw/lake/backfill, unless the rows were deleted at the source and ClickHouse (which never deletes) still holds them", f.Fact, f.Difference, f.SilverRows, f.ClickHouseRows)
 	case reconcileExtra:
-		return fmt.Sprintf("lake reconcile: %s has %d rows in the lake that ClickHouse lacks (silver %d, clickhouse %d); likely deleted at the source", f.Fact, -f.Difference, f.SilverRows, f.ClickHouseRows)
+		return fmt.Sprintf("lake reconcile: %s has %d rows in the lake that ClickHouse lacks (silver %d, clickhouse %d); ClickHouse was probably cleared, since Silver already drops rows deleted at the source", f.Fact, -f.Difference, f.SilverRows, f.ClickHouseRows)
 	default:
 		return fmt.Sprintf("lake reconcile: %s could not be checked: %s", f.Fact, f.Error)
 	}

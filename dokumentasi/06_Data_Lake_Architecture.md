@@ -33,7 +33,13 @@ Data lake EDP adalah **medallion tiga lapis (Bronze → Silver → Gold)** di at
 - `POST /api/dw/lake/backfill` (Create pada menu Sync Status) menulis SELURUH isi tiap tabel sumber ke Bronze dengan SQL ekstrak yang sama persis dengan sync biasa, tanpa menyentuh ClickHouse maupun watermark. Tumpang tindih dengan Bronze lama aman: di Silver versi terbaru menang. Kegagalan menulis ke lake di sini adalah galat, bukan sekadar log.
 - `GET /api/dw/lake/reconcile` (View) membandingkan jumlah baris Silver dengan `count(*) ... FINAL` ClickHouse per fact: `MATCH`, `MISSING_FROM_LAKE` (jalankan backfill), atau `EXTRA_IN_LAKE` (selidiki).
 
-Urutan setelah menambah/memasang lake: `backfill` → `build` → `reconcile`. Batas pemeriksaan ini: ia membandingkan **hitungan**, bukan isi — selisih yang saling meniadakan lolos sebagai MATCH — dan Silver yang usang terbaca sebagai selisih, jadi `build` dulu. `EXTRA_IN_LAKE` yang wajar: Bronze append-only tidak tahu baris sumber yang dihapus (di dev: 2 baris `hr_kpi_reviews` yang sudah dihapus dari Postgres dan ClickHouse masih ada di lake).
+Urutan setelah menambah/memasang lake: `backfill` → `build` → `reconcile`. Batas pemeriksaan ini: ia membandingkan **hitungan**, bukan isi — selisih yang saling meniadakan lolos sebagai MATCH — dan Silver yang usang terbaca sebagai selisih, jadi `build` dulu.
+
+**Penghapusan di sumber.** Bronze append-only tidak pernah tahu bahwa sebuah baris dihapus, jadi tanpa penanganan Silver menyimpan baris hantu selamanya (di dev: 2 baris `hr_kpi_reviews` yang sudah tidak ada di Postgres). Tiap build Silver sekarang menanyakan ke sumber baris mana yang MASIH ADA — lewat ekstrak yang sama persis dengan sync, jadi "masih ada" berarti "masih akan disalin sync" (mis. `production_oee` hanya run CLOSED) — dan memangkas dari Silver kunci `(CompanyID, id)` yang sudah tidak ada. `SilverStats.pruned` melaporkan jumlahnya, dan invarian menjadi `bronze = silver + duplikat + rejected + pruned`. Bronze tetap menyimpan baris itu sebagai riwayat; membangun Silver tanpa pemangkasan menghidupkannya lagi.
+
+Aturannya konservatif: Bronze dibaca DULU, kunci hidup diambil SESUDAHNYA (kebalikannya bisa memangkas baris yang baru dibuat di antara keduanya), dan kalau sumber tidak bisa ditanya build fact itu GAGAL dan Silver lama dibiarkan — lebih baik usang daripada menerbitkan baris hantu atau menghapus baris yang masih ada. Aturan kunci (`rowKey`) hanya satu dan dipakai Silver maupun daftar kunci hidup. Biayanya: tiap build mengekstrak seluruh tabel sumber (sama beratnya dengan backfill), jadi interval build 1 jam, bukan 5 menit.
+
+Catatan: ClickHouse sendiri juga upsert-only dan tidak menghapus baris yang dihapus di sumber, jadi `MISSING_FROM_LAKE` bisa berarti backfill dibutuhkan **atau** ClickHouse masih memegang baris yang sudah dihapus. Menangani penghapusan di ClickHouse di luar cakupan ini.
 
 ---
 
