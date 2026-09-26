@@ -14,6 +14,7 @@ resources:
   - warehouse-service.yaml
   - production-service.yaml
   - qc-service.yaml
+  - rag-service.yaml
   - asset-service.yaml
   - ai-bi-service.yaml
   - dw-service.yaml
@@ -109,6 +110,7 @@ configMapGenerator:
       - ECOMMERCE_SERVICE_URL=http://ecommerce-service:8098
       - FLEET_SERVICE_URL=http://fleet-service:8099
       - PROJECT_SERVICE_URL=http://project-service:8100
+      - RAG_SERVICE_URL=http://rag-service:8101
       - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
@@ -166,6 +168,17 @@ configMapGenerator:
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_QC
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
+
+  - name: rag-service-config
+    literals:
+      - PORT=8101
+      - DATABASE_URL=REPLACE_ME_DATABASE_URL_RAG
+      - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
+      - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
+      - RAG_CORPUS_DIR=/app/corpus
+      - RAG_MODEL=claude-opus-5
+      - RAG_EFFORT=low
+      - RAG_TOP_K=5
 
   - name: asset-service-config
     literals:

@@ -445,6 +445,36 @@ services:
     networks:
       - edp-network
 
+  rag-service:
+    build:
+      context: ../backend/modules/rag-service
+      dockerfile: deployments/Dockerfile
+    environment:
+      PORT: "8101"
+      OTLP_ENDPOINT: jaeger:4318
+      DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/rag_service?sslmode=disable
+      KAFKA_BROKERS: kafka:29092
+      # Korpus di-mount read-only, bukan disalin ke dalam image: dokumentasi
+      # berubah jauh lebih sering daripada binernya.
+      RAG_CORPUS_DIR: /app/corpus
+      # Kosong = service tetap jalan, /ask mengembalikan kutipan dokumentasi
+      # tanpa jawaban naratif. Isi lewat .env atau environment shell; JANGAN
+      # ditulis di berkas ini.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      RAG_MODEL: claude-opus-5
+      RAG_EFFORT: low
+      RAG_TOP_K: "5"
+    volumes:
+      - ../dokumentasi:/app/corpus:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - kafka
+    ports:
+      - "8101:8101"
+    networks:
+      - edp-network
+
   asset-service:
     build:
       context: ../backend/modules/asset-service
@@ -692,6 +722,7 @@ services:
       ECOMMERCE_SERVICE_URL: http://ecommerce-service:8098
       FLEET_SERVICE_URL: http://fleet-service:8099
       PROJECT_SERVICE_URL: http://project-service:8100
+      RAG_SERVICE_URL: http://rag-service:8101
       JWT_SECRET: ${JWT_SECRET:-change-me}
       CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
       # Penegakan hak akses per endpoint (lihat api-gateway/internal/authz).

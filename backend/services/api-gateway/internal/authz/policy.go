@@ -425,6 +425,20 @@ var Rules = []Rule{
 	{"GET", "/api/dw/sync/status", need("/dw/sync-status", View)},
 	{"POST", "/api/dw/sync", need("/dw/sync-status", Create)},
 
+	// ---------- rag-service (Fase 10) ----------
+	// Chatbot dokumentasi. Bertanya = View pada menunya; ini bacaan, bukan
+	// perubahan apa pun pada data platform.
+	//
+	// POST /ingest menuntut Create, bukan View, walaupun "cuma" membaca ulang
+	// berkas: dia menulis ulang seluruh index yang jadi dasar jawaban chatbot,
+	// dan itu perubahan yang terlihat oleh semua orang. Riwayat pertanyaan
+	// dipisahkan ke menunya sendiri -- pertanyaan orang lain bukan sesuatu
+	// yang otomatis boleh dibaca siapa saja yang boleh bertanya.
+	{"POST", "/api/rag/ask", need("/ai-bi/chatbot", View)},
+	{"GET", "/api/rag/documents", need("/ai-bi/chatbot", View)},
+	{"POST", "/api/rag/ingest", need("/ai-bi/chatbot", Create)},
+	{"GET", "/api/rag/queries", need("/ai-bi/chatbot-queries", View)},
+
 	// ---------- crm-service ----------
 	{"GET", "/api/crm/leads", viewAny("/crm/leads", "/crm/activities")},
 	{"POST", "/api/crm/leads", need("/crm/leads", Create)},

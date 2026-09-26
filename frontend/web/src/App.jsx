@@ -60,6 +60,8 @@ import ForecastingPage from './pages/aibi/ForecastingPage.jsx'
 import AnomalyDetectionPage from './pages/aibi/AnomalyDetectionPage.jsx'
 import PredictiveMaintenancePage from './pages/aibi/PredictiveMaintenancePage.jsx'
 import ReorderRecommendationsPage from './pages/aibi/ReorderRecommendationsPage.jsx'
+import ChatbotPage from './pages/aibi/ChatbotPage.jsx'
+import ChatbotQueriesPage from './pages/aibi/ChatbotQueriesPage.jsx'
 import DevicesPage from './pages/iot/DevicesPage.jsx'
 import ReadingsPage from './pages/iot/ReadingsPage.jsx'
 import AlertsPage from './pages/iot/AlertsPage.jsx'
@@ -158,6 +160,8 @@ function App() {
         <Route path="/ai-bi/anomaly-detection" element={<AnomalyDetectionPage />} />
         <Route path="/ai-bi/predictive-maintenance" element={<PredictiveMaintenancePage />} />
         <Route path="/ai-bi/recommendations" element={<ReorderRecommendationsPage />} />
+        <Route path="/ai-bi/chatbot" element={<ChatbotPage />} />
+        <Route path="/ai-bi/chatbot-queries" element={<ChatbotQueriesPage />} />
         <Route path="/iot/devices" element={<DevicesPage />} />
         <Route path="/iot/readings" element={<ReadingsPage />} />
         <Route path="/iot/alerts" element={<AlertsPage />} />

@@ -30,6 +30,7 @@ type Config struct {
 	EcommerceServiceURL  string
 	FleetServiceURL      string
 	ProjectServiceURL    string
+	RAGServiceURL        string
 	JWTSecret            string
 	CORSAllowedOrigin    string
 	OTLPEndpoint         string
@@ -64,6 +65,7 @@ func Load() *Config {
 		EcommerceServiceURL:  getEnv("ECOMMERCE_SERVICE_URL", "http://localhost:8098"),
 		FleetServiceURL:      getEnv("FLEET_SERVICE_URL", "http://localhost:8099"),
 		ProjectServiceURL:    getEnv("PROJECT_SERVICE_URL", "http://localhost:8100"),
+		RAGServiceURL:        getEnv("RAG_SERVICE_URL", "http://localhost:8101"),
 		JWTSecret:            getEnv("JWT_SECRET", "change-me"),
 		CORSAllowedOrigin:    getEnv("CORS_ALLOWED_ORIGIN", "http://localhost:3000"),
 		OTLPEndpoint:         getEnv("OTLP_ENDPOINT", "localhost:4318"),

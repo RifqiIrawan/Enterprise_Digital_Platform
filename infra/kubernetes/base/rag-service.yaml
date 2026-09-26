@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-service
+  labels:
+    app: rag-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-service
+  template:
+    metadata:
+      labels:
+        app: rag-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8101"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: rag-service
+          image: REPLACE_ME_REGISTRY/rag-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8101
+          envFrom:
+            - configMapRef:
+                name: rag-service-config
+            # Kunci API penyedia model datang lewat Secret, BUKAN ConfigMap --
+            # alasan yang sama seperti jwt-secret di auth-service/api-gateway.
+            # optional: true disengaja: tanpa kunci, service tetap hidup dan
+            # /ask mengembalikan kutipan dokumentasi tanpa jawaban naratif,
+            # jadi Secret yang belum dibuat tidak boleh menahan Pod-nya start.
+            - secretRef:
+                name: anthropic-api-key
+                optional: true
+          volumeMounts:
+            # Korpus dokumentasi TIDAK ikut di dalam image: isinya berubah
+            # jauh lebih sering daripada binernya, dan mem-build ulang image
+            # setiap kali satu paragraf dokumentasi disunting adalah harga yang
+            # tidak masuk akal. Tanpa mount ini POST /ingest akan menjawab 424
+            # sambil menyebut path yang dicarinya -- bukan gagal diam-diam.
+            - name: corpus
+              mountPath: /app/corpus
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8101
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8101
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        # ConfigMap `rag-corpus` dibuat terpisah dari berkas dokumentasi
+        # (lihat infra/kubernetes/README atau buat dengan
+        # `kubectl create configmap rag-corpus --from-file=dokumentasi/`).
+        # optional: true supaya Pod tetap naik walau korpusnya belum dipasang.
+        - name: corpus
+          configMap:
+            name: rag-corpus
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rag-service
+  labels:
+    app: rag-service
+spec:
+  selector:
+    app: rag-service
+  ports:
+    - port: 8101
+      targetPort: 8101

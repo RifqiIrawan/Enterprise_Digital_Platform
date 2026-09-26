@@ -1,25 +1,26 @@
-go 1.25.0
+go 1.26.4
 
 use (
+	./modules/ai-bi-service
+	./modules/asset-service
+	./modules/crm-service
+	./modules/dw-service
+	./modules/ecommerce-service
 	./modules/finance-service
+	./modules/fleet-service
 	./modules/hr-service
+	./modules/iot-service
+	./modules/production-service
+	./modules/project-service
 	./modules/purchasing-service
+	./modules/qc-service
+	./modules/rag-service
 	./modules/sales-service
+	./modules/ticketing-service
+	./modules/warehouse-service
 	./services/api-gateway
 	./services/audit-service
 	./services/auth-service
 	./services/company-service
 	./services/rbac-service
-	./modules/warehouse-service
-	./modules/production-service
-	./modules/qc-service
-	./modules/asset-service
-	./modules/ai-bi-service
-	./modules/iot-service
-	./modules/dw-service
-	./modules/crm-service
-	./modules/ticketing-service
-	./modules/ecommerce-service
-	./modules/fleet-service
-	./modules/project-service
 )

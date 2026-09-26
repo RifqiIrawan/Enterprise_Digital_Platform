@@ -56,6 +56,7 @@ func New(cfg *config.Config) http.Handler {
 		{prefix: "/api/ecommerce", proxy: newProxy(cfg.EcommerceServiceURL, "/api/ecommerce")},
 		{prefix: "/api/fleet", proxy: newProxy(cfg.FleetServiceURL, "/api/fleet")},
 		{prefix: "/api/project", proxy: newProxy(cfg.ProjectServiceURL, "/api/project")},
+		{prefix: "/api/rag", proxy: newProxy(cfg.RAGServiceURL, "/api/rag")},
 	}
 
 	// Satu enforcer dipakai bersama seluruh route: cache hak akses di dalamnya

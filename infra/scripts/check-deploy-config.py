@@ -40,8 +40,11 @@ ENV_DIRS = {
 }
 
 # Kunci yang diberikan lewat Secret, bukan ConfigMap (lihat secretRef di
-# infra/kubernetes/base/{auth-service,api-gateway}.yaml).
-SECRET_KEYS = {"JWT_SECRET"}
+# infra/kubernetes/base/{auth-service,api-gateway,rag-service}.yaml).
+# ANTHROPIC_API_KEY masuk daftar ini dengan alasan yang sama seperti
+# JWT_SECRET: menaruh kunci API berbayar di ConfigMap -- yang bisa dibaca
+# siapa pun yang punya akses baca namespace -- justru yang salah.
+SECRET_KEYS = {"JWT_SECRET", "ANTHROPIC_API_KEY"}
 
 ENV_READ = re.compile(r'getEnv(?:Int|Bool|Duration)?\(\s*"([A-Z0-9_]+)"')
 
