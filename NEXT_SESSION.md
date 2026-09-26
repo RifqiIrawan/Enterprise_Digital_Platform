@@ -2523,4 +2523,6 @@ Dua sisa terakhir roadmap dikerjakan. Tidak ada lagi fase yang belum disentuh.
 - Endpoint HTTP `lake/*` belum diuji lewat HTTP sungguhan (handler tipis, logikanya diuji di level package).
 - Build Silver/Gold hanya manual, belum di ticker.
 - Gold baru dua dataset; belum ada UI untuknya.
-- Verifikasi browser halaman BOM/Work Order formula dan grafik OEE (butuh production-service + warehouse-service; port 8089 dipakai aplikasi PHP lain, jadi warehouse harus pakai port alternatif + override URL gateway).
+- ~~Verifikasi browser BOM/Work Order formula dan grafik OEE~~ — SUDAH (2026-09-27): daftar BOM membedakan "Formula · batch 1000" dari Per Unit; form Buat BOM mode Formula menampilkan Ukuran Batch, komponen dalam % dan peringatan total <100% secara langsung; WO formula tampil "2000 / 2 batch"; halaman OEE menampilkan 71,4 / 85,7 / 88,9 / 93,8 (sama dengan endpoint DW) beserta grafik tiga faktor dan Pareto downtime; nol error konsol. Untuk menjalankannya: warehouse-service harus di port alternatif (8089 dipakai aplikasi PHP lain) dan production-service + gateway diberi `WAREHOUSE_SERVICE_URL`.
+- Halaman OEE menampilkan **0,0%** saat periode tanpa run tertutup; sub-labelnya ("0 mesin dengan run tertutup") menjelaskan, tapi 0% dan "belum ada angka" adalah klaim berbeda (lihat prinsip null-bukan-nol di dw-service). Belum diubah.
+- Jendela default halaman OEE (30 hari terakhir) membuat data yang lebih tua tampak kosong sampai tanggal "Dari" digeser.
