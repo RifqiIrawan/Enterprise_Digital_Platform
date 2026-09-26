@@ -81,12 +81,10 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 type monthKey struct{ company, month string }
 
 func (c *Client) buildFinanceMonthly(ctx context.Context) (int, error) {
-	lines, err := c.ReadSilver(ctx, "finance_journal_lines")
-	if err != nil {
-		return 0, err
-	}
 	agg := map[monthKey]*FinanceMonthlyRow{}
-	for _, l := range lines {
+	// Silver dibaca sebagai aliran: yang ditahan di memori hanya agregat per
+	// bulan, bukan seluruh baris.
+	err := c.EachSilver(ctx, "finance_journal_lines", func(l []byte) error {
 		var r struct {
 			CompanyID    string
 			EntryDate    string
@@ -96,16 +94,16 @@ func (c *Client) buildFinanceMonthly(ctx context.Context) (int, error) {
 			CreditAmount float64
 		}
 		if err := json.Unmarshal(l, &r); err != nil {
-			return 0, fmt.Errorf("gold finance: baris Silver rusak: %w", err)
+			return fmt.Errorf("gold finance: baris Silver rusak: %w", err)
 		}
 		// Hanya jurnal POSTED, revenue = kredit akun REVENUE, expense = debit
 		// akun EXPENSE -- sama dengan mv_finance_monthly_line_state.
 		if r.EntryStatus != "POSTED" {
-			continue
+			return nil
 		}
 		month, ok := monthOf(r.EntryDate)
 		if !ok {
-			continue
+			return nil
 		}
 		k := monthKey{r.CompanyID, month}
 		row := agg[k]
@@ -119,6 +117,10 @@ func (c *Client) buildFinanceMonthly(ctx context.Context) (int, error) {
 		if r.AccountType == "EXPENSE" {
 			row.Expense = row.Expense.Add(decimal.NewFromFloat(r.DebitAmount))
 		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
 
 	keys := sortedMonthKeys(agg)
@@ -134,12 +136,8 @@ func (c *Client) buildFinanceMonthly(ctx context.Context) (int, error) {
 }
 
 func (c *Client) buildSalesMonthly(ctx context.Context) (int, error) {
-	lines, err := c.ReadSilver(ctx, "sales_order_lines")
-	if err != nil {
-		return 0, err
-	}
 	agg := map[monthKey]*SalesMonthlyRow{}
-	for _, l := range lines {
+	err := c.EachSilver(ctx, "sales_order_lines", func(l []byte) error {
 		var r struct {
 			CompanyID   string
 			OrderDate   string
@@ -147,16 +145,16 @@ func (c *Client) buildSalesMonthly(ctx context.Context) (int, error) {
 			Amount      float64
 		}
 		if err := json.Unmarshal(l, &r); err != nil {
-			return 0, fmt.Errorf("gold sales: baris Silver rusak: %w", err)
+			return fmt.Errorf("gold sales: baris Silver rusak: %w", err)
 		}
 		// DRAFT belum komitmen, CANCELLED tidak terjadi -- sama dengan
 		// MonthlySalesSummary.
 		if r.OrderStatus == "DRAFT" || r.OrderStatus == "CANCELLED" {
-			continue
+			return nil
 		}
 		month, ok := monthOf(r.OrderDate)
 		if !ok {
-			continue
+			return nil
 		}
 		k := monthKey{r.CompanyID, month}
 		row := agg[k]
@@ -165,6 +163,10 @@ func (c *Client) buildSalesMonthly(ctx context.Context) (int, error) {
 			agg[k] = row
 		}
 		row.SalesValue = row.SalesValue.Add(decimal.NewFromFloat(r.Amount))
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
 
 	keys := sortedMonthKeys(agg)
@@ -210,7 +212,8 @@ type BuildResult struct {
 
 // BuildAll: live berisi LiveKeys per fact (boleh nil, atau tanpa entri untuk
 // fact tertentu = fact itu tidak dipangkas).
-func (c *Client) BuildAll(ctx context.Context, live map[string]LiveKeys) BuildResult {
+// full=true memaksa build Silver penuh dari seluruh Bronze (lihat BuildSilver).
+func (c *Client) BuildAll(ctx context.Context, live map[string]LiveKeys, full bool) BuildResult {
 	var res BuildResult
 	facts := make([]string, 0, len(SilverFacts))
 	for f := range SilverFacts {
@@ -218,7 +221,7 @@ func (c *Client) BuildAll(ctx context.Context, live map[string]LiveKeys) BuildRe
 	}
 	sort.Strings(facts)
 	for _, f := range facts {
-		s, err := c.BuildSilver(ctx, f, live[f])
+		s, err := c.BuildSilver(ctx, f, live[f], full)
 		if err != nil {
 			res.Errors = append(res.Errors, fmt.Sprintf("silver %s: %v", f, err))
 			continue

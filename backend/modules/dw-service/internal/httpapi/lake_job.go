@@ -26,7 +26,8 @@ import (
 // menjalankannya otomatis akan menyembunyikan penyebab selisih alih-alih
 // memperlihatkannya; log hanya menunjuk ke endpoint-nya.
 func RunLakeCycle(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client, prev map[string]string) ([]string, map[string]string) {
-	build := lake.BuildAll(ctx, liveKeyFuncs(sources))
+	// Inkremental; build penuh otomatis tiap 24 jam (lihat datalake.fullRebuildEvery).
+	build := lake.BuildAll(ctx, liveKeyFuncs(sources), false)
 	consistent, facts := reconcileAll(ctx, dest, lake)
 	return describeLakeCycle(build, consistent, facts, prev)
 }

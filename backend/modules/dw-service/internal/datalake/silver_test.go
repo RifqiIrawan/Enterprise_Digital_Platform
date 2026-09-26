@@ -53,7 +53,7 @@ func TestBuildSilver_LatestVersionWinsAndDuplicatesDropped(t *testing.T) {
 	bronze(t, fact, t0.Add(time.Second), `{"LineID":"`+id1+`","CompanyID":"`+co1+`","Status":"POSTED"}`,
 		`{"LineID":"`+id1+`","CompanyID":"`+co2+`","Status":"DRAFT"}`)
 
-	st, err := testClient.buildSilver(ctx, fact, "LineID", nil)
+	st, err := testClient.buildSilver(ctx, fact, "LineID", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,14 +85,14 @@ func TestBuildSilver_RejectsBadRowsAndKeepsInvariant(t *testing.T) {
 		`{"LineID":"00000000-0000-0000-0000-000000000000","CompanyID":"`+co1+`"}`, // id kosong
 		`{"LineID":"`+id2+`"}`) // tanpa company
 
-	st, err := testClient.buildSilver(ctx, fact, "LineID", nil)
+	st, err := testClient.buildSilver(ctx, fact, "LineID", nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if st.SilverRows != 1 || st.Rejected != 4 {
 		t.Fatalf("stats = %+v, want silver 1 / rejected 4", st)
 	}
-	if st.BronzeRows != st.SilverRows+st.DuplicatesDropped+st.Rejected+st.Pruned {
+	if st.PreviousSilverRows+st.BronzeRows != st.SilverRows+st.DuplicatesDropped+st.Rejected+st.Pruned {
 		t.Errorf("invarian bronze = silver + dup + rejected rusak: %+v", st)
 	}
 	rej, err := testClient.Get(ctx, silverRejectKey(fact))
@@ -107,11 +107,11 @@ func TestBuildSilver_IdempotentAndClearsStaleRejects(t *testing.T) {
 	t.Cleanup(func() { cleanup(t, fact) })
 
 	bronze(t, fact, time.Now(), `{"LineID":"`+id1+`","CompanyID":"`+co1+`"}`, `garbage`)
-	if _, err := testClient.buildSilver(ctx, fact, "LineID", nil); err != nil {
+	if _, err := testClient.buildSilver(ctx, fact, "LineID", nil, true); err != nil {
 		t.Fatal(err)
 	}
 	first, _ := testClient.Get(ctx, silverKey(fact))
-	if _, err := testClient.buildSilver(ctx, fact, "LineID", nil); err != nil {
+	if _, err := testClient.buildSilver(ctx, fact, "LineID", nil, true); err != nil {
 		t.Fatal(err)
 	}
 	second, _ := testClient.Get(ctx, silverKey(fact))
@@ -126,7 +126,7 @@ func TestBuildSilver_IdempotentAndClearsStaleRejects(t *testing.T) {
 		_ = testClient.Remove(ctx, k)
 	}
 	bronze(t, fact, time.Now(), `{"LineID":"`+id1+`","CompanyID":"`+co1+`"}`)
-	st, err := testClient.buildSilver(ctx, fact, "LineID", nil)
+	st, err := testClient.buildSilver(ctx, fact, "LineID", nil, true)
 	if err != nil || st.Rejected != 0 {
 		t.Fatalf("stats=%+v err=%v", st, err)
 	}
@@ -136,7 +136,7 @@ func TestBuildSilver_IdempotentAndClearsStaleRejects(t *testing.T) {
 }
 
 func TestBuildSilver_UnknownFact(t *testing.T) {
-	if _, err := testClient.BuildSilver(context.Background(), "nope", nil); err == nil {
+	if _, err := testClient.BuildSilver(context.Background(), "nope", nil, false); err == nil {
 		t.Fatal("fact tak dikenal harus galat")
 	}
 }
@@ -170,14 +170,14 @@ func TestBuildSilver_PrunesRowsDeletedAtTheSource(t *testing.T) {
 	bronze(t, fact, t0, `{"LineID":"`+id1+`","CompanyID":"`+co1+`","V":1}`, `{"LineID":"`+id2+`","CompanyID":"`+co1+`"}`)
 	bronze(t, fact, t0.Add(time.Second), `{"LineID":"`+id1+`","CompanyID":"`+co1+`","V":2}`)
 
-	st, err := testClient.buildSilver(ctx, fact, "LineID", liveOf(co1+"/"+id1))
+	st, err := testClient.buildSilver(ctx, fact, "LineID", liveOf(co1+"/"+id1), true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if st.BronzeRows != 3 || st.SilverRows != 1 || st.DuplicatesDropped != 1 || st.Pruned != 1 || st.Rejected != 0 {
 		t.Fatalf("stats = %+v, want bronze 3 / silver 1 / dup 1 / pruned 1", st)
 	}
-	if st.BronzeRows != st.SilverRows+st.DuplicatesDropped+st.Rejected+st.Pruned {
+	if st.PreviousSilverRows+st.BronzeRows != st.SilverRows+st.DuplicatesDropped+st.Rejected+st.Pruned {
 		t.Errorf("invariant broken: %+v", st)
 	}
 	data, _ := testClient.Get(ctx, silverKey(fact))
@@ -199,13 +199,13 @@ func TestBuildSilver_SourceUnreachableKeepsPreviousSilver(t *testing.T) {
 	t.Cleanup(func() { cleanup(t, fact) })
 
 	bronze(t, fact, time.Now(), `{"LineID":"`+id1+`","CompanyID":"`+co1+`"}`)
-	if _, err := testClient.buildSilver(ctx, fact, "LineID", nil); err != nil {
+	if _, err := testClient.buildSilver(ctx, fact, "LineID", nil, true); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := testClient.Get(ctx, silverKey(fact))
 
 	down := func(context.Context) (map[string]struct{}, error) { return nil, errors.New("postgres down") }
-	if _, err := testClient.buildSilver(ctx, fact, "LineID", down); err == nil || !strings.Contains(err.Error(), "postgres down") {
+	if _, err := testClient.buildSilver(ctx, fact, "LineID", down, true); err == nil || !strings.Contains(err.Error(), "postgres down") {
 		t.Fatalf("want the source error, got %v", err)
 	}
 	after, _ := testClient.Get(ctx, silverKey(fact))
@@ -220,7 +220,7 @@ func TestBuildSilver_NilLiveKeysDoesNotPrune(t *testing.T) {
 	t.Cleanup(func() { cleanup(t, fact) })
 
 	bronze(t, fact, time.Now(), `{"LineID":"`+id1+`","CompanyID":"`+co1+`"}`)
-	st, err := testClient.buildSilver(ctx, fact, "LineID", nil)
+	st, err := testClient.buildSilver(ctx, fact, "LineID", nil, true)
 	if err != nil || st.Pruned != 0 || st.SilverRows != 1 {
 		t.Fatalf("stats=%+v err=%v", st, err)
 	}

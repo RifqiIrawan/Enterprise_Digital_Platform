@@ -21,7 +21,10 @@ func (h *Handler) lakeBuild(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "Data lake (MinIO) tidak tersedia")
 		return
 	}
-	res := h.lake.BuildAll(r.Context(), liveKeyFuncs(h.sources))
+	// ?full=true memaksa build Silver penuh dari seluruh Bronze (mis. setelah
+	// backfill besar, atau kalau curiga ada objek Bronze yang terlewat).
+	full := r.URL.Query().Get("full") == "true"
+	res := h.lake.BuildAll(r.Context(), liveKeyFuncs(h.sources), full)
 	status := http.StatusOK
 	if len(res.Errors) > 0 {
 		// 207 bukan 500: sebagian fact berhasil dibangun, dan hasil per-fact
@@ -153,14 +156,14 @@ func reconcileAll(ctx context.Context, dest *ch.Client, lake *datalake.Client) (
 	consistent := true
 	for _, f := range etl.Facts {
 		rf := reconcileFact{Fact: f.Name}
-		silver, err := lake.ReadSilver(ctx, f.Name)
+		silverRows, err := lake.CountSilver(ctx, f.Name)
 		if err != nil {
 			rf.Status, rf.Error = reconcileError, err.Error()
 		} else if n, err := dest.CountCurrentRows(ctx, f.Table); err != nil {
 			rf.Status, rf.Error = reconcileError, err.Error()
 		} else {
-			rf.SilverRows, rf.ClickHouseRows = len(silver), n
-			rf.Difference, rf.Status = classifyReconcile(len(silver), n)
+			rf.SilverRows, rf.ClickHouseRows = silverRows, n
+			rf.Difference, rf.Status = classifyReconcile(silverRows, n)
 		}
 		if rf.Status != reconcileMatch {
 			consistent = false

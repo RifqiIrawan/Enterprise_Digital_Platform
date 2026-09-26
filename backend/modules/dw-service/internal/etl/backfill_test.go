@@ -57,7 +57,7 @@ func TestBackfill_ClosesRowsThatPredateTheLake(t *testing.T) {
 	if _, err := SyncFinance(ctx, sourcePool, chClient, lake); err != nil {
 		t.Fatalf("SyncFinance with lake: %v", err)
 	}
-	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil); err != nil {
+	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if found, _ := silverHasLine(t, lineID); found {
@@ -76,7 +76,7 @@ func TestBackfill_ClosesRowsThatPredateTheLake(t *testing.T) {
 	if n < 1 {
 		t.Fatalf("BackfillFinance wrote %d rows, want at least the seeded one", n)
 	}
-	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil); err != nil {
+	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	found, total := silverHasLine(t, lineID)
@@ -97,7 +97,7 @@ func TestBackfill_ClosesRowsThatPredateTheLake(t *testing.T) {
 	if _, err := BackfillFinance(ctx, sourcePool, lake); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil); err != nil {
+	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if _, total2 := silverHasLine(t, lineID); total2 != total {
@@ -144,7 +144,7 @@ func TestSilver_PrunesRowsDeletedFromPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	st, err := lake.BuildSilver(ctx, financeSourceTable, live)
+	st, err := lake.BuildSilver(ctx, financeSourceTable, live, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,14 +158,14 @@ func TestSilver_PrunesRowsDeletedFromPostgres(t *testing.T) {
 	if _, err := sourcePool.Exec(ctx, `DELETE FROM journal_lines WHERE id = $1`, gone); err != nil {
 		t.Fatal(err)
 	}
-	st, err = lake.BuildSilver(ctx, financeSourceTable, live)
+	st, err = lake.BuildSilver(ctx, financeSourceTable, live, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if st.Pruned < 1 {
 		t.Errorf("Pruned = %d, want at least the deleted line", st.Pruned)
 	}
-	if st.BronzeRows != st.SilverRows+st.DuplicatesDropped+st.Rejected+st.Pruned {
+	if st.PreviousSilverRows+st.BronzeRows != st.SilverRows+st.DuplicatesDropped+st.Rejected+st.Pruned {
 		t.Errorf("invariant broken: %+v", st)
 	}
 	if found, _ := silverHasLine(t, gone); found {
@@ -176,7 +176,7 @@ func TestSilver_PrunesRowsDeletedFromPostgres(t *testing.T) {
 	}
 
 	// Bronze keeps the history: an unpruned rebuild brings the row back.
-	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil); err != nil {
+	if _, err := lake.BuildSilver(ctx, financeSourceTable, nil, true); err != nil {
 		t.Fatal(err)
 	}
 	if found, _ := silverHasLine(t, gone); !found {

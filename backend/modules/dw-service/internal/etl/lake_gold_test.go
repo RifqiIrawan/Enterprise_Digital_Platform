@@ -114,7 +114,7 @@ func TestGold_AgreesWithClickHouse(t *testing.T) {
 		}
 	}
 
-	res := lake.BuildAll(ctx, nil)
+	res := lake.BuildAll(ctx, nil, true)
 	for _, e := range res.Errors {
 		t.Errorf("BuildAll: %s", e)
 	}
