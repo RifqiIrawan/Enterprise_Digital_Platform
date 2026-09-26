@@ -73,15 +73,50 @@ describe('OeePage', () => {
   })
 
   it('memberi tahu saat Performance dipotong ke 100%', async () => {
+    const capped = { ...metrics, performance: 1, performance_capped: true }
     mockApi({
-      overall: { ...metrics, performance: 1, performance_capped: true },
-      machines: [],
+      overall: capped,
+      machines: [{ machine_id: 'mc-1', machine_code: 'MC-1', machine_name: 'Mesin Cetak', run_count: 1, ...capped }],
       downtime_by_reason: [],
     })
 
     renderPage()
 
     expect(await screen.findByText(/Performance dipotong ke 100%/i)).toBeTruthy()
+  })
+
+  it('tidak menampilkan 0% saat belum ada run yang ditutup', async () => {
+    // Server mengirim angka nol untuk periode kosong; 0% bukan hal yang sama
+    // dengan "belum ada yang bisa diukur".
+    mockApi({
+      overall: { ...metrics, planned_minutes: 0, downtime_minutes: 0, run_time_minutes: 0, quantity_good: 0, quantity_reject: 0, availability: 0, performance: 0, quality: 0, oee: 0 },
+      machines: [],
+      downtime_by_reason: [],
+    })
+
+    renderPage()
+
+    expect(await screen.findByText(/belum ada run tertutup pada periode ini/i)).toBeTruthy()
     expect(screen.getByText(/Belum ada eksekusi produksi yang ditutup/i)).toBeTruthy()
+    expect(screen.queryByText('0.0%')).toBeNull()
+    expect(screen.getAllByText('—').length).toBe(4) // OEE, Availability, Performance, Quality
+  })
+
+  it('mengisi "Dari" dengan tanggal 1 bulan ini menurut zona waktu lokal', async () => {
+    // 15 Sep 00:30 lokal: toISOString() di zona positif (mis. UTC+7) menghasilkan
+    // "Dari" 31 Agustus dan "Sampai" 14 September. Di zona UTC test ini lolos
+    // dengan kode lama juga, jadi ia hanya menjaga di mesin ber-zona positif.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2026, 8, 15, 0, 30))
+    try {
+      mockApi({ overall: metrics, machines: [], downtime_by_reason: [] })
+      renderPage()
+      await screen.findByText(/Rincian per Mesin/i)
+      const [from, to] = document.querySelectorAll('input[type="date"]')
+      expect(from.value).toBe('2026-09-01')
+      expect(to.value).toBe('2026-09-15')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

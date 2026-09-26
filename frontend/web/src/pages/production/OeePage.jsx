@@ -31,9 +31,17 @@ const OEE_SERIES = [
 
 const percent = (v) => `${(Number(v) * 100).toFixed(1)}%`
 
+// Tanggal LOKAL, bukan toISOString(): itu UTC, jadi di zona seperti UTC+7
+// tengah malam tanggal 1 jatuh di hari terakhir bulan sebelumnya dan "Dari"
+// terisi 31/08 alih-alih 01/09.
+function isoDate(d) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 function firstDayOfMonth() {
   const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10)
+  return isoDate(new Date(now.getFullYear(), now.getMonth(), 1))
 }
 
 function OeePage() {
@@ -42,7 +50,7 @@ function OeePage() {
   const [machines, setMachines] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [filter, setFilter] = useState({ from: firstDayOfMonth(), to: new Date().toISOString().slice(0, 10), machine_id: '' })
+  const [filter, setFilter] = useState({ from: firstDayOfMonth(), to: isoDate(new Date()), machine_id: '' })
 
   useEffect(() => {
     if (!companyId) {
@@ -70,6 +78,13 @@ function OeePage() {
     if (!companyId) return
     apiClient.get('/api/production/machines', { params: { company_id: companyId } }).then(({ data }) => setMachines(data))
   }, [companyId])
+
+  // Tanpa satu pun run yang ditutup, angka OEE bukan 0% -- 0% adalah klaim
+  // "mesinnya jalan tapi tidak menghasilkan apa-apa", padahal yang benar adalah
+  // "belum ada yang bisa diukur". Sama dengan dw-service, yang mengirim null
+  // untuk faktor yang tidak bisa dihitung.
+  const hasData = (summary?.machines.length ?? 0) > 0
+  const show = (v) => (hasData ? percent(v) : '—')
 
   const chartData = (summary?.machines ?? []).map((m) => ({
     machine: m.machine_code,
@@ -115,14 +130,18 @@ function OeePage() {
       {!loading && !error && summary && (
         <>
           <div className="row g-3">
-            <StatTile icon="bi-speedometer2" label="OEE" value={percent(summary.overall.oee)} hint={`${summary.machines.length} mesin dengan run tertutup`} />
-            <StatTile icon="bi-clock" label="Availability" value={percent(summary.overall.availability)} hint={`${summary.overall.downtime_minutes} menit downtime`} color="blue" />
-            <StatTile icon="bi-lightning-charge" label="Performance" value={percent(summary.overall.performance)} hint={`${summary.overall.run_time_minutes} menit waktu jalan`} color="amber" />
+            <StatTile icon="bi-speedometer2" label="OEE" value={show(summary.overall.oee)} hint={hasData ? `${summary.machines.length} mesin dengan run tertutup` : 'belum ada run tertutup pada periode ini'} />
+            <StatTile icon="bi-clock" label="Availability" value={show(summary.overall.availability)} hint={hasData ? `${summary.overall.downtime_minutes} menit downtime` : 'belum ada data'} color="blue" />
+            <StatTile icon="bi-lightning-charge" label="Performance" value={show(summary.overall.performance)} hint={hasData ? `${summary.overall.run_time_minutes} menit waktu jalan` : 'belum ada data'} color="amber" />
             <StatTile
               icon="bi-patch-check"
               label="Quality"
-              value={percent(summary.overall.quality)}
-              hint={`${Number(summary.overall.quantity_good)} bagus dari ${Number(summary.overall.quantity_good) + Number(summary.overall.quantity_reject)} unit`}
+              value={show(summary.overall.quality)}
+              hint={
+                hasData
+                  ? `${Number(summary.overall.quantity_good)} bagus dari ${Number(summary.overall.quantity_good) + Number(summary.overall.quantity_reject)} unit`
+                  : 'belum ada data'
+              }
               color="violet"
             />
           </div>
