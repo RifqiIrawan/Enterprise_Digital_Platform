@@ -424,6 +424,11 @@ var Rules = []Rule{
 	{"GET", "/api/dw/analytics/hr-kpi-summary", viewAny("/ai-bi/dashboards", "/bi/executive", "/bi/hr")},
 	{"GET", "/api/dw/sync/status", need("/dw/sync-status", View)},
 	{"POST", "/api/dw/sync", need("/dw/sync-status", Create)},
+	// Silver/Gold data lake. Membangun ulang membaca seluruh Bronze, jadi
+	// setara dengan memicu sync: Create pada menu yang sama. Membaca Gold
+	// mengikuti dashboard yang memang menampilkan angka keuangan/penjualan.
+	{"POST", "/api/dw/lake/build", need("/dw/sync-status", Create)},
+	{"GET", "/api/dw/lake/gold/*", viewAny("/ai-bi/dashboards", "/bi/executive", "/bi/finance", "/bi/sales")},
 
 	// ---------- rag-service (Fase 10) ----------
 	// Chatbot dokumentasi. Bertanya = View pada menunya; ini bacaan, bukan

@@ -27,6 +27,8 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.Handle("GET /metrics", metrics.Handler())
 	mux.HandleFunc("POST /sync", h.sync)
 	mux.HandleFunc("GET /sync/status", h.syncStatus)
+	mux.HandleFunc("POST /lake/build", h.lakeBuild)
+	mux.HandleFunc("GET /lake/gold/{dataset}", h.lakeGold)
 	mux.HandleFunc("GET /analytics/finance-monthly-summary", h.financeMonthlySummary)
 	mux.HandleFunc("GET /analytics/stock-movement-monthly-summary", h.stockMovementMonthlySummary)
 	mux.HandleFunc("GET /analytics/sales-monthly-summary", h.salesMonthlySummary)

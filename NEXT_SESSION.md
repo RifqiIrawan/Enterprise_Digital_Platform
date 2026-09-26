@@ -2500,3 +2500,27 @@ mana pun. `FRM-E2E-BAD` TIDAK ada — memang ditolak.
 - Sisa roadmap seluruh platform tinggal dua, dan keduanya butuh dependency baru
   di luar pola Go yang dipakai sekarang: **Silver/Gold data lake** (Spark/dbt)
   dan **RAG Chatbot** (penyedia LLM + penyimpan vektor).
+
+---
+
+## RAG Chatbot & Silver/Gold data lake: ROADMAP SELESAI (sesi 2026-09-26)
+
+Dua sisa terakhir roadmap dikerjakan. Tidak ada lagi fase yang belum disentuh.
+
+### RAG Chatbot (commit `8a57505`)
+
+`backend/modules/rag-service` menjawab pertanyaan dari dokumentasi yang di-index memakai full-text search Postgres (tanpa vector store) dan Claude untuk menyusun jawabannya. Tanpa `ANTHROPIC_API_KEY` yang dikembalikan hanya kutipan (`RETRIEVED_ONLY`). Pertanyaan tanpa bahan tidak dikirim ke model. Semua pertanyaan dicatat beserta token. Frontend: `ChatbotPage` (`/ai-bi/chatbot`) dan `ChatbotQueriesPage` (`/ai-bi/chatbot-queries`, menu terpisah untuk pengelola). Migrasi rbac 024 harus dijalankan supaya menunya muncul. **Belum diverifikasi di browser.**
+
+### Silver/Gold data lake (di Go, keputusan user: bukan Spark/dbt)
+
+- `dw-service/internal/datalake/silver.go` — `BuildSilver` per fact: kunci `(CompanyID, id)`, versi terbaru menang (sama dengan `ReplacingMergeTree(synced_at)`), baris rusak ke `rejected.jsonl`. Invarian `bronze = silver + duplikat + rejected` diuji.
+- `dw-service/internal/datalake/gold.go` — `finance_monthly` dan `sales_monthly` dari Silver, aturan sama dengan `MonthlyFinanceSummary`/`MonthlySalesSummary`.
+- Endpoint `POST /api/dw/lake/build` dan `GET /api/dw/lake/gold/{finance-monthly|sales-monthly}?company_id=`; rule gateway ditambahkan di `policy.go`.
+- Verifikasi: 5 test Silver hijau terhadap MinIO sungguhan; `TestGold_AgreesWithClickHouse` membandingkan Gold dengan ClickHouse 24.3 sungguhan pada data yang memuat baris berubah status (DRAFT→POSTED, CONFIRMED→CANCELLED) — angkanya sama. `TestSilverFactsCoverEveryFact` mengunci daftar Silver ke 17 fact ETL. Seluruh test dw-service dan api-gateway hijau.
+
+### Belum dikerjakan
+
+- Endpoint HTTP `lake/*` belum diuji lewat HTTP sungguhan (handler tipis, logikanya diuji di level package).
+- Build Silver/Gold hanya manual, belum di ticker.
+- Gold baru dua dataset; belum ada UI untuknya.
+- Verifikasi browser halaman Chatbot.

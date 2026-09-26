@@ -5,7 +5,7 @@
 
 ## Overview
 
-Data lake EDP adalah **bronze layer sederhana** di atas MinIO — raw dump dari setiap batch sync dan streaming event sebelum data masuk ke ClickHouse (curated). Tidak ada Silver/Gold layer, tidak ada Delta Lake, tidak ada Apache Spark.
+Data lake EDP adalah **medallion tiga lapis (Bronze → Silver → Gold)** di atas MinIO, seluruhnya ditulis dalam Go di dw-service. Bronze adalah raw dump dari setiap batch sync dan streaming event; Silver adalah keadaan terkini tiap baris tanpa duplikat; Gold adalah agregat bulanan yang dihitung dari Silver. Tidak ada Delta Lake dan tidak ada Apache Spark/dbt.
 
 ---
 
@@ -14,7 +14,19 @@ Data lake EDP adalah **bronze layer sederhana** di atas MinIO — raw dump dari 
 **Object Storage**: MinIO (`infra/docker-compose.yml`, port host 9004, container port 9000)  
 **Bucket**: `dw-lake`  
 **Format**: JSON Lines (`.jsonl`) — satu baris JSON per record  
-**Layer**: Bronze only (raw, no transformation)
+**Layer**:
+
+| Layer | Lokasi | Isi |
+|-------|--------|-----|
+| Bronze | `<fact>/YYYY/MM/DD/<unix-nano>.jsonl` | Raw, append-only; baris yang berubah muncul berkali-kali |
+| Silver | `silver/<fact>/current.jsonl` (+ `rejected.jsonl` bila ada) | Versi terbaru per `(CompanyID, id)`, terurut, deterministik |
+| Gold | `gold/finance_monthly.jsonl`, `gold/sales_monthly.jsonl` | Revenue/expense dan nilai penjualan per company per bulan |
+
+**Silver** memakai aturan yang sama dengan `ReplacingMergeTree(synced_at)` di ClickHouse: kunci `(CompanyID, id)`, `synced_at` terbesar menang. Baris tanpa id/company, dengan UUID kosong, atau bukan JSON tidak dibuang diam-diam — dihitung dan disimpan di `rejected.jsonl`. Selalu berlaku `bronze_rows = silver_rows + duplicates_dropped + rejected`. Build-nya full rebuild dan idempotent (dua build berturut-turut menghasilkan berkas identik).
+
+**Gold** memakai aturan bisnis yang identik dengan `MonthlyFinanceSummary` (hanya jurnal POSTED; revenue = kredit akun REVENUE; expense = debit akun EXPENSE) dan `MonthlySalesSummary` (DRAFT dan CANCELLED dikecualikan). `TestGold_AgreesWithClickHouse` membandingkan keduanya angka demi angka terhadap ClickHouse dan MinIO sungguhan, dengan data yang sengaja memuat baris yang berubah status.
+
+**Endpoint** (lewat gateway): `POST /api/dw/lake/build` (Create pada menu Sync Status) membangun ulang seluruh Silver lalu Gold; `GET /api/dw/lake/gold/{finance-monthly|sales-monthly}?company_id=` membaca Gold. Build tidak berjalan otomatis di ticker — dipicu manual.
 
 ---
 
@@ -88,9 +100,10 @@ Satu-satunya pemakaian reflection di seluruh codebase — trade-off yang disenga
 
 ---
 
-## Kenapa Hanya Bronze Layer
+## Kenapa Silver/Gold di Go, bukan Spark atau dbt
 
-- Scope awal: durability dan audit trail data mentah sebelum ClickHouse processing
-- Silver (cleansed) dan Gold (aggregated) bisa ditambahkan nanti kalau ada kebutuhan konkret
-- ClickHouse sudah berperan sebagai "gold layer" de facto untuk query analitik
-- Menambah Spark/Delta hanya untuk Silver→Gold transformation di skala ini tidak justified
+- Skalanya belum membenarkan Spark: satu fact dibaca penuh ke memori saat build. Kalau Bronze tumbuh sampai itu jadi masalah, itulah saatnya berpindah ke Spark/dbt — Silver dan Gold sudah punya kontrak (kunci, invarian, angka pembanding) yang bisa dipindahkan.
+- Tanpa dependency baru: tidak ada JVM/Python di image maupun CI.
+- ClickHouse tetap menjadi tempat query analitik interaktif; Gold di MinIO adalah salinan agregat yang bisa dikonsumsi alat lain tanpa menyentuh ClickHouse.
+
+**Batas yang perlu diketahui**: Gold baru dua dataset (yang punya padanan ClickHouse untuk dibandingkan). Dataset lain ditambahkan dengan pola yang sama, bersama padanannya. Kalau Silver satu fact gagal dibangun, Gold tetap dihitung dari Silver lama — baca `errors` di respons build sebelum mempercayai angka Gold.
