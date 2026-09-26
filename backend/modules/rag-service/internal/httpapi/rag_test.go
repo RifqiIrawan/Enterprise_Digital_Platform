@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 type ingestResponseView struct {
@@ -327,6 +328,7 @@ func TestAsk_LogsEveryQuestionWithOutcome(t *testing.T) {
 		Model        string `json:"model"`
 		InputTokens  int    `json:"input_tokens"`
 		OutputTokens int    `json:"output_tokens"`
+		CreatedAt    string `json:"created_at"`
 	}
 	resp.decode(t, &queries)
 	if len(queries) != 2 {
@@ -336,6 +338,11 @@ func TestAsk_LogsEveryQuestionWithOutcome(t *testing.T) {
 	byOutcome := map[string]int{}
 	for _, q := range queries {
 		byOutcome[q.Outcome]++
+		// Frontend memakai new Date(created_at); zona tanpa menit ("+07") lolos
+		// dari Postgres tapi ditolak browser, jadi format wajib RFC 3339 penuh.
+		if _, err := time.Parse(time.RFC3339, q.CreatedAt); err != nil {
+			t.Errorf("created_at %q bukan RFC 3339: %v", q.CreatedAt, err)
+		}
 		if q.Outcome == "ANSWERED" && (q.InputTokens == 0 || q.Model == "") {
 			t.Errorf("baris ANSWERED tidak mencatat model/token: %+v", q)
 		}

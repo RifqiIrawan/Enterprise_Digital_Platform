@@ -2509,7 +2509,7 @@ Dua sisa terakhir roadmap dikerjakan. Tidak ada lagi fase yang belum disentuh.
 
 ### RAG Chatbot (commit `8a57505`)
 
-`backend/modules/rag-service` menjawab pertanyaan dari dokumentasi yang di-index memakai full-text search Postgres (tanpa vector store) dan Claude untuk menyusun jawabannya. Tanpa `ANTHROPIC_API_KEY` yang dikembalikan hanya kutipan (`RETRIEVED_ONLY`). Pertanyaan tanpa bahan tidak dikirim ke model. Semua pertanyaan dicatat beserta token. Frontend: `ChatbotPage` (`/ai-bi/chatbot`) dan `ChatbotQueriesPage` (`/ai-bi/chatbot-queries`, menu terpisah untuk pengelola). Migrasi rbac 024 harus dijalankan supaya menunya muncul. **Belum diverifikasi di browser.**
+`backend/modules/rag-service` menjawab pertanyaan dari dokumentasi yang di-index memakai full-text search Postgres (tanpa vector store) dan Claude untuk menyusun jawabannya. Tanpa `ANTHROPIC_API_KEY` yang dikembalikan hanya kutipan (`RETRIEVED_ONLY`). Pertanyaan tanpa bahan tidak dikirim ke model. Semua pertanyaan dicatat beserta token. Frontend: `ChatbotPage` (`/ai-bi/chatbot`) dan `ChatbotQueriesPage` (`/ai-bi/chatbot-queries`, menu terpisah untuk pengelola). Migrasi rbac 024 harus dijalankan supaya menunya muncul. **Sudah diverifikasi di browser** (login, menu dari database, index 21 dokumen/188 bagian, tanya-jawab mode kutipan, halaman riwayat, nol error konsol). Verifikasi itu menemukan bug: kolom Waktu riwayat tampil "Invalid Date" karena `to_char(..., 'OF')` menghasilkan `+07` yang ditolak `new Date()`; sekarang UTC dengan `Z`, dijaga test RFC 3339.
 
 ### Silver/Gold data lake (di Go, keputusan user: bukan Spark/dbt)
 
@@ -2523,4 +2523,4 @@ Dua sisa terakhir roadmap dikerjakan. Tidak ada lagi fase yang belum disentuh.
 - Endpoint HTTP `lake/*` belum diuji lewat HTTP sungguhan (handler tipis, logikanya diuji di level package).
 - Build Silver/Gold hanya manual, belum di ticker.
 - Gold baru dua dataset; belum ada UI untuknya.
-- Verifikasi browser halaman Chatbot.
+- Verifikasi browser halaman BOM/Work Order formula dan grafik OEE (butuh production-service + warehouse-service; port 8089 dipakai aplikasi PHP lain, jadi warehouse harus pakai port alternatif + override URL gateway).

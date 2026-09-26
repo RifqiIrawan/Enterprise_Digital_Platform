@@ -190,7 +190,7 @@ type documentView struct {
 
 func (h *Handler) listDocuments(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.pool.Query(r.Context(), `
-		SELECT id::text, source_path, title, chunk_count, byte_size, to_char(indexed_at, 'YYYY-MM-DD"T"HH24:MI:SSOF')
+		SELECT id::text, source_path, title, chunk_count, byte_size, to_char(indexed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 		FROM rag_documents ORDER BY source_path ASC`)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat daftar dokumen")
@@ -238,9 +238,12 @@ func (h *Handler) listQueries(w http.ResponseWriter, r *http.Request) {
 		where = ` WHERE company_id = $2`
 	}
 
+	// Waktu dikirim sebagai UTC dengan "Z", BUKAN to_char(..., 'OF'): 'OF'
+	// menghasilkan "+07" tanpa menit, yang bukan RFC 3339 dan ditolak
+	// new Date() di browser -- kolom Waktu di halaman riwayat jadi "Invalid Date".
 	rows, err := h.pool.Query(r.Context(), `
 		SELECT id::text, question, outcome, model, input_tokens, output_tokens, latency_ms,
-		       to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SSOF')
+		       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
 		FROM rag_queries`+where+` ORDER BY created_at DESC LIMIT $1`, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat riwayat pertanyaan")
