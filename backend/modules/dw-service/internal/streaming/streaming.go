@@ -112,10 +112,8 @@ func Start(ctx context.Context, brokers, groupID string, sources *sourcedb.Pools
 	for topic, handler := range topicHandlers {
 		h := handler // capture untuk goroutine
 		t := topic
-		go consumeTopic(ctx, brokerList, groupID, t, func(raw []byte) {
-			if err := h(ctx, raw, sources, dest, lake); err != nil {
-				log.Printf("dw-streaming[%s]: handler error: %v", t, err)
-			}
+		go consumeTopic(ctx, brokerList, groupID, t, func(raw []byte) error {
+			return h(ctx, raw, sources, dest, lake)
 		})
 	}
 
