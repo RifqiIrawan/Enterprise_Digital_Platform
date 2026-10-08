@@ -113,6 +113,8 @@ Satu-satunya pemakaian reflection di seluruh codebase — trade-off yang disenga
 | `MINIO_BUCKET` | `dw-lake` | Nama bucket |
 | `MINIO_USE_SSL` | `false` | TLS untuk prod |
 
+
+**Production:** pakai akun least-privilege (`infra/minio/dw-service-policy.json`), bukan root. **Jangan pasang expiry pada Bronze**: build penuh Silver membaca seluruh Bronze, jadi objek yang kedaluwarsa membuat baris hilang dari Silver (`MISSING_FROM_LAKE`). Aturan lifecycle `AbortIncompleteMultipartUpload` ditolak MinIO; upload yatim dibersihkan MinIO sendiri (`api stale_uploads_expiry`, default 24 jam). Detail dan hasil verifikasi: `infra/minio/README.md`.
 ---
 
 ## Kenapa Silver/Gold di Go, bukan Spark atau dbt
