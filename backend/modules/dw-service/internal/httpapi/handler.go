@@ -16,6 +16,8 @@ type Handler struct {
 	sources *sourcedb.Pools
 	dest    *ch.Client
 	lake    *datalake.Client
+
+	kafkaBrokers string // kosong = replay DLQ tidak tersedia
 }
 
 func NewHandler(sources *sourcedb.Pools, dest *ch.Client, lake *datalake.Client) *Handler {
@@ -28,6 +30,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST /sync", h.sync)
 	mux.HandleFunc("GET /sync/status", h.syncStatus)
 	mux.HandleFunc("POST /lake/build", h.lakeBuild)
+	mux.HandleFunc("POST /streaming/replay", h.streamingReplay)
 	mux.HandleFunc("POST /lake/backfill", h.lakeBackfill)
 	mux.HandleFunc("GET /lake/reconcile", h.lakeReconcile)
 	mux.HandleFunc("GET /lake/gold/{dataset}", h.lakeGold)
@@ -231,3 +234,6 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
+
+// SetKafkaBrokers mengaktifkan POST /streaming/replay.
+func (h *Handler) SetKafkaBrokers(brokers string) { h.kafkaBrokers = brokers }

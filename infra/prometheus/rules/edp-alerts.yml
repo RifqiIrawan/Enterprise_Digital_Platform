@@ -145,3 +145,45 @@ groups:
             {{ $value }} goroutine, lebih dari dua kali lipat dibanding sejam
             lalu dan tidak turun selama 15 menit. Periksa panggilan
             service-to-service yang tidak punya timeout.
+
+  - name: edp-dw-streaming
+    rules:
+      - alert: DwStreamingDeadLetters
+        # Event yang gagal 3x dipindah ke <topic>.dlq. Satu saja sudah berarti
+        # ada data yang belum masuk ClickHouse lewat jalur streaming (batch ETL
+        # tiap 5 menit biasanya menutupnya, tapi penyebabnya harus dicari).
+        expr: sum by (topic) (increase(dw_streaming_events_total{outcome="dead_lettered"}[15m])) > 0
+        for: 0m
+        labels:
+          severity: warning
+        annotations:
+          summary: "dw-service: event {{ $labels.topic }} masuk dead-letter"
+          description: >-
+            {{ $value }} event dalam 15 menit terakhir. Periksa log dw-streaming,
+            perbaiki penyebabnya, lalu putar ulang dengan
+            POST /api/dw/streaming/replay?topic={{ $labels.topic }}.
+
+      - alert: DwStreamingLagging
+        # P95 latensi event (dari timestamp Kafka sampai selesai diproses)
+        # di atas 5 menit = consumer tertinggal atau handler terlalu lambat.
+        expr: histogram_quantile(0.95, sum by (le, topic) (rate(dw_streaming_event_latency_seconds_bucket[10m]))) > 300
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "dw-service: streaming {{ $labels.topic }} tertinggal"
+          description: >-
+            P95 latensi {{ $value | humanizeDuration }}. Periksa kesehatan
+            ClickHouse/Postgres dan dw_streaming_handler_duration_seconds.
+
+      - alert: DwStreamingHandlerRetries
+        expr: sum by (topic) (rate(dw_streaming_handler_retries_total[10m])) > 0.1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "dw-service: handler {{ $labels.topic }} sering di-retry"
+          description: >-
+            {{ $value | humanize }} retry/detik selama 10 menit. Biasanya
+            tanda dependensi (ClickHouse/Postgres) sedang bermasalah; belum
+            sampai dead-letter.

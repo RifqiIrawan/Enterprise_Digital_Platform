@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -122,5 +123,45 @@ func TestConsume_CommitsOffsetOnlyAfterSuccess(t *testing.T) {
 	time.Sleep(10 * time.Second)
 	if n := redelivered.Load(); n != 0 {
 		t.Fatalf("event dikirim ulang %d kali padahal sudah di-commit", n)
+	}
+}
+
+func TestReplay_MovesDeadLettersBackToTopic(t *testing.T) {
+	brokers := kafkaBrokers(t)
+	topic := "sales.order.fulfilled" // harus topic yang dikenal
+	dlq := topic + dlqSuffix
+	createTopic(t, brokers, topic)
+	createTopic(t, brokers, dlq)
+	marker := `{"entity_id":"replay-` + uuid.NewString()[:8] + `"}`
+	publish(t, brokers, dlq, marker)
+
+	oldIdle := replayIdle
+	replayIdle = 15 * time.Second
+	defer func() { replayIdle = oldIdle }()
+
+	n, err := Replay(context.Background(), strings.Join(brokers, ","), topic, 1000)
+	if err != nil {
+		t.Fatalf("Replay: %v", err)
+	}
+	if n < 1 {
+		t.Fatalf("replayed = %d, mau >= 1", n)
+	}
+
+	r := kafka.NewReader(kafka.ReaderConfig{Brokers: brokers, Topic: topic, Partition: 0, MinBytes: 1, MaxBytes: 1e6, StartOffset: kafka.FirstOffset})
+	defer r.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	for {
+		m, err := r.ReadMessage(ctx)
+		if err != nil {
+			t.Fatalf("marker %s tidak ditemukan di %s: %v", marker, topic, err)
+		}
+		if string(m.Value) == marker {
+			break
+		}
+	}
+
+	if _, err := Replay(context.Background(), strings.Join(brokers, ","), "tidak.ada", 1); err == nil {
+		t.Fatal("topic tak dikenal harus ditolak")
 	}
 }

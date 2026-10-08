@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/google/uuid"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 	"github.com/enterprise-digital-platform/dw-service/internal/etl"
 	"github.com/enterprise-digital-platform/dw-service/internal/sourcedb"
+	"github.com/enterprise-digital-platform/dw-service/internal/streaming"
 )
 
 // lakeBuild membangun ulang Silver semua fact lalu Gold. Sinkron, seperti
@@ -185,4 +187,34 @@ func classifyReconcile(silverRows int, clickhouseRows uint64) (int64, string) {
 	default:
 		return diff, reconcileExtra
 	}
+}
+
+// streamingReplay memutar ulang event dari dead-letter topic "<topic>.dlq"
+// kembali ke topic aslinya. Jalankan setelah penyebab kegagalan diperbaiki.
+// POST /streaming/replay?topic=sales.order.fulfilled&limit=100
+func (h *Handler) streamingReplay(w http.ResponseWriter, r *http.Request) {
+	topic := r.URL.Query().Get("topic")
+	if !streaming.KnownTopic(topic) {
+		writeError(w, http.StatusBadRequest, "topic tidak dikenal: "+topic)
+		return
+	}
+	limit := 100
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n <= 0 || n > 10000 {
+			writeError(w, http.StatusBadRequest, "limit harus 1..10000")
+			return
+		}
+		limit = n
+	}
+	if h.kafkaBrokers == "" {
+		writeError(w, http.StatusServiceUnavailable, "Kafka tidak dikonfigurasi")
+		return
+	}
+	n, err := streaming.Replay(r.Context(), h.kafkaBrokers, topic, limit)
+	if err != nil {
+		writeJSON(w, http.StatusBadGateway, map[string]any{"replayed": n, "error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"topic": topic, "replayed": n})
 }

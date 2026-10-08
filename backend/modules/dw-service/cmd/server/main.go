@@ -71,6 +71,7 @@ func main() {
 	}
 
 	handler := httpapi.NewHandler(sources, dest, lake)
+	handler.SetKafkaBrokers(cfg.KafkaBrokers)
 
 	mux := http.NewServeMux()
 	handler.Register(mux)
