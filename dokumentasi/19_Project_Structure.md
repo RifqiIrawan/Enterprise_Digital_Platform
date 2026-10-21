@@ -9,7 +9,7 @@
 Enterprise_Digital_Platform/
 ├── .github/
 │   └── workflows/
-│       ├── backend-ci.yml      # Build/vet/test matrix untuk 16 Go services
+│       ├── backend-ci.yml      # Build/vet/test matrix untuk 22 Go services
 │       └── frontend-ci.yml     # Lint + build untuk React frontend
 │
 ├── backend/
@@ -34,7 +34,13 @@ Enterprise_Digital_Platform/
 │       ├── asset-service/      # Port 28092 — Aset, Maintenance
 │       ├── ai-bi-service/      # Port 28093 — BI, Forecasting, Anomaly
 │       ├── iot-service/        # Port 28094 — Device, MQTT, Simulator
-│       └── dw-service/         # Port 28095 — ETL → ClickHouse + MinIO
+│       ├── dw-service/         # Port 28095 — ETL → ClickHouse + MinIO
+│       ├── crm-service/        # Port 28096 — Lead, Account, Opportunity
+│       ├── ticketing-service/  # Port 28097 — Tiket dukungan
+│       ├── ecommerce-service/  # Port 28098 — Pesanan online
+│       ├── fleet-service/      # Port 28099 — Kendaraan, pengemudi, surat jalan
+│       ├── project-service/    # Port 28100 — Proyek, tugas, timesheet
+│       └── rag-service/        # Port 28101 — Chatbot dokumentasi (RAG)
 │
 ├── frontend/
 │   └── web/                    # React 18 + Vite SPA
@@ -58,13 +64,13 @@ Enterprise_Digital_Platform/
 │       └── nginx.conf                      # SPA fallback: try_files $uri /index.html
 │
 ├── infra/
-│   ├── docker-compose.yml      # Full stack: 4 infra + 14 Go services + 1 frontend (19 containers)
+│   ├── docker-compose.yml      # Full stack: infra + observability + 22 Go services + 1 frontend (35 containers)
 │   ├── README.md               # Panduan port mapping, database setup
 │   ├── .env.example
 │   │
 │   ├── environments/
-│   │   ├── staging/            # 15 file .env.example (1 per service)
-│   │   └── production/         # 15 file .env.example (1 per service)
+│   │   ├── staging/            # 22 file .env.example (1 per service)
+│   │   └── production/         # 22 file .env.example (1 per service)
 │   │
 │   ├── kafka/
 │   │   └── topics.md           # Konvensi penamaan topic
@@ -73,7 +79,7 @@ Enterprise_Digital_Platform/
 │   │   └── mosquitto.conf      # Allow anonymous (dev only)
 │   │
 │   └── kubernetes/
-│       ├── base/               # 14 Deployment + 14 Service + 14 ConfigMap + 1 Ingress
+│       ├── base/               # 23 Deployment + 23 Service + 22 ConfigMap + 1 Ingress
 │       └── overlays/
 │           ├── dev/            # namespace=edp-dev, local images, host.docker.internal
 │           ├── staging/        # namespace=edp-staging, replicas=2
@@ -116,7 +122,7 @@ Enterprise_Digital_Platform/
 
 ## Go Workspace
 
-`backend/go.work` mendaftarkan semua 16 module:
+`backend/go.work` mendaftarkan semua 22 module:
 
 ```
 go 1.25.0

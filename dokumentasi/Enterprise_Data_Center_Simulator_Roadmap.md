@@ -27,7 +27,7 @@
 
 ## Apa yang Sudah Dibangun
 
-### 21 Service Go (berjalan sekaligus)
+### 22 Service Go (berjalan sekaligus)
 
 | Service | Port | DB | Fitur Utama |
 |---------|------|----|-------------|
@@ -52,6 +52,7 @@
 | ecommerce-service | 28098 | ecommerce_service | Orders, Order Items (checkout online) |
 | fleet-service | 28099 | fleet_service | Kendaraan, Pengemudi, Surat Jalan |
 | project-service | 28100 | project_service | Proyek, Tugas, Timesheet (biaya ke GL) |
+| rag-service | 28101 | — | Chatbot dokumentasi (RAG): kutipan dari `dokumentasi/`, jawaban model bila `ANTHROPIC_API_KEY` diisi |
 
 ### Integrasi Utama
 
@@ -61,7 +62,7 @@
 - **DW Batch ETL**: dw-service → 14 Postgres DB → ClickHouse + MinIO (setiap 5 menit)
 - **DW Streaming ETL**: Kafka (17 topics) → dw-service → ClickHouse + MinIO (<100ms)
 - **IoT Pipeline**: iot-service simulator → MQTT → Mosquitto → subscribe → Postgres + Kafka
-- **Observability**: semua 21 service → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) port 28096, ticketing-service (Fase 11) port 28097, ecommerce-service (Fase 12) port 28098, fleet-service (Fase 13) port 28099, dan project-service (Fase 14) port 28100 sudah ditambahkan ke target list statis `infra/prometheus/prometheus.yml` sejak production-readiness masing-masing (2026-08-09/10/13/16)
+- **Observability**: semua 22 service → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) port 28096, ticketing-service (Fase 11) port 28097, ecommerce-service (Fase 12) port 28098, fleet-service (Fase 13) port 28099, dan project-service (Fase 14) port 28100 sudah ditambahkan ke target list statis `infra/prometheus/prometheus.yml` sejak production-readiness masing-masing (2026-08-09/10/13/16)
 - **Stock-out E-Commerce**: ecommerce-service → warehouse-service (via HTTP `POST /stock-movements/batch`, `reference_type=ECOMMERCE_ORDER`) saat order SHIPPED, pola identik Sales Order FULFILLED
 - **Penugasan orang**: project-service → hr-service (via HTTP `GET /employees/{id}`) untuk memvalidasi + men-snapshot nama karyawan pada proyek/tugas/timesheet, dan menurunkan tarif per jam default dari `basic_salary`
 
@@ -94,7 +95,7 @@ Lihat `20_Implementation_Guide.md` untuk panduan lengkap.
 # 1. Start infra
 cd infra && docker compose up -d
 
-# 2. Start semua 21 Go services (masing-masing di terminal sendiri)
+# 2. Start semua 22 Go services (masing-masing di terminal sendiri)
 cd backend/modules/finance-service && go run ./cmd/server
 # ... (ulangi untuk semua service)
 
@@ -111,4 +112,4 @@ cd frontend/web && npm run dev
 
 GitHub: [github.com/RifqiIrawan/Enterprise_Digital_Platform](https://github.com/RifqiIrawan/Enterprise_Digital_Platform) (public)
 
-CI/CD: GitHub Actions — backend matrix test (semua 21 service) + frontend build, hijau di semua commit.
+CI/CD: GitHub Actions — backend matrix test (semua 22 service) + frontend build, hijau di semua commit.

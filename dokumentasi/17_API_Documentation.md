@@ -27,7 +27,9 @@ Response: `{"token": "eyJ..."}` — simpan dan kirim di header `Authorization: B
 | Method | Path | Fungsi |
 |--------|------|--------|
 | POST | `/api/auth/login` | Login, return JWT |
-| GET | `/api/auth/me` | Info user dari token |
+| POST | `/api/auth/refresh` | Tukar refresh token dengan JWT baru (publik, sama seperti login) |
+| POST | `/api/auth/logout` | Logout |
+| POST | `/api/auth/change-password` | Ganti password sendiri |
 | POST | `/api/auth/users` | Buat user baru |
 | GET | `/api/auth/users` | List users |
 
@@ -39,8 +41,11 @@ Response: `{"token": "eyJ..."}` — simpan dan kirim di header `Authorization: B
 |--------|------|--------|
 | GET | `/api/company/companies` | List companies |
 | POST | `/api/company/companies` | Buat company |
-| GET | `/api/company/branches?company_id=<uuid>` | List branches |
-| POST | `/api/company/branches` | Buat branch |
+| GET/PUT | `/api/company/companies/{id}` | Detail / ubah company |
+| GET/POST | `/api/company/companies/{id}/branches` | List / buat branch |
+| PUT/DELETE | `/api/company/companies/{id}/branches/{branchId}` | Ubah / hapus branch |
+| GET/POST | `/api/company/companies/{id}/departments` | List / buat departemen |
+| PUT/DELETE | `/api/company/companies/{id}/departments/{departmentId}` | Ubah / hapus departemen |
 
 ---
 
@@ -51,9 +56,11 @@ Response: `{"token": "eyJ..."}` — simpan dan kirim di header `Authorization: B
 | GET | `/api/rbac/menu-tree` | Tree menu sesuai role user (dipakai sidebar frontend) |
 | GET | `/api/rbac/roles` | List roles |
 | POST | `/api/rbac/roles` | Buat role |
-| GET | `/api/rbac/roles/{id}/menus` | Permission matrix role |
-| PUT | `/api/rbac/roles/{id}/menus` | Update permission |
-| POST | `/api/rbac/users/{userId}/roles/{roleId}` | Assign role ke user |
+| GET | `/api/rbac/roles/{id}/permissions` | Permission matrix role |
+| PUT | `/api/rbac/roles/{id}/permissions` | Update permission |
+| GET/POST | `/api/rbac/user-roles` | List / assign role ke user |
+| DELETE | `/api/rbac/user-roles/{id}` | Cabut role dari user |
+| GET | `/api/rbac/access?user_id=&company_id=` | Keanggotaan dan peta hak akses satu user di satu company (dipakai gateway untuk menegakkan izin) |
 
 ---
 
@@ -98,10 +105,10 @@ Query param `company_id` wajib. `branch_id` opsional (NULL-inclusive filter).
 | GET/POST | `/api/sales/quotations` | List/buat quotation |
 | POST | `/api/sales/quotations/{id}/send` | Kirim quotation |
 | POST | `/api/sales/quotations/{id}/accept` | Terima → buat SO |
-| GET/POST | `/api/sales/orders` | List/buat SO |
-| POST | `/api/sales/orders/{id}/confirm` | Konfirmasi SO |
-| POST | `/api/sales/orders/{id}/fulfill` | Fulfill → stock out |
-| POST | `/api/sales/orders/{id}/invoice` | Invoice → buat AR |
+| GET/POST | `/api/sales/sales-orders` | List/buat SO |
+| POST | `/api/sales/sales-orders/{id}/confirm` | Konfirmasi SO |
+| POST | `/api/sales/sales-orders/{id}/fulfill` | Fulfill → stock out (`409` jika stok tidak cukup) |
+| POST | `/api/sales/sales-orders/{id}/invoice` | Invoice → buat AR |
 
 ---
 
@@ -127,8 +134,8 @@ Query param `company_id` wajib. `branch_id` opsional (NULL-inclusive filter).
 | GET/POST | `/api/warehouse/products` | List/buat produk |
 | GET/POST | `/api/warehouse/warehouses` | List/buat gudang |
 | GET | `/api/warehouse/stock-movements` | List mutasi stok |
-| POST | `/api/warehouse/stock-movements/batch` | Batch stock movement (service-to-service). OUT yang melebihi saldo → `409` (`code: INSUFFICIENT_STOCK`), batch dibatalkan seluruhnya |
-| GET | `/api/warehouse/stock-balances` | Saldo stok per warehouse |
+| POST | `/api/warehouse/stock-movements/batch` | Batch stock movement. Hanya service-to-service (`internalOnly` di gateway, tidak bisa dipanggil dari luar). OUT yang melebihi saldo → `409` (`code: INSUFFICIENT_STOCK`), batch dibatalkan seluruhnya |
+| GET | `/api/warehouse/stock` | Saldo stok per warehouse |
 | GET/POST | `/api/warehouse/stock-transfers` | List/buat transfer |
 | POST | `/api/warehouse/stock-transfers/{id}/confirm` | Konfirmasi transfer → pindah stok (`409` jika gudang asal kurang) |
 | GET/POST | `/api/warehouse/stock-opnames` | List/buat opname |
@@ -164,9 +171,9 @@ GET/POST /api/iot/devices          # Device management
 GET      /api/iot/readings         # Sensor readings
 GET/PUT  /api/iot/alerts           # Alert management + acknowledge/resolve
 
-GET /api/aibi/dashboards/summary   # Aggregated KPIs dari 8 service
-GET /api/aibi/forecasting/{metric} # Proyeksi tren linear
-GET /api/aibi/anomaly-detection/{domain}  # Z-score outlier detection
+GET /api/ai-bi/dashboards/summary   # Aggregated KPIs dari beberapa service
+GET /api/ai-bi/forecasting/summary # Proyeksi tren linear
+GET /api/ai-bi/anomaly-detection/scan  # Z-score outlier detection
 
 GET  /api/dw/sync/status  # Status per fact table (row count + watermark)
 POST /api/dw/sync         # Trigger manual batch ETL
@@ -183,7 +190,7 @@ POST /api/dw/streaming/replay?topic=&limit=  # Putar ulang event dari dead-lette
 ## Audit Trail
 
 ```
-GET /api/audit/logs?company_id=<uuid>&entity_type=sales_order&limit=50
+GET /api/audit/audit-logs?company_id=<uuid>&entity_type=sales_order&limit=50
 ```
 
 Response:

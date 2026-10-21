@@ -60,7 +60,7 @@ Backend dan frontend dipisah sebagai folder mandiri di root repo (`backend/` vs 
    npm run dev
    ```
 
-Alternatif: seluruh 21 service Go + frontend juga bisa dijalankan sekaligus sebagai
+Alternatif: seluruh 22 service Go + frontend juga bisa dijalankan sekaligus sebagai
 container (`cd infra && docker compose up -d --build`), tanpa perlu 22 terminal
 manual — lihat "Full app stack di Docker" di `infra/README.md`. Postgres tetap
 harus jalan native seperti langkah 1 di atas.

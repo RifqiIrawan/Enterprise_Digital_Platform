@@ -5,7 +5,7 @@
 
 ## Overview
 
-`dw-service` (port 28095) adalah modul dedicated untuk analytical data pipeline. Service ini membaca langsung dari database Postgres 9 service lain (bukan lewat HTTP API mereka) dan menulis ke ClickHouse sebagai destinasi OLAP, dengan MinIO sebagai raw data lake (bronze layer).
+`dw-service` (port 28095) adalah modul dedicated untuk analytical data pipeline. Service ini membaca langsung dari database Postgres 14 service lain (bukan lewat HTTP API mereka) dan menulis ke ClickHouse sebagai destinasi OLAP, dengan MinIO sebagai raw data lake (bronze layer).
 
 **Tidak menggunakan**: dbt, Airbyte, Debezium, Airflow, star schema dengan dimension tables terpisah.
 
@@ -84,7 +84,7 @@ Semua tabel **denormalized** — JOIN dimensi (customer_name, account_code, dll)
 
 ## Batch ETL — Detail Implementasi
 
-**Package**: `internal/etl/` (9 file: finance.go, sales.go, inventory.go, hr.go, purchasing.go, production.go, qc.go, asset.go, iot.go)
+**Package**: `internal/etl/` (satu file per fact: finance.go, sales.go, inventory.go, hr.go, hr_leave_kpi.go, purchasing.go, production.go (work order, OEE, downtime), qc.go, asset.go, iot.go, crm.go, ticketing.go, ecommerce.go, fleet.go, project.go; plus facts.go (daftar fact), backfill.go (backfill dan kunci hidup), keysonly.go (query kunci-saja))
 
 **Alur per SyncX:**
 1. Baca watermark terakhir dari `etl_sync_state` di ClickHouse

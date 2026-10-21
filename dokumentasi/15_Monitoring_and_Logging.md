@@ -5,7 +5,7 @@
 
 ## Status Saat Ini
 
-EDP punya stack observability lengkap (metrics, logs, traces) untuk seluruh 16 service Go, ditambahkan bertahap sebagai 3 fase:
+EDP punya stack observability lengkap (metrics, logs, traces) untuk seluruh 22 service Go, ditambahkan bertahap sebagai 3 fase:
 
 1. **Fase 1 — Metrics**: Prometheus + Grafana
 2. **Fase 2 — Logging**: JSON structured logs + request ID correlation + Loki/Promtail
@@ -28,7 +28,7 @@ Setiap service punya package `internal/metrics` yang expose 2 metric via `GET /m
 
 `route` diambil dari pattern mux yang match (`GET /accounts/{id}`), bukan raw URL — supaya UUID di path tidak bikin cardinality meledak.
 
-**Prometheus** (`infra/prometheus/prometheus.yml`, docker-compose only) scrape `host.docker.internal:<port>/metrics` tiap 15 detik untuk semua 16 service — desain ini sengaja seragam untuk 3 mode runtime yang mungkin dipakai (native `go run`, container app-service di docker-compose ini, atau pod K8s dev overlay lewat `kubectl port-forward`), karena ketiganya berakhir bind ke port host yang sama.
+**Prometheus** (`infra/prometheus/prometheus.yml`, docker-compose only) scrape `host.docker.internal:<port>/metrics` tiap 15 detik untuk semua 22 service — desain ini sengaja seragam untuk 3 mode runtime yang mungkin dipakai (native `go run`, container app-service di docker-compose ini, atau pod K8s dev overlay lewat `kubectl port-forward`), karena ketiganya berakhir bind ke port host yang sama.
 
 **Grafana** (port host 3001, login dev-only `admin`/`admin`) auto-provision datasource Prometheus + dashboard "EDP - Services Overview" (`infra/grafana/provisioning/dashboards/edp-overview.json`) berisi request rate, error rate, p95 latency, goroutines, dan memory per service.
 

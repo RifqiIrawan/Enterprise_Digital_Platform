@@ -19,7 +19,7 @@ CI/CD EDP menggunakan **GitHub Actions** untuk build, test, dan verifikasi. Tida
 
 | Service | Image | Port | Dipakai oleh |
 |---------|-------|------|-------------|
-| postgres | `postgres:16-alpine` | 5432 | Semua 16 service (integration tests) |
+| postgres | `postgres:16-alpine` | 5432 | Semua 22 service (integration tests) |
 | clickhouse | `clickhouse/clickhouse-server:24.3` | 9101 (native), 8123 (HTTP) | dw-service tests |
 | minio | `bitnamilegacy/minio:latest` | 9000, 9001 | dw-service lake tests |
 | kafka | `bitnamilegacy/kafka:3.7.1` | 9092 | (opsional, streaming tests SKIP kalau tidak ada) |
@@ -126,8 +126,8 @@ EXPOSE 80
 
 ```bash
 cd infra
-docker compose build   # Build 15 image (14 Go services + 1 frontend)
-docker compose up -d   # Jalankan 19 container
+docker compose build   # Build 23 image (22 Go services + 1 frontend)
+docker compose up -d   # Jalankan seluruh stack (35 container: infra, observability, 22 service Go, frontend)
 ```
 
 **Kafka membutuhkan dual listener**:

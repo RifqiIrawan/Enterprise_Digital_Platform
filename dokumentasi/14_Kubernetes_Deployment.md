@@ -14,10 +14,10 @@ EDP menggunakan **Kustomize** (bukan Helm) untuk Kubernetes deployment. Manifest
 ```
 infra/kubernetes/
 ├── base/
-│   ├── kustomization.yaml          # 14 service deployments + configmaps + ingress
+│   ├── kustomization.yaml          # 23 deployment (22 service Go + frontend) + configmaps + ingress
 │   ├── api-gateway.yaml            # Deployment + Service per service
 │   ├── auth-service.yaml
-│   ├── ... (14 file yaml total)
+│   ├── ... (23 file yaml: satu per service Go + frontend)
 │   └── dw-service.yaml
 │
 └── overlays/
@@ -34,7 +34,7 @@ infra/kubernetes/
 
 ## Base Layer
 
-**52 resources** (setelah render): 15 Deployment, 15 Service, 15 ConfigMap, 1 Ingress, 6 resource tambahan (namespace, dll).
+**69 resources** (render `base`): 23 Deployment, 23 Service, 22 ConfigMap, 1 Ingress. Overlay `dev` merender 70 (tanpa Ingress, ditambah Namespace dan Secret).
 
 ### Template Deployment (semua service sama)
 

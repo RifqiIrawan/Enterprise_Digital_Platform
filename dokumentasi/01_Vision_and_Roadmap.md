@@ -15,7 +15,7 @@ Platform ini dirancang untuk **pembelajaran mendalam dan demonstrasi** ekosistem
 
 | Layer | Teknologi |
 |-------|-----------|
-| **Backend** | Go 1.25 (semua 16 service) |
+| **Backend** | Go 1.25 (semua 22 service) |
 | **Frontend** | React 18 + Vite |
 | **Database** | PostgreSQL 18 (1 DB per service) |
 | **Message Broker** | Apache Kafka (bitnamilegacy/kafka:3.7.1, KRaft mode) |

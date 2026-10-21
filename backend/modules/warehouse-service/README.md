@@ -1,12 +1,38 @@
-# Warehouse Service / Gudang (Planned)
+# Warehouse Service / Gudang
 
-Status: **Fase 2 — belum di-scaffold.**
+Status: **diimplementasikan (Fase 2)**, dengan test integrasi terhadap Postgres sungguhan.
 
-Role terkait: `Warehouse`.
+Role terkait: `Warehouse`. Port `28089`, database `warehouse_service`, route gateway `/api/warehouse`.
 
-Lingkup awal (indikatif): stok, gudang, mutasi barang antar branch, stock opname.
+Lingkup: produk, gudang, saldo dan mutasi stok, transfer antar gudang, dan stock opname. Semua pergerakan stok (manual, batch dari service lain, konfirmasi transfer, posting opname) lewat satu fungsi yang juga menegakkan aturan stok tidak boleh negatif.
 
-Akan mengikuti struktur yang sama dengan service di `../../services/` dan publish event Kafka `warehouse.*`.
+## Endpoint
+
+| Method | Path | Fungsi |
+|---|---|---|
+| GET/POST | `/products` | Daftar / buat produk |
+| PUT | `/products/{id}` | Ubah produk |
+| GET/POST | `/warehouses` | Daftar / buat gudang |
+| PUT | `/warehouses/{id}` | Ubah gudang |
+| GET | `/stock` | Saldo stok per gudang |
+| GET/POST | `/stock-movements` | Riwayat / catat mutasi manual (IN atau OUT) |
+| POST | `/stock-movements/batch` | Mutasi massal dari service lain (sales, e-commerce, purchasing, production) |
+| GET/POST | `/stock-transfers` | Daftar / buat transfer antar gudang |
+| GET | `/stock-transfers/{id}` | Detail |
+| POST | `/stock-transfers/{id}/confirm` | Konfirmasi: stok pindah |
+| GET/POST | `/stock-opnames` | Daftar / buat stock opname |
+| GET | `/stock-opnames/{id}` | Detail |
+| POST | `/stock-opnames/{id}/post` | Post: selisih dicatat sebagai penyesuaian |
+
+Di gateway, path ini diawali `/api/warehouse` dan izinnya dicek per menu (lihat `backend/services/api-gateway/internal/authz/policy.go`).
+
+## Event Kafka
+
+warehouse.product.created/updated, warehouse.warehouse.created/updated, warehouse.stock.moved, warehouse.transfer.created/confirmed, warehouse.opname.created/posted.
+
+## Memanggil service lain
+
+tidak ada (dipanggil oleh sales, purchasing, e-commerce, production).
 
 ## Aturan stok tidak boleh negatif (2026-10-21)
 

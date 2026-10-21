@@ -52,7 +52,7 @@ Service yang naik:
 | Kafka | 9092 (host/native clients), internal listener `kafka:29092` (container clients, lihat di bawah) | Event streaming (KRaft mode, tanpa Zookeeper) |
 | Kafka UI | 28099 | Dashboard untuk inspeksi topic/consumer (host 28090 dipakai production-service) |
 | Mosquitto | 1883 | Broker MQTT untuk IoT Simulator (`backend/modules/iot-service`) — simulator publish, iot-service subscribe untuk ingest. Config di `infra/mosquitto/mosquitto.conf` (anonymous access, dev-only) |
-| Prometheus | 9090 | Scrape `/metrics` dari seluruh 16 service Go tiap 15 detik, lihat `infra/prometheus/prometheus.yml`. Target di-scrape lewat `host.docker.internal:<port>` — jalan sama baiknya untuk service yang jalan native (`go run`), sebagai container di compose ini, maupun sebagai pod K8s yang di-`kubectl port-forward` ke port host yang sama |
+| Prometheus | 9090 | Scrape `/metrics` dari seluruh 22 service Go tiap 15 detik, lihat `infra/prometheus/prometheus.yml`. Target di-scrape lewat `host.docker.internal:<port>` — jalan sama baiknya untuk service yang jalan native (`go run`), sebagai container di compose ini, maupun sebagai pod K8s yang di-`kubectl port-forward` ke port host yang sama |
 | Alertmanager | 9093 | Menerima alert dari Prometheus (aturannya di `infra/prometheus/rules/edp-alerts.yml`), mengelompokkan per `alertname`+`service`, lalu meneruskannya ke webhook di `infra/alertmanager/alertmanager.yml`. Tujuan pengiriman masih `REPLACE_ME_ALERT_WEBHOOK` — repo ini tidak menyimpan kredensial, jadi pengirimannya gagal (tercatat di log Alertmanager) sementara pengelompokan & UI-nya tetap jalan |
 | Grafana | 3001 (login dev-only `admin`/`admin`) | Dua dashboard ter-provision otomatis: "EDP - Services Overview" (request rate, error rate, p95 latency, goroutines, memory per service) dan "EDP - Alerts & SLO" (alert yang sedang berbunyi, ketersediaan per service, rasio 5xx & p95 dengan garis ambang yang sama persis dengan aturan alert, route penyumbang 5xx, gelombang 403 di gateway, dan log error dari Loki) — datasource Prometheus + Loki sudah ter-wire, tidak perlu setup manual. Host port BUKAN 3000 (default Grafana) karena bentrok dengan `frontend` di compose ini |
 | Loki | 3100 | Log storage, lihat `infra/loki/loki-config.yml` (single-binary, filesystem-backed, retensi 7 hari, dev-only) |
@@ -69,7 +69,7 @@ roadmap "Observability & DevOps". Setiap service mengekspos `/metrics`
 UUID) lewat `internal/metrics` yang di-copy ke tiap service — pola yang sama
 dengan `internal/eventbus`/`internal/store`.
 
-Logging: seluruh 16 service memakai `internal/logging` (juga di-copy per
+Logging: seluruh 22 service memakai `internal/logging` (juga di-copy per
 service) yang me-redirect writer package stdlib `log` supaya tiap
 `log.Printf`/`log.Fatalf` (isi pesan TIDAK diubah, tetap prosa bebas seperti
 sebelumnya) otomatis jadi satu baris JSON (`time`, `level`, `service`,
@@ -159,13 +159,13 @@ MinIO/Mosquitto (lihat komentar di `kubernetes/overlays/dev/kustomization.yaml`)
 instance docker-compose yang sama sudah bisa scrape service yang jalan
 sebagai Pod K8s lewat `kubectl port-forward` ke port host yang sama, jadi
 tidak perlu menduplikasi infra ini ke dalam cluster. Deployment K8s untuk
-ke-16 service hanya diberi annotation `prometheus.io/scrape`/`port`/`path`
+ke-22 service hanya diberi annotation `prometheus.io/scrape`/`port`/`path`
 (lihat `kubernetes/base/*.yaml`) sebagai dokumentasi intent, untuk dipakai
 kalau nanti ada Prometheus Operator/service-discovery di-cluster.
 
 ## Full app stack di Docker (opsional, di atas infra)
 
-`docker-compose.yml` juga bisa menjalankan seluruh 14 service Go + frontend
+`docker-compose.yml` juga bisa menjalankan seluruh 22 service Go + frontend
 sebagai container, bukan cuma infra di atas — berguna untuk mendekati
 deployment production tanpa perlu 15 terminal `go run`/`npm run dev` manual.
 Prasyarat sama seperti local dev: Postgres native harus sudah jalan dengan
@@ -233,7 +233,7 @@ Manifest Kubernetes memakai `REPLACE_ME_REGISTRY/<service>:<tag>`, jadi overlay 
 ## Environment config staging/prod
 
 `environments/staging/` dan `environments/production/` berisi template env
-var (`*.env.example`) untuk tiap 14 service + frontend, siap diisi kalau
+var (`*.env.example`) untuk tiap 22 service + frontend, siap diisi kalau
 infrastruktur staging/prod sungguhan sudah ada — lihat
 `environments/README.md` untuk penjelasan lengkap & alasan kenapa ini
 terpisah dari `docker-compose.yml`. `auth-service` dan `api-gateway` menolak
