@@ -101,23 +101,3 @@ func backfill[T any](ctx context.Context, lake *datalake.Client, table string, e
 	}
 	return len(rows), nil
 }
-
-// liveKeys mengubah hasil ekstrak (watermark nol = seluruh baris) menjadi
-// himpunan kunci Silver. Baris yang kuncinya tidak bisa dihitung membuat
-// pemanggilan GAGAL: daftar kunci yang bolong akan memangkas baris yang masih
-// ada, dan itu lebih buruk daripada tidak memangkas.
-func liveKeys[T any](fact string, each func(func(T) error) error) (*datalake.KeySet, error) {
-	keys := datalake.NewKeySet(0)
-	err := each(func(r T) error {
-		k, ok := datalake.RowKey(fact, r)
-		if !ok {
-			return fmt.Errorf("live keys %s: baris sumber tanpa kunci yang valid", fact)
-		}
-		keys.Add(k)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return keys, nil
-}

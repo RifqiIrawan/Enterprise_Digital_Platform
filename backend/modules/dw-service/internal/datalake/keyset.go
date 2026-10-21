@@ -40,6 +40,31 @@ func (s *KeySet) Has(key string) bool {
 
 func (s *KeySet) Len() int { return len(s.compact) + len(s.other) }
 
+// Each memanggil fn untuk setiap kunci, dalam bentuk string aslinya (kunci
+// padat dikembalikan ke "uuid/uuid" kanonik). Urutan tidak ditentukan.
+func (s *KeySet) Each(fn func(key string)) {
+	for k := range s.compact {
+		fn(formatUUID(k[:16]) + "/" + formatUUID(k[16:]))
+	}
+	for k := range s.other {
+		fn(k)
+	}
+}
+
+func formatUUID(b []byte) string {
+	var buf [36]byte
+	hex.Encode(buf[0:8], b[0:4])
+	buf[8] = '-'
+	hex.Encode(buf[9:13], b[4:6])
+	buf[13] = '-'
+	hex.Encode(buf[14:18], b[6:8])
+	buf[18] = '-'
+	hex.Encode(buf[19:23], b[8:10])
+	buf[23] = '-'
+	hex.Encode(buf[24:], b[10:])
+	return string(buf[:])
+}
+
 // compactKey memadatkan "uuid/uuid" ke 32 byte. Hanya bentuk kanonik yang
 // dipadatkan, supaya padat -> string -> padat tidak pernah menyatukan dua
 // kunci yang berbeda sebagai string.

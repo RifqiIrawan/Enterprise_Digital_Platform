@@ -252,3 +252,21 @@ func TestKeySet_MatchesStringSemantics(t *testing.T) {
 		t.Errorf("Len = %d, want 2", s.Len())
 	}
 }
+
+func TestKeySet_EachRoundTripsEveryKey(t *testing.T) {
+	keys := []string{co1 + "/" + id1, co2 + "/" + id2, "company-a/row-1", co1 + "/" + strings.ToUpper(id1)}
+	s := NewKeySet(0)
+	for _, k := range keys {
+		s.Add(k)
+	}
+	got := map[string]bool{}
+	s.Each(func(k string) { got[k] = true })
+	if len(got) != len(keys) {
+		t.Fatalf("Each memberi %d kunci, want %d: %v", len(got), len(keys), got)
+	}
+	for _, k := range keys {
+		if !got[k] {
+			t.Errorf("kunci %q hilang atau berubah bentuk setelah Each", k)
+		}
+	}
+}

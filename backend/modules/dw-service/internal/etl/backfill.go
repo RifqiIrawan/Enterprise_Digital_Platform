@@ -141,127 +141,73 @@ func BackfillTicketing(ctx context.Context, source *pgxpool.Pool, lake *datalake
 }
 
 func LiveKeysAsset(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(assetSourceTable, func(fn func(ch.AssetMaintenanceRow) error) error {
-		_, err := eachAsset(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, assetSourceTable, assetExtractSQL, 1)
 }
 
 func LiveKeysCRM(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(crmSourceTable, func(fn func(ch.CRMOpportunityRow) error) error {
-		_, err := eachCRM(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, crmSourceTable, crmExtractSQL, 1)
 }
 
 func LiveKeysEcommerce(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(ecommerceSourceTable, func(fn func(ch.EcommerceOrderLineRow) error) error {
-		_, err := eachEcommerce(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, ecommerceSourceTable, ecommerceExtractSQL, 2)
 }
 
 func LiveKeysFinance(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(financeSourceTable, func(fn func(ch.FinanceJournalLineRow) error) error {
-		_, err := eachFinance(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, financeSourceTable, financeExtractSQL, 2)
 }
 
 func LiveKeysFleet(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(fleetSourceTable, func(fn func(ch.FleetDeliveryOrderRow) error) error {
-		_, err := eachFleet(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, fleetSourceTable, fleetExtractSQL, 1)
 }
 
 func LiveKeysHR(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(hrSourceTable, func(fn func(ch.HRPayrollDetailRow) error) error {
-		_, err := eachHR(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, hrSourceTable, hrExtractSQL, 2)
 }
 
 func LiveKeysHRLeave(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(hrLeaveSourceTable, func(fn func(ch.HRLeaveRow) error) error {
-		_, err := eachHRLeave(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, hrLeaveSourceTable, hrLeaveExtractSQL, 1)
 }
 
 func LiveKeysHRKPI(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(hrKPISourceTable, func(fn func(ch.HRKPIReviewRow) error) error {
-		_, err := eachHRKPI(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, hrKPISourceTable, hrKPIExtractSQL, 1)
 }
 
 func LiveKeysInventory(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(inventorySourceTable, func(fn func(ch.InventoryMovementRow) error) error {
-		_, err := eachInventory(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, inventorySourceTable, inventoryExtractSQL, 1)
 }
 
 func LiveKeysIoT(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(iotSourceTable, func(fn func(ch.IoTReadingRow) error) error {
-		_, err := eachIoT(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, iotSourceTable, iotExtractSQL, 1)
 }
 
 func LiveKeysProduction(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(productionSourceTable, func(fn func(ch.ProductionWorkOrderRow) error) error {
-		_, err := eachProduction(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, productionSourceTable, productionExtractSQL, 1)
 }
 
 func LiveKeysProductionDowntime(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(productionDowntimeSourceTable, func(fn func(ch.ProductionDowntimeRow) error) error {
-		_, err := eachProductionDowntime(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, productionDowntimeSourceTable, productionDowntimeExtractSQL, 1)
 }
 
 func LiveKeysProductionOEE(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(productionOEESourceTable, func(fn func(ch.ProductionOEERow) error) error {
-		_, err := eachProductionOEE(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, productionOEESourceTable, productionOEEExtractSQL, 1)
 }
 
 func LiveKeysProject(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(projectSourceTable, func(fn func(ch.ProjectTimesheetRow) error) error {
-		_, err := eachProject(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, projectSourceTable, projectExtractSQL, 1)
 }
 
 func LiveKeysPurchasing(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(purchasingSourceTable, func(fn func(ch.PurchasingOrderLineRow) error) error {
-		_, err := eachPurchasing(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, purchasingSourceTable, purchasingExtractSQL, 2)
 }
 
 func LiveKeysQC(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(qcSourceTable, func(fn func(ch.QCInspectionRow) error) error {
-		_, err := eachQC(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, qcSourceTable, qcExtractSQL, 1)
 }
 
 func LiveKeysSales(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(salesSourceTable, func(fn func(ch.SalesOrderLineRow) error) error {
-		_, err := eachSales(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, salesSourceTable, salesExtractSQL, 2)
 }
 
 func LiveKeysTicketing(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
-	return liveKeys(ticketingSourceTable, func(fn func(ch.TicketingTicketRow) error) error {
-		_, err := eachTicketing(ctx, source, time.Time{}, fn)
-		return err
-	})
+	return liveKeysOnly(ctx, source, ticketingSourceTable, ticketingExtractSQL, 1)
 }
