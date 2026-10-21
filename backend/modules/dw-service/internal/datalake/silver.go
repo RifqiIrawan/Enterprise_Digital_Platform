@@ -595,6 +595,15 @@ func RowKey(fact string, row any) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+	// Jalur cepat yang sama dengan Silver (fastKey): b adalah JSON kompak hasil
+	// encoding/json dari struct datar, persis bentuk yang dijamin fastKey, dan
+	// hasilnya identik dengan rowKey (diuji, termasuk nilai yang berisi pola
+	// kunci). Unmarshal ke map per baris itu ~70% waktu daftar kunci hidup pada
+	// tabel besar. Kalau pola tidak ketemu, jatuh ke jalur lambat yang
+	// menentukan.
+	if key, ok := fastKey(b, []byte(`"`+idField+`":"`), []byte(`"CompanyID":"`)); ok {
+		return key, true
+	}
 	return rowKey(idField, b)
 }
 

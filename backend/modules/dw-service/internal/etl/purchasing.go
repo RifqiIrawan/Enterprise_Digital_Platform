@@ -63,14 +63,16 @@ func SyncPurchasing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, 
 // extractPurchasing adalah bagian "tarik dari Postgres" milik SyncPurchasing, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractPurchasing(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.PurchasingOrderLineRow, time.Time, error) {
+// eachPurchasing menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractPurchasing dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachPurchasing(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.PurchasingOrderLineRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, purchasingExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract purchasing rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract purchasing rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.PurchasingOrderLineRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.PurchasingOrderLineRow
@@ -79,16 +81,30 @@ func extractPurchasing(ctx context.Context, source *pgxpool.Pool, watermark time
 			&r.OrderStatus, &r.SupplierID, &r.SupplierCode, &r.SupplierName, &r.ProductName,
 			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan purchasing row: %w", err)
+			return time.Time{}, fmt.Errorf("scan purchasing row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if r.UpdatedAt.After(maxWatermark) {
 			maxWatermark = r.UpdatedAt
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate purchasing rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate purchasing rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractPurchasing(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.PurchasingOrderLineRow, time.Time, error) {
+	var out []ch.PurchasingOrderLineRow
+	maxWatermark, err := eachPurchasing(ctx, source, watermark, func(r ch.PurchasingOrderLineRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }

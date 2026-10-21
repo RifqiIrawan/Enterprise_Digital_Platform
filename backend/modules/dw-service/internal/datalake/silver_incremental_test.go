@@ -300,3 +300,36 @@ func TestFastKeyAgreesWithRowKey(t *testing.T) {
 		}
 	}
 }
+
+// RowKey (live keys from source rows) takes the fast path; it must agree with
+// the slow full-parse rowKey on everything a source row can contain, including
+// string values that imitate the key pattern and missing/zero ids.
+func TestRowKey_FastPathMatchesFullParse(t *testing.T) {
+	type row struct {
+		LineID          string
+		CompanyID       string
+		ParentCompanyID string
+		Note            string
+	}
+	rows := []row{
+		{LineID: id1, CompanyID: co1, Note: "plain"},
+		{LineID: id1, CompanyID: co1, Note: `x","LineID":"` + id2 + `","CompanyID":"` + co2 + `"`},
+		{LineID: id1, CompanyID: co1, ParentCompanyID: co2, Note: `"CompanyID":"` + co2 + `"`},
+		{LineID: id2, CompanyID: co2, Note: "unicode   \"quoted\" \\ back"},
+		{LineID: "", CompanyID: co1},
+		{LineID: id1, CompanyID: ""},
+		{LineID: zeroUUID, CompanyID: co1},
+		{LineID: "not-a-uuid-but-nonempty", CompanyID: co1},
+	}
+	for i, r := range rows {
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantKey, wantOK := rowKey("LineID", b)
+		gotKey, gotOK := RowKey("sales_order_lines", r)
+		if gotKey != wantKey || gotOK != wantOK {
+			t.Errorf("row %d: RowKey = %q,%v; rowKey = %q,%v", i, gotKey, gotOK, wantKey, wantOK)
+		}
+	}
+}

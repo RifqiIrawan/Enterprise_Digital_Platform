@@ -62,14 +62,16 @@ func SyncSales(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 // extractSales adalah bagian "tarik dari Postgres" milik SyncSales, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractSales(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.SalesOrderLineRow, time.Time, error) {
+// eachSales menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractSales dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachSales(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.SalesOrderLineRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, salesExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract sales rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract sales rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.SalesOrderLineRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.SalesOrderLineRow
@@ -78,16 +80,30 @@ func extractSales(ctx context.Context, source *pgxpool.Pool, watermark time.Time
 			&r.OrderStatus, &r.CustomerID, &r.CustomerCode, &r.CustomerName, &r.ProductName,
 			&r.Quantity, &r.UnitPrice, &r.Amount, &r.UpdatedAt,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan sales row: %w", err)
+			return time.Time{}, fmt.Errorf("scan sales row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if r.UpdatedAt.After(maxWatermark) {
 			maxWatermark = r.UpdatedAt
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate sales rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate sales rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractSales(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.SalesOrderLineRow, time.Time, error) {
+	var out []ch.SalesOrderLineRow
+	maxWatermark, err := eachSales(ctx, source, watermark, func(r ch.SalesOrderLineRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }

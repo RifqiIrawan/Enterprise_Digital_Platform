@@ -59,14 +59,16 @@ func SyncAsset(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake 
 // extractAsset adalah bagian "tarik dari Postgres" milik SyncAsset, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractAsset(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.AssetMaintenanceRow, time.Time, error) {
+// eachAsset menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractAsset dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachAsset(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.AssetMaintenanceRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, assetExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract asset rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract asset rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.AssetMaintenanceRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.AssetMaintenanceRow
@@ -74,16 +76,30 @@ func extractAsset(ctx context.Context, source *pgxpool.Pool, watermark time.Time
 			&r.ScheduleID, &r.CompanyID, &r.BranchID, &r.AssetID, &r.AssetCode, &r.AssetName,
 			&r.MaintenanceType, &r.ScheduledDate, &r.CompletedDate, &r.Status, &r.UpdatedAt,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan asset row: %w", err)
+			return time.Time{}, fmt.Errorf("scan asset row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if r.UpdatedAt.After(maxWatermark) {
 			maxWatermark = r.UpdatedAt
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate asset rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate asset rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractAsset(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.AssetMaintenanceRow, time.Time, error) {
+	var out []ch.AssetMaintenanceRow
+	maxWatermark, err := eachAsset(ctx, source, watermark, func(r ch.AssetMaintenanceRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }

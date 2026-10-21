@@ -64,14 +64,16 @@ func SyncTicketing(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, l
 // extractTicketing adalah bagian "tarik dari Postgres" milik SyncTicketing, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractTicketing(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.TicketingTicketRow, time.Time, error) {
+// eachTicketing menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractTicketing dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachTicketing(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.TicketingTicketRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, ticketingExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract ticketing rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract ticketing rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.TicketingTicketRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.TicketingTicketRow
@@ -80,16 +82,30 @@ func extractTicketing(ctx context.Context, source *pgxpool.Pool, watermark time.
 			&r.Subject, &r.Priority, &r.Status, &r.RequesterName, &r.RequesterEmail, &r.AssignedTo,
 			&r.CreatedAt, &r.ResolvedAt, &r.ClosedAt, &r.UpdatedAt,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan ticketing row: %w", err)
+			return time.Time{}, fmt.Errorf("scan ticketing row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if r.UpdatedAt.After(maxWatermark) {
 			maxWatermark = r.UpdatedAt
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate ticketing rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate ticketing rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractTicketing(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.TicketingTicketRow, time.Time, error) {
+	var out []ch.TicketingTicketRow
+	maxWatermark, err := eachTicketing(ctx, source, watermark, func(r ch.TicketingTicketRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }

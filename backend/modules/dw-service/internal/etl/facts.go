@@ -105,18 +105,18 @@ func backfill[T any](ctx context.Context, lake *datalake.Client, table string, e
 // himpunan kunci Silver. Baris yang kuncinya tidak bisa dihitung membuat
 // pemanggilan GAGAL: daftar kunci yang bolong akan memangkas baris yang masih
 // ada, dan itu lebih buruk daripada tidak memangkas.
-func liveKeys[T any](fact string, extract func() ([]T, error)) (*datalake.KeySet, error) {
-	rows, err := extract()
-	if err != nil {
-		return nil, err
-	}
-	keys := datalake.NewKeySet(len(rows))
-	for _, r := range rows {
+func liveKeys[T any](fact string, each func(func(T) error) error) (*datalake.KeySet, error) {
+	keys := datalake.NewKeySet(0)
+	err := each(func(r T) error {
 		k, ok := datalake.RowKey(fact, r)
 		if !ok {
-			return nil, fmt.Errorf("live keys %s: baris sumber tanpa kunci yang valid", fact)
+			return fmt.Errorf("live keys %s: baris sumber tanpa kunci yang valid", fact)
 		}
 		keys.Add(k)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return keys, nil
 }

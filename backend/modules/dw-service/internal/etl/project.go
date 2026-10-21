@@ -76,14 +76,16 @@ func SyncProject(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lak
 // extractProject adalah bagian "tarik dari Postgres" milik SyncProject, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractProject(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProjectTimesheetRow, time.Time, error) {
+// eachProject menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractProject dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachProject(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.ProjectTimesheetRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, projectExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract project rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract project rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.ProjectTimesheetRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.ProjectTimesheetRow
@@ -96,16 +98,30 @@ func extractProject(ctx context.Context, source *pgxpool.Pool, watermark time.Ti
 			&r.Status, &r.ApprovedAt, &r.PostedAt, &r.JournalEntryID,
 			&r.CreatedAt, &r.UpdatedAt,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan project row: %w", err)
+			return time.Time{}, fmt.Errorf("scan project row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if r.UpdatedAt.After(maxWatermark) {
 			maxWatermark = r.UpdatedAt
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate project rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate project rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractProject(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProjectTimesheetRow, time.Time, error) {
+	var out []ch.ProjectTimesheetRow
+	maxWatermark, err := eachProject(ctx, source, watermark, func(r ch.ProjectTimesheetRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }

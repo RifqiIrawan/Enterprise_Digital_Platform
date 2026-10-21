@@ -63,14 +63,16 @@ func SyncCRM(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *d
 // extractCRM adalah bagian "tarik dari Postgres" milik SyncCRM, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractCRM(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.CRMOpportunityRow, time.Time, error) {
+// eachCRM menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractCRM dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachCRM(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.CRMOpportunityRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, crmExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract crm rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract crm rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.CRMOpportunityRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.CRMOpportunityRow
@@ -79,16 +81,30 @@ func extractCRM(ctx context.Context, source *pgxpool.Pool, watermark time.Time) 
 			&r.ContactID, &r.OpportunityName, &r.Stage, &r.Amount, &r.Probability,
 			&r.ExpectedCloseDate, &r.OwnerUserID, &r.CreatedAt, &r.UpdatedAt,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan crm row: %w", err)
+			return time.Time{}, fmt.Errorf("scan crm row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if r.UpdatedAt.After(maxWatermark) {
 			maxWatermark = r.UpdatedAt
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate crm rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate crm rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractCRM(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.CRMOpportunityRow, time.Time, error) {
+	var out []ch.CRMOpportunityRow
+	maxWatermark, err := eachCRM(ctx, source, watermark, func(r ch.CRMOpportunityRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }

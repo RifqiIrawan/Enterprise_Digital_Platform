@@ -63,14 +63,16 @@ func SyncProduction(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, 
 // extractProduction adalah bagian "tarik dari Postgres" milik SyncProduction, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractProduction(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProductionWorkOrderRow, time.Time, error) {
+// eachProduction menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractProduction dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachProduction(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.ProductionWorkOrderRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, productionExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract production rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract production rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.ProductionWorkOrderRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.ProductionWorkOrderRow
@@ -79,17 +81,31 @@ func extractProduction(ctx context.Context, source *pgxpool.Pool, watermark time
 			&r.WarehouseID, &r.QuantityPlanned, &r.QuantityProduced, &r.Status,
 			&r.PlannedStartDate, &r.PlannedEndDate, &r.UpdatedAt,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan production row: %w", err)
+			return time.Time{}, fmt.Errorf("scan production row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if r.UpdatedAt.After(maxWatermark) {
 			maxWatermark = r.UpdatedAt
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate production rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate production rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractProduction(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProductionWorkOrderRow, time.Time, error) {
+	var out []ch.ProductionWorkOrderRow
+	maxWatermark, err := eachProduction(ctx, source, watermark, func(r ch.ProductionWorkOrderRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }
 
@@ -162,14 +178,16 @@ func SyncProductionOEE(ctx context.Context, source *pgxpool.Pool, dest *ch.Clien
 // extractProductionOEE adalah bagian "tarik dari Postgres" milik SyncProductionOEE, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractProductionOEE(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProductionOEERow, time.Time, error) {
+// eachProductionOEE menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractProductionOEE dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachProductionOEE(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.ProductionOEERow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, productionOEEExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract production oee rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract production oee rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.ProductionOEERow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.ProductionOEERow
@@ -180,16 +198,30 @@ func extractProductionOEE(ctx context.Context, source *pgxpool.Pool, watermark t
 			&r.DowntimeMinutes, &r.QuantityGood, &r.QuantityReject,
 			&r.IdealCycleTimeMinutes, &r.Status, &r.UpdatedAt,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan production oee row: %w", err)
+			return time.Time{}, fmt.Errorf("scan production oee row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if r.UpdatedAt.After(maxWatermark) {
 			maxWatermark = r.UpdatedAt
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate production oee rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate production oee rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractProductionOEE(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProductionOEERow, time.Time, error) {
+	var out []ch.ProductionOEERow
+	maxWatermark, err := eachProductionOEE(ctx, source, watermark, func(r ch.ProductionOEERow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }

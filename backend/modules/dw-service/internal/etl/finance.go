@@ -63,14 +63,16 @@ func SyncFinance(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lak
 // extractFinance adalah bagian "tarik dari Postgres" milik SyncFinance, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractFinance(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.FinanceJournalLineRow, time.Time, error) {
+// eachFinance menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractFinance dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachFinance(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.FinanceJournalLineRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, financeExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract finance rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract finance rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.FinanceJournalLineRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.FinanceJournalLineRow
@@ -80,16 +82,30 @@ func extractFinance(ctx context.Context, source *pgxpool.Pool, watermark time.Ti
 			&r.Period, &r.ReferenceType, &r.EntryStatus, &r.AccountID, &r.AccountCode, &r.AccountName,
 			&r.AccountType, &r.DebitAmount, &r.CreditAmount, &r.PostedAt, &wm,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan finance row: %w", err)
+			return time.Time{}, fmt.Errorf("scan finance row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if wm.After(maxWatermark) {
 			maxWatermark = wm
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate finance rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate finance rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractFinance(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.FinanceJournalLineRow, time.Time, error) {
+	var out []ch.FinanceJournalLineRow
+	maxWatermark, err := eachFinance(ctx, source, watermark, func(r ch.FinanceJournalLineRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }

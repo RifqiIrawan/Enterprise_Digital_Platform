@@ -63,14 +63,16 @@ func SyncHR(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *da
 // extractHR adalah bagian "tarik dari Postgres" milik SyncHR, dipisah supaya
 // Backfill bisa memakai SQL dan pemetaan kolom yang PERSIS sama (watermark nol
 // = seluruh baris) tanpa menyentuh ClickHouse.
-func extractHR(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.HRPayrollDetailRow, time.Time, error) {
+// eachHR menyalurkan baris hasil ekstrak satu per satu ke fn tanpa menampungnya,
+// dan mengembalikan watermark terbesar. extractHR dan daftar kunci hidup sama-sama
+// dibangun di atasnya, jadi keduanya selalu memakai query dan baris yang sama.
+func eachHR(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.HRPayrollDetailRow) error) (time.Time, error) {
 	rows, err := source.Query(ctx, hrExtractSQL, watermark)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("extract hr rows: %w", err)
+		return time.Time{}, fmt.Errorf("extract hr rows: %w", err)
 	}
 	defer rows.Close()
 
-	var out []ch.HRPayrollDetailRow
 	maxWatermark := watermark
 	for rows.Next() {
 		var r ch.HRPayrollDetailRow
@@ -81,16 +83,30 @@ func extractHR(ctx context.Context, source *pgxpool.Pool, watermark time.Time) (
 			&r.BasicSalary, &r.GrossSalary, &r.TotalDeduction, &r.NetSalary,
 			&r.WorkingDays, &r.PresentDays, &r.PostedAt, &wm,
 		); err != nil {
-			return nil, time.Time{}, fmt.Errorf("scan hr row: %w", err)
+			return time.Time{}, fmt.Errorf("scan hr row: %w", err)
 		}
-		out = append(out, r)
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
 		if wm.After(maxWatermark) {
 			maxWatermark = wm
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, time.Time{}, fmt.Errorf("iterate hr rows: %w", err)
+		return time.Time{}, fmt.Errorf("iterate hr rows: %w", err)
 	}
 
+	return maxWatermark, nil
+}
+
+func extractHR(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.HRPayrollDetailRow, time.Time, error) {
+	var out []ch.HRPayrollDetailRow
+	maxWatermark, err := eachHR(ctx, source, watermark, func(r ch.HRPayrollDetailRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
 	return out, maxWatermark, nil
 }
