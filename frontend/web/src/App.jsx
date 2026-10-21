@@ -66,6 +66,7 @@ import DevicesPage from './pages/iot/DevicesPage.jsx'
 import ReadingsPage from './pages/iot/ReadingsPage.jsx'
 import AlertsPage from './pages/iot/AlertsPage.jsx'
 import SyncStatusPage from './pages/dw/SyncStatusPage.jsx'
+import DataLakePage from './pages/dw/DataLakePage.jsx'
 import LeadsPage from './pages/crm/LeadsPage.jsx'
 import AccountsPage from './pages/crm/AccountsPage.jsx'
 import ContactsPage from './pages/crm/ContactsPage.jsx'
@@ -166,6 +167,7 @@ function App() {
         <Route path="/iot/readings" element={<ReadingsPage />} />
         <Route path="/iot/alerts" element={<AlertsPage />} />
         <Route path="/dw/sync-status" element={<SyncStatusPage />} />
+        <Route path="/dw/data-lake" element={<DataLakePage />} />
         <Route path="/crm/leads" element={<LeadsPage />} />
         <Route path="/crm/accounts" element={<AccountsPage />} />
         <Route path="/crm/contacts" element={<ContactsPage />} />
