@@ -47,7 +47,7 @@ Perencanaan:
 
 | Method | Path | Catatan |
 |---|---|---|
-| GET/POST | `/boms`, `/boms/{id}` (GET/PUT) | Bill of Material + komponennya |
+| GET/POST | `/boms`, `/boms/{id}` (GET/PUT) | Bill of Material + komponennya. `PUT` menyunting name/is_active, dan opsional `lines` (mengganti seluruh komponen, atomik) dan `batch_size` (formula); aturan formula sama dengan saat membuat (total >= 100%). Tipe BOM tidak bisa diubah. Work order yang sudah ada tidak berubah (snapshot) |
 | GET/POST | `/work-orders`, `/work-orders/{id}` | `work_order_lines` di-snapshot dari BOM saat dibuat |
 | POST | `/work-orders/{id}/start` | DRAFT → IN_PROGRESS |
 | POST | `/work-orders/{id}/complete` | IN_PROGRESS → COMPLETED; memutasi stok di warehouse-service |

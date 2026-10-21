@@ -153,6 +153,35 @@ func validateBOMLines(bomType string, batchSize float64, lines []bomLineInput) s
 	return ""
 }
 
+// insertBOMLines menulis baris komponen sebuah BOM. Baris formula menyimpan
+// keduanya: percentage sebagaimana ditulis orang, quantity_per_unit sebagai
+// turunannya supaya kolom lama tidak kosong. Yang dipakai menghitung kebutuhan
+// work order tetap percentage-nya -- lihat createWorkOrder.
+func insertBOMLines(ctx context.Context, tx pgx.Tx, bomID, bomType string, in []bomLineInput) ([]model.BOMLine, error) {
+	lines := make([]model.BOMLine, 0, len(in))
+	for i, l := range in {
+		quantityPerUnit := l.QuantityPerUnit
+		var percentage *float64
+		if bomType == model.BOMTypeBatch {
+			quantityPerUnit = l.Percentage / 100
+			p := l.Percentage
+			percentage = &p
+		}
+		var line model.BOMLine
+		err := tx.QueryRow(ctx, `
+			INSERT INTO bom_lines (bom_id, line_number, component_product_id, quantity_per_unit, percentage)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING id, bom_id, line_number, component_product_id, quantity_per_unit, percentage`,
+			bomID, i+1, l.ComponentProductID, quantityPerUnit, percentage,
+		).Scan(&line.ID, &line.BOMID, &line.LineNumber, &line.ComponentProductID, &line.QuantityPerUnit, &line.Percentage)
+		if err != nil {
+			return nil, err
+		}
+		lines = append(lines, line)
+	}
+	return lines, nil
+}
+
 func (h *Handler) createBOM(w http.ResponseWriter, r *http.Request) {
 	var req createBOMRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -207,30 +236,10 @@ func (h *Handler) createBOM(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lines := make([]model.BOMLine, 0, len(req.Lines))
-	for i, l := range req.Lines {
-		// Baris formula menyimpan keduanya: percentage sebagaimana ditulis
-		// orang, quantity_per_unit sebagai turunannya supaya kolom lama tidak
-		// kosong. Yang dipakai menghitung kebutuhan work order tetap
-		// percentage-nya -- lihat createWorkOrder.
-		quantityPerUnit := l.QuantityPerUnit
-		var percentage *float64
-		if req.BOMType == model.BOMTypeBatch {
-			quantityPerUnit = l.Percentage / 100
-			percentage = &req.Lines[i].Percentage
-		}
-		var line model.BOMLine
-		err := tx.QueryRow(ctx, `
-			INSERT INTO bom_lines (bom_id, line_number, component_product_id, quantity_per_unit, percentage)
-			VALUES ($1, $2, $3, $4, $5)
-			RETURNING id, bom_id, line_number, component_product_id, quantity_per_unit, percentage`,
-			b.ID, i+1, l.ComponentProductID, quantityPerUnit, percentage,
-		).Scan(&line.ID, &line.BOMID, &line.LineNumber, &line.ComponentProductID, &line.QuantityPerUnit, &line.Percentage)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Gagal membuat baris komponen BOM")
-			return
-		}
-		lines = append(lines, line)
+	lines, err := insertBOMLines(ctx, tx, b.ID, req.BOMType, req.Lines)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal membuat baris komponen BOM")
+		return
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -284,9 +293,18 @@ func (h *Handler) getBOM(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, newBOMWithLines(b, lines))
 }
 
+// updateBOMRequest: name dan is_active seperti semula (is_active yang tidak
+// dikirim berarti false -- perilaku lama, dipertahankan). lines, kalau dikirim,
+// MENGGANTI seluruh komponen BOM; batch_size, kalau dikirim, mengganti ukuran
+// batch formula. Tipe BOM (UNIT/BATCH) tidak bisa diubah: mengubahnya berarti
+// resep yang artinya lain sama sekali, bukan penyuntingan -- buat BOM baru.
+// Work order yang sudah ada tidak terpengaruh: kebutuhan komponennya sudah
+// di-snapshot ke work_order_lines saat dibuat.
 type updateBOMRequest struct {
-	Name     string `json:"name"`
-	IsActive bool   `json:"is_active"`
+	Name      string          `json:"name"`
+	IsActive  bool            `json:"is_active"`
+	BatchSize *float64        `json:"batch_size"`
+	Lines     *[]bomLineInput `json:"lines"`
 }
 
 func (h *Handler) updateBOM(w http.ResponseWriter, r *http.Request) {
@@ -301,22 +319,86 @@ func (h *Handler) updateBOM(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "name wajib diisi")
 		return
 	}
+	if req.Lines != nil && len(*req.Lines) == 0 {
+		writeError(w, http.StatusBadRequest, "lines tidak boleh kosong; BOM minimal punya 1 komponen")
+		return
+	}
 
-	var b model.BillOfMaterial
-	err := scanBOM(h.pool.QueryRow(r.Context(), `
-		UPDATE bill_of_materials SET name = $1, is_active = $2, updated_at = now()
-		WHERE id = $3
-		RETURNING `+bomColumns,
-		req.Name, req.IsActive, id,
-	), &b)
+	ctx := r.Context()
+	tx, err := h.pool.Begin(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memulai transaksi")
+		return
+	}
+	defer tx.Rollback(ctx)
+
+	// Kunci baris BOM supaya dua penyuntingan bersamaan tidak saling menimpa
+	// komponen di tengah jalan.
+	var current model.BillOfMaterial
+	err = scanBOM(tx.QueryRow(ctx, `SELECT `+bomColumns+` FROM bill_of_materials WHERE id = $1 FOR UPDATE`, id), &current)
 	if err == pgx.ErrNoRows {
 		writeError(w, http.StatusNotFound, "BOM tidak ditemukan")
 		return
 	} else if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memuat BOM")
+		return
+	}
+
+	batchSize := current.BatchSize
+	if req.BatchSize != nil {
+		if current.BOMType != model.BOMTypeBatch {
+			writeError(w, http.StatusBadRequest, "batch_size hanya berlaku untuk bom_type BATCH")
+			return
+		}
+		if *req.BatchSize <= 0 {
+			writeError(w, http.StatusBadRequest, "batch_size > 0 wajib diisi untuk bom_type BATCH")
+			return
+		}
+		batchSize = req.BatchSize
+	}
+	if req.Lines != nil {
+		size := 0.0
+		if batchSize != nil {
+			size = *batchSize
+		}
+		if msg := validateBOMLines(current.BOMType, size, *req.Lines); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+	}
+
+	var b model.BillOfMaterial
+	err = scanBOM(tx.QueryRow(ctx, `
+		UPDATE bill_of_materials SET name = $1, is_active = $2, batch_size = $3, updated_at = now()
+		WHERE id = $4
+		RETURNING `+bomColumns,
+		req.Name, req.IsActive, batchSize, id,
+	), &b)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memperbarui BOM")
 		return
 	}
 
+	var lines []model.BOMLine
+	if req.Lines != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM bom_lines WHERE bom_id = $1`, id); err != nil {
+			writeError(w, http.StatusInternalServerError, "Gagal mengganti komponen BOM")
+			return
+		}
+		if lines, err = insertBOMLines(ctx, tx, id, b.BOMType, *req.Lines); err != nil {
+			writeError(w, http.StatusInternalServerError, "Gagal mengganti komponen BOM")
+			return
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal menyimpan BOM")
+		return
+	}
+
 	h.events.Publish("production.bom.updated", newAuditEvent("production.bom.updated", actorFromHeader(r), &b.CompanyID, "update", "bom", b.ID, b))
-	writeJSON(w, http.StatusOK, b)
+	if req.Lines == nil {
+		writeJSON(w, http.StatusOK, b)
+		return
+	}
+	writeJSON(w, http.StatusOK, newBOMWithLines(b, lines))
 }

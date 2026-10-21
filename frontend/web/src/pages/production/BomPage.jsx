@@ -32,7 +32,8 @@ function BomPage() {
   const [saving, setSaving] = useState(false)
 
   const [editing, setEditing] = useState(null)
-  const [editForm, setEditForm] = useState({ name: '', is_active: true })
+  const [editForm, setEditForm] = useState({ name: '', is_active: true, batch_size: '', lines: [] })
+  const [editLoading, setEditLoading] = useState(false)
   const [editError, setEditError] = useState('')
   const [editSaving, setEditSaving] = useState(false)
 
@@ -57,18 +58,6 @@ function BomPage() {
   const productName = (id) => {
     const p = products.find((p) => p.id === id)
     return p ? `${p.sku} - ${p.name}` : id
-  }
-
-  function updateLine(index, patch) {
-    setForm((f) => ({ ...f, lines: f.lines.map((l, i) => (i === index ? { ...l, ...patch } : l)) }))
-  }
-
-  function addLine() {
-    setForm((f) => ({ ...f, lines: [...f.lines, { ...emptyLine }] }))
-  }
-
-  function removeLine(index) {
-    setForm((f) => ({ ...f, lines: f.lines.filter((_, i) => i !== index) }))
   }
 
   function openCreate() {
@@ -111,10 +100,29 @@ function BomPage() {
     }
   }
 
+  // Daftar BOM tidak membawa komponennya, jadi komponen dimuat dari detail BOM
+  // saat dialog dibuka. Simpan dinonaktifkan sampai komponen termuat: mengirim
+  // PUT tanpa `lines` memang aman (komponen tidak disentuh), tapi dialog yang
+  // tampak bisa disunting padahal kosong akan menyesatkan.
   function openEdit(b) {
     setEditing(b)
-    setEditForm({ name: b.name, is_active: b.is_active })
+    setEditForm({ name: b.name, is_active: b.is_active, batch_size: b.batch_size ?? '', lines: [] })
     setEditError('')
+    setEditLoading(true)
+    apiClient
+      .get(`/api/production/boms/${b.id}`)
+      .then(({ data }) =>
+        setEditForm((f) => ({
+          ...f,
+          lines: data.lines.map((l) => ({
+            component_product_id: l.component_product_id,
+            quantity_per_unit: l.quantity_per_unit,
+            percentage: l.percentage ?? '',
+          })),
+        })),
+      )
+      .catch(() => setEditError('Gagal memuat komponen BOM'))
+      .finally(() => setEditLoading(false))
   }
 
   async function handleEdit(e) {
@@ -122,7 +130,19 @@ function BomPage() {
     setEditSaving(true)
     setEditError('')
     try {
-      await apiClient.put(`/api/production/boms/${editing.id}`, editForm)
+      const isBatch = editing.bom_type === 'BATCH'
+      await apiClient.put(`/api/production/boms/${editing.id}`, {
+        name: editForm.name,
+        is_active: editForm.is_active,
+        ...(isBatch ? { batch_size: Number(editForm.batch_size) || 0 } : {}),
+        lines: editForm.lines
+          .filter((l) => l.component_product_id)
+          .map((l) =>
+            isBatch
+              ? { component_product_id: l.component_product_id, percentage: Number(l.percentage) || 0 }
+              : { component_product_id: l.component_product_id, quantity_per_unit: Number(l.quantity_per_unit) || 0 },
+          ),
+      })
       setEditing(null)
       loadBoms(companyId, branchId)
     } catch (err) {
@@ -159,7 +179,7 @@ function BomPage() {
       className: 'text-end',
       cellClassName: 'text-end',
       render: (b) => can('update') && (
-        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openEdit(b)}>
+        <button type="button" className="btn btn-sm btn-outline-secondary" aria-label={`Edit BOM ${b.bom_code}`} onClick={() => openEdit(b)}>
           <i className="bi bi-pencil" />
         </button>
       ),
@@ -271,78 +291,13 @@ function BomPage() {
               )}
             </div>
 
-            <div>
-              <div className="d-flex justify-content-between align-items-center mb-2">
-                <label className="form-label mb-0">Komponen / Bahan Baku</label>
-                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={addLine}>
-                  <i className="bi bi-plus-lg me-1" />
-                  Baris
-                </button>
-              </div>
-              <div className="table-responsive">
-                <table className="table table-sm align-middle mb-0">
-                  <thead>
-                    <tr>
-                      <th>Komponen</th>
-                      <th style={{ width: 140 }}>{form.bom_type === 'BATCH' ? '% dari Batch' : 'Qty per Unit'}</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {form.lines.map((l, i) => (
-                      <tr key={i}>
-                        <td>
-                          <select
-                            className="form-select form-select-sm"
-                            value={l.component_product_id}
-                            onChange={(e) => updateLine(i, { component_product_id: e.target.value })}
-                          >
-                            <option value="">Pilih komponen...</option>
-                            {products.map((p) => (
-                              <option key={p.id} value={p.id}>{p.sku} - {p.name}</option>
-                            ))}
-                          </select>
-                        </td>
-                        <td>
-                          {form.bom_type === 'BATCH' ? (
-                            <div className="input-group input-group-sm">
-                              <input
-                                type="number"
-                                className="form-control form-control-sm"
-                                value={l.percentage}
-                                onChange={(e) => updateLine(i, { percentage: e.target.value })}
-                                min="0"
-                                step="0.0001"
-                              />
-                              <span className="input-group-text">%</span>
-                            </div>
-                          ) : (
-                            <input
-                              type="number"
-                              className="form-control form-control-sm"
-                              value={l.quantity_per_unit}
-                              onChange={(e) => updateLine(i, { quantity_per_unit: e.target.value })}
-                              min="0"
-                              step="0.01"
-                            />
-                          )}
-                        </td>
-                        <td>
-                          {form.lines.length > 1 && (
-                            <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => removeLine(i)}>
-                              <i className="bi bi-x" />
-                            </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {form.bom_type === 'BATCH' && (
-                <FormulaTotals lines={form.lines} batchSize={Number(form.batch_size) || 0} />
-              )}
-            </div>
+            <LinesEditor
+              bomType={form.bom_type}
+              batchSize={Number(form.batch_size) || 0}
+              lines={form.lines}
+              onChange={(lines) => setForm((f) => ({ ...f, lines }))}
+              products={products}
+            />
           </form>
         </Modal>
       )}
@@ -356,7 +311,7 @@ function BomPage() {
               <button type="button" className="btn btn-outline-secondary" onClick={() => setEditing(null)}>
                 Batal
               </button>
-              <button type="submit" form="bom-edit-form" className="btn btn-primary" disabled={editSaving}>
+              <button type="submit" form="bom-edit-form" className="btn btn-primary" disabled={editSaving || editLoading}>
                 {editSaving ? 'Menyimpan...' : 'Simpan'}
               </button>
             </>
@@ -384,8 +339,117 @@ function BomPage() {
               />
               <label className="form-check-label" htmlFor="bom-is-active">Aktif</label>
             </div>
+            {editing.bom_type === 'BATCH' && (
+              <div>
+                <label className="form-label">Ukuran Batch (hasil 1 batch)</label>
+                <input
+                  type="number"
+                  className="form-control"
+                  value={editForm.batch_size}
+                  onChange={(e) => setEditForm({ ...editForm, batch_size: e.target.value })}
+                  min="0"
+                  step="0.0001"
+                  required
+                />
+                <div className="form-text">Work order yang sudah dibuat tidak berubah: kebutuhan komponennya sudah dicatat saat dibuat.</div>
+              </div>
+            )}
+            {editLoading ? (
+              <div className="text-secondary small">Memuat komponen...</div>
+            ) : (
+              <LinesEditor
+                bomType={editing.bom_type}
+                batchSize={Number(editForm.batch_size) || 0}
+                lines={editForm.lines}
+                onChange={(lines) => setEditForm((f) => ({ ...f, lines }))}
+                products={products}
+              />
+            )}
           </form>
         </Modal>
+      )}
+    </div>
+  )
+}
+
+// Tabel komponen yang dipakai form buat dan form edit. Terkontrol penuh: state
+// baris hidup di pemanggilnya.
+function LinesEditor({ bomType, batchSize, lines, onChange, products }) {
+  const updateLine = (index, patch) => onChange(lines.map((l, i) => (i === index ? { ...l, ...patch } : l)))
+  const addLine = () => onChange([...lines, { ...emptyLine }])
+  const removeLine = (index) => onChange(lines.filter((_, i) => i !== index))
+
+  return (
+    <div>
+      <div className="d-flex justify-content-between align-items-center mb-2">
+        <label className="form-label mb-0">Komponen / Bahan Baku</label>
+        <button type="button" className="btn btn-sm btn-outline-secondary" onClick={addLine}>
+          <i className="bi bi-plus-lg me-1" />
+          Baris
+        </button>
+      </div>
+      <div className="table-responsive">
+        <table className="table table-sm align-middle mb-0">
+          <thead>
+            <tr>
+              <th>Komponen</th>
+              <th style={{ width: 140 }}>{bomType === 'BATCH' ? '% dari Batch' : 'Qty per Unit'}</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((l, i) => (
+              <tr key={i}>
+                <td>
+                  <select
+                    className="form-select form-select-sm"
+                    value={l.component_product_id}
+                    onChange={(e) => updateLine(i, { component_product_id: e.target.value })}
+                  >
+                    <option value="">Pilih komponen...</option>
+                    {products.map((p) => (
+                      <option key={p.id} value={p.id}>{p.sku} - {p.name}</option>
+                    ))}
+                  </select>
+                </td>
+                <td>
+                  {bomType === 'BATCH' ? (
+                    <div className="input-group input-group-sm">
+                      <input
+                        type="number"
+                        className="form-control form-control-sm"
+                        value={l.percentage}
+                        onChange={(e) => updateLine(i, { percentage: e.target.value })}
+                        min="0"
+                        step="0.0001"
+                      />
+                      <span className="input-group-text">%</span>
+                    </div>
+                  ) : (
+                    <input
+                      type="number"
+                      className="form-control form-control-sm"
+                      value={l.quantity_per_unit}
+                      onChange={(e) => updateLine(i, { quantity_per_unit: e.target.value })}
+                      min="0"
+                      step="0.01"
+                    />
+                  )}
+                </td>
+                <td>
+                  {lines.length > 1 && (
+                    <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => removeLine(i)}>
+                      <i className="bi bi-x" />
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {bomType === 'BATCH' && (
+        <FormulaTotals lines={lines} batchSize={batchSize} />
       )}
     </div>
   )
