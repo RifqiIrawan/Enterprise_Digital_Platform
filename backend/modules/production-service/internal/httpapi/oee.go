@@ -19,10 +19,16 @@ type machineOEE struct {
 	oeeMetrics
 }
 
+// downtimeReasonShare adalah satu batang Pareto downtime. Daftarnya selalu
+// terurut dari alasan terbesar, jadi CumulativeShare (jumlah berjalan Share
+// dari atas sampai baris ini) menunjukkan berapa alasan teratas yang menjelaskan
+// sebagian besar downtime. Dihitung dari menit, bukan dari Share yang sudah
+// dibulatkan, supaya baris terakhir tepat 1 dan pembulatan tidak menumpuk.
 type downtimeReasonShare struct {
-	ReasonCode string  `json:"reason_code"`
-	Minutes    int     `json:"minutes"`
-	Share      float64 `json:"share"`
+	ReasonCode      string  `json:"reason_code"`
+	Minutes         int     `json:"minutes"`
+	Share           float64 `json:"share"`
+	CumulativeShare float64 `json:"cumulative_share"`
 }
 
 type oeeResponse struct {
@@ -154,21 +160,24 @@ func (h *Handler) oeeSummary(w http.ResponseWriter, r *http.Request) {
 		FROM downtime_logs d
 		JOIN production_runs pr ON pr.id = d.production_run_id`+where+`
 		GROUP BY d.reason_code
-		ORDER BY SUM(d.minutes) DESC`, args...)
+		ORDER BY SUM(d.minutes) DESC, d.reason_code ASC`, args...)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat rincian downtime")
 		return
 	}
 	defer reasonRows.Close()
 
+	runningMinutes := 0
 	for reasonRows.Next() {
 		var share downtimeReasonShare
 		if err := reasonRows.Scan(&share.ReasonCode, &share.Minutes); err != nil {
 			writeError(w, http.StatusInternalServerError, "Gagal membaca rincian downtime")
 			return
 		}
+		runningMinutes += share.Minutes
 		if totalDowntime > 0 {
 			share.Share = math.Round(float64(share.Minutes)/float64(totalDowntime)*10000) / 10000
+			share.CumulativeShare = math.Round(float64(runningMinutes)/float64(totalDowntime)*10000) / 10000
 		}
 		resp.DowntimeByReason = append(resp.DowntimeByReason, share)
 	}

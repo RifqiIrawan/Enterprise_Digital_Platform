@@ -54,8 +54,8 @@ describe('OeePage', () => {
       overall: metrics,
       machines: [{ machine_id: 'mc-1', machine_code: 'MC-1', machine_name: 'Mesin Cetak', run_count: 2, ...metrics }],
       downtime_by_reason: [
-        { reason_code: 'BREAKDOWN', minutes: 45, share: 0.75 },
-        { reason_code: 'SETUP', minutes: 15, share: 0.25 },
+        { reason_code: 'BREAKDOWN', minutes: 45, share: 0.75, cumulative_share: 0.75 },
+        { reason_code: 'SETUP', minutes: 15, share: 0.25, cumulative_share: 1 },
       ],
     })
 
@@ -70,6 +70,25 @@ describe('OeePage', () => {
     // Kode alasan diterjemahkan, bukan ditampilkan mentah.
     expect(screen.getByText('Kerusakan mesin')).toBeTruthy()
     expect(screen.getByText(/45 menit · 75.0%/)).toBeTruthy()
+  })
+
+  it('menandai penyumbang utama downtime (Pareto 80%) dan menampilkan kumulatifnya', async () => {
+    mockApi({
+      overall: metrics,
+      machines: [{ machine_id: 'mc-1', machine_code: 'MC-1', machine_name: 'Mesin Cetak', run_count: 2, ...metrics }],
+      downtime_by_reason: [
+        { reason_code: 'BREAKDOWN', minutes: 60, share: 0.6, cumulative_share: 0.6 },
+        { reason_code: 'SETUP', minutes: 30, share: 0.3, cumulative_share: 0.9 },
+        { reason_code: 'OTHER', minutes: 10, share: 0.1, cumulative_share: 1 },
+      ],
+    })
+
+    renderPage()
+
+    expect(await screen.findByText(/60 menit · 60.0% · kumulatif 60.0%/)).toBeTruthy()
+    expect(screen.getByText(/30 menit · 30.0% · kumulatif 90.0%/)).toBeTruthy()
+    // BREAKDOWN dan SETUP (yang menggenapi 80%) ditandai; ekor panjang OTHER tidak.
+    expect(screen.getAllByText('penyumbang utama')).toHaveLength(2)
   })
 
   it('memberi tahu saat Performance dipotong ke 100%', async () => {

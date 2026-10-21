@@ -31,6 +31,12 @@ const OEE_SERIES = [
 
 const percent = (v) => `${(Number(v) * 100).toFixed(1)}%`
 
+// Aturan Pareto 80/20: alasan yang SEBELUM dirinya belum menjelaskan 80%
+// downtime adalah penyumbang utama -- jadi alasan yang melewati garis 80%
+// tetap ikut ditandai (ia yang menggenapi 80%), sedangkan sisanya ekor panjang.
+const PARETO_CUTOFF = 0.8
+const isMajorContributor = (d) => Number(d.cumulative_share) - Number(d.share) < PARETO_CUTOFF - 1e-9
+
 // Tanggal LOKAL, bukan toISOString(): itu UTC, jadi di zona seperti UTC+7
 // tengah malam tanggal 1 jatuh di hari terakhir bulan sebelumnya dan "Dari"
 // terisi 31/08 alih-alih 01/09.
@@ -212,9 +218,12 @@ function OeePage() {
             {summary.downtime_by_reason.map((d) => (
               <div key={d.reason_code} className="mb-2">
                 <div className="d-flex justify-content-between small">
-                  <span>{REASON_LABEL[d.reason_code] ?? d.reason_code}</span>
+                  <span>
+                    {REASON_LABEL[d.reason_code] ?? d.reason_code}
+                    {isMajorContributor(d) && <span className="badge text-bg-light border ms-2">penyumbang utama</span>}
+                  </span>
                   <span className="text-secondary">
-                    {d.minutes} menit · {percent(d.share)}
+                    {d.minutes} menit · {percent(d.share)} · kumulatif {percent(d.cumulative_share)}
                   </span>
                 </div>
                 <div className="progress" style={{ height: 6 }}>

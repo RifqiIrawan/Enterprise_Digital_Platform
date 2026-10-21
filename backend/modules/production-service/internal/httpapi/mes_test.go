@@ -76,6 +76,7 @@ type oeeSummaryView struct {
 		ReasonCode string  `json:"reason_code"`
 		Minutes    int     `json:"minutes"`
 		Share      float64 `json:"share"`
+		Cumulative float64 `json:"cumulative_share"`
 	} `json:"downtime_by_reason"`
 }
 
@@ -699,6 +700,8 @@ func TestOEESummary_AggregatesPerMachineAndByReason(t *testing.T) {
 	}
 	requireClose(t, "share BREAKDOWN", summary.DowntimeByReason[0].Share, 0.75)
 	requireClose(t, "share SETUP", summary.DowntimeByReason[1].Share, 0.25)
+	requireClose(t, "kumulatif BREAKDOWN", summary.DowntimeByReason[0].Cumulative, 0.75)
+	requireClose(t, "kumulatif SETUP (harus tepat 100%)", summary.DowntimeByReason[1].Cumulative, 1)
 
 	// Filter per mesin mempersempit ringkasan sekaligus Pareto-nya.
 	var onlyB oeeSummaryView
