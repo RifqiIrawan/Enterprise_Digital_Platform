@@ -149,10 +149,10 @@ func TestReadSilver_MissingIsEmptyNotError(t *testing.T) {
 }
 
 func liveOf(keys ...string) LiveKeys {
-	return func(context.Context) (map[string]struct{}, error) {
-		m := map[string]struct{}{}
+	return func(context.Context) (*KeySet, error) {
+		m := NewKeySet(len(keys))
 		for _, k := range keys {
-			m[k] = struct{}{}
+			m.Add(k)
 		}
 		return m, nil
 	}
@@ -204,7 +204,7 @@ func TestBuildSilver_SourceUnreachableKeepsPreviousSilver(t *testing.T) {
 	}
 	before, _ := testClient.Get(ctx, silverKey(fact))
 
-	down := func(context.Context) (map[string]struct{}, error) { return nil, errors.New("postgres down") }
+	down := func(context.Context) (*KeySet, error) { return nil, errors.New("postgres down") }
 	if _, err := testClient.buildSilver(ctx, fact, "LineID", down, true); err == nil || !strings.Contains(err.Error(), "postgres down") {
 		t.Fatalf("want the source error, got %v", err)
 	}
@@ -223,5 +223,32 @@ func TestBuildSilver_NilLiveKeysDoesNotPrune(t *testing.T) {
 	st, err := testClient.buildSilver(ctx, fact, "LineID", nil, true)
 	if err != nil || st.Pruned != 0 || st.SilverRows != 1 {
 		t.Fatalf("stats=%+v err=%v", st, err)
+	}
+}
+
+func TestKeySet_MatchesStringSemantics(t *testing.T) {
+	canonical := co1 + "/" + id1
+	upper := co1 + "/" + strings.ToUpper(id1) // another spelling of the same UUID: a different Silver key
+	odd := "company-a/row-1"                  // not UUIDs at all
+
+	s := NewKeySet(0)
+	s.Add(canonical)
+	s.Add(odd)
+
+	for key, want := range map[string]bool{
+		canonical:         true,
+		odd:               true,
+		upper:             false,
+		co1 + "/" + id2:   false,
+		"company-a/row-2": false,
+		"":                false,
+		canonical + "x":   false,
+	} {
+		if got := s.Has(key); got != want {
+			t.Errorf("Has(%q) = %v, want %v", key, got, want)
+		}
+	}
+	if s.Len() != 2 {
+		t.Errorf("Len = %d, want 2", s.Len())
 	}
 }

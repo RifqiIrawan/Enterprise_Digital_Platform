@@ -25,7 +25,7 @@ type Fact struct {
 	// yang sama dengan sync (jadi "masih ada" berarti "masih akan disalin sync",
 	// mis. production_oee hanya run CLOSED). Dipakai Silver untuk memangkas baris
 	// yang sudah dihapus di sumber.
-	LiveKeys func(ctx context.Context, source *pgxpool.Pool) (map[string]struct{}, error)
+	LiveKeys func(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error)
 }
 
 var Facts = []Fact{
@@ -105,18 +105,18 @@ func backfill[T any](ctx context.Context, lake *datalake.Client, table string, e
 // himpunan kunci Silver. Baris yang kuncinya tidak bisa dihitung membuat
 // pemanggilan GAGAL: daftar kunci yang bolong akan memangkas baris yang masih
 // ada, dan itu lebih buruk daripada tidak memangkas.
-func liveKeys[T any](fact string, extract func() ([]T, error)) (map[string]struct{}, error) {
+func liveKeys[T any](fact string, extract func() ([]T, error)) (*datalake.KeySet, error) {
 	rows, err := extract()
 	if err != nil {
 		return nil, err
 	}
-	keys := make(map[string]struct{}, len(rows))
+	keys := datalake.NewKeySet(len(rows))
 	for _, r := range rows {
 		k, ok := datalake.RowKey(fact, r)
 		if !ok {
 			return nil, fmt.Errorf("live keys %s: baris sumber tanpa kunci yang valid", fact)
 		}
-		keys[k] = struct{}{}
+		keys.Add(k)
 	}
 	return keys, nil
 }

@@ -59,10 +59,10 @@ func TestSilverScale_IncrementalVsFull(t *testing.T) {
 	}
 	t.Logf("seed: %d baris, %s", n, time.Since(t0).Round(time.Millisecond))
 
-	live := func(context.Context) (map[string]struct{}, error) {
-		m := make(map[string]struct{}, n)
+	live := func(context.Context) (*KeySet, error) {
+		m := NewKeySet(n)
 		for i := 0; i < n; i++ {
-			m[company+"/"+uid(i)] = struct{}{}
+			m.Add(company + "/" + uid(i))
 		}
 		return m, nil
 	}

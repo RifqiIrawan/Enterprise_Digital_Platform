@@ -96,7 +96,7 @@ var SilverFacts = map[string]string{
 // di sumber untuk satu fact. Bronze append-only tidak pernah tahu bahwa sebuah
 // baris dihapus di sumber, jadi tanpa ini Silver menyimpan baris hantu
 // selamanya. nil = jangan memangkas.
-type LiveKeys func(ctx context.Context) (map[string]struct{}, error)
+type LiveKeys func(ctx context.Context) (*KeySet, error)
 
 // SilverStats meringkas satu build Silver. Selalu berlaku (dan diuji):
 //
@@ -263,7 +263,7 @@ func (c *Client) buildSilverOnce(ctx context.Context, fact, idField string, live
 	// di daftar kunci hidup yang lebih tua). Kalau sumber tidak bisa ditanya,
 	// build fact ini GAGAL dan Silver lama dibiarkan -- lebih baik usang daripada
 	// menerbitkan baris hantu atau, lebih buruk, menghapus baris yang masih ada.
-	var alive map[string]struct{}
+	var alive *KeySet
 	if live != nil {
 		alive, err = live(ctx)
 		if err != nil {
@@ -370,7 +370,7 @@ func (c *Client) writeRejected(ctx context.Context, fact, mode string, fresh [][
 // baris yang sudah tidak hidup di sumber. Pada kunci yang sama delta menang
 // (lebih baru). Silver lama dibaca baris demi baris; yang ada di memori hanya
 // delta dan daftar kunci hidup.
-func mergeSilver(w io.Writer, prev io.Reader, idField string, deltaKeys []string, delta map[string][]byte, alive map[string]struct{}, stats *SilverStats) error {
+func mergeSilver(w io.Writer, prev io.Reader, idField string, deltaKeys []string, delta map[string][]byte, alive *KeySet, stats *SilverStats) error {
 	var sc *bufio.Scanner
 	if prev != nil {
 		sc = bufio.NewScanner(prev)
@@ -404,7 +404,7 @@ func mergeSilver(w io.Writer, prev io.Reader, idField string, deltaKeys []string
 	newline := []byte("\n")
 	emit := func(key string, line []byte) error {
 		if alive != nil {
-			if _, ok := alive[key]; !ok {
+			if !alive.Has(key) {
 				stats.Pruned++
 				return nil
 			}

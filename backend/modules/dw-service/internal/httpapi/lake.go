@@ -46,7 +46,7 @@ func liveKeyFuncs(sources *sourcedb.Pools) map[string]datalake.LiveKeys {
 	out := make(map[string]datalake.LiveKeys, len(etl.Facts))
 	for _, f := range etl.Facts {
 		f := f
-		out[f.Name] = func(ctx context.Context) (map[string]struct{}, error) {
+		out[f.Name] = func(ctx context.Context) (*datalake.KeySet, error) {
 			return f.LiveKeys(ctx, f.Source(sources))
 		}
 	}

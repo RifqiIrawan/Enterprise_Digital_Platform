@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/enterprise-digital-platform/dw-service/internal/datalake"
 )
 
 func silverHasLine(t *testing.T, lineID uuid.UUID) (found bool, total int) {
@@ -134,7 +136,7 @@ func TestFactsRegistryIsConsistent(t *testing.T) {
 func TestSilver_PrunesRowsDeletedFromPostgres(t *testing.T) {
 	ctx := context.Background()
 	lake := testLake(t)
-	live := func(ctx context.Context) (map[string]struct{}, error) {
+	live := func(ctx context.Context) (*datalake.KeySet, error) {
 		return LiveKeysFinance(ctx, sourcePool)
 	}
 
