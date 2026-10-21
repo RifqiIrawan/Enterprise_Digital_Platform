@@ -94,9 +94,52 @@ BI layer EDP adalah **React SPA** (`frontend/web/`) yang mengkonsumsi semua serv
 ### AI/BI
 | Path | Komponen | Fungsi |
 |------|----------|--------|
-| `/aibi/dashboards` | BIDashboardsPage | Metrik agregat dari 8 service |
-| `/aibi/forecasting` | ForecastingPage | Proyeksi tren (linear) dengan chart |
-| `/aibi/anomaly` | AnomalyDetectionPage | Deteksi outlier (z-score) |
+| `/ai-bi/dashboards` | BIDashboardsPage | Metrik agregat dari beberapa service dan grafik dari dw-service |
+| `/ai-bi/forecasting` | ForecastingPage | Proyeksi tren (linear) dengan chart |
+| `/ai-bi/anomaly-detection` | AnomalyDetectionPage | Deteksi outlier (z-score) |
+| `/ai-bi/predictive-maintenance` | PredictiveMaintenancePage | Pindai aset yang perlu perawatan |
+| `/ai-bi/recommendations` | ReorderRecommendationsPage | Rekomendasi pemesanan ulang stok |
+| `/ai-bi/chatbot` | ChatbotPage | Chatbot dokumentasi (rag-service): kutipan dan jawaban |
+| `/ai-bi/chatbot-queries` | ChatbotQueriesPage | Riwayat pertanyaan chatbot |
+
+### Dashboard per Peran (BI)
+Setiap dashboard menampilkan kartu ringkasan dari ai-bi-service dan grafik bulanan dari dw-service. Akses dicek per menu; satu grafik yang gagal dimuat tidak menjatuhkan grafik lain.
+
+| Path | Komponen | Isi |
+|------|----------|-----|
+| `/bi/executive` | ExecutiveDashboardPage | Revenue vs expense, nilai penjualan, rencana vs realisasi produksi, sebaran nilai KPI |
+| `/bi/sales` | SalesDashboardPage | Nilai penjualan, pipeline CRM per stage, penjualan e-commerce, pengiriman selesai vs dibatalkan |
+| `/bi/finance` | FinanceDashboardPage | Revenue vs expense, beban gaji per periode, biaya proyek (timesheet yang sudah diposting) |
+| `/bi/warehouse` | WarehouseDashboardPage | Stock in vs stock out, belanja per pemasok |
+| `/bi/manufacturing` | ManufacturingDashboardPage | Rencana vs realisasi produksi, OEE, Pareto penyebab downtime, mutu, maintenance |
+| `/bi/hr` | HrDashboardPage | Hari cuti per jenis, sebaran dan rata-rata nilai KPI per departemen, gaji bersih vs potongan |
+
+### CRM
+| Path | Komponen | Fungsi |
+|------|----------|--------|
+| `/crm/leads` | LeadsPage | Lead; konversi lead yang QUALIFIED menjadi Account + Contact + Opportunity |
+| `/crm/accounts` | AccountsPage | Akun pelanggan |
+| `/crm/contacts` | ContactsPage | Kontak per akun |
+| `/crm/opportunities` | OpportunitiesPage | Pipeline per stage; menang/kalah lewat aksi khusus |
+| `/crm/activities` | ActivitiesPage | Aktivitas yang menempel ke entitas CRM lain (referensi polimorfik) |
+
+### Ticketing
+| Path | Komponen | Fungsi |
+|------|----------|--------|
+| `/ticketing/categories` | TicketCategoriesPage | Kategori tiket per company |
+| `/ticketing/tickets` | TicketsPage | Tiket; ditutup dan dibuka kembali lewat aksi khusus |
+| `/ticketing/comments` | TicketCommentsPage | Komentar tiket |
+
+### E-Commerce, Fleet, Project
+| Path | Komponen | Fungsi |
+|------|----------|--------|
+| `/ecommerce/orders` | OrdersPage | Pesanan online: bayar, kirim (memotong stok; `409` jika stok kurang), terima, batalkan |
+| `/fleet/vehicles` | VehiclesPage | Kendaraan |
+| `/fleet/drivers` | DriversPage | Pengemudi |
+| `/fleet/delivery-orders` | DeliveryOrdersPage | Surat jalan |
+| `/project/projects` | ProjectsPage | Proyek |
+| `/project/tasks` | TasksPage | Tugas proyek |
+| `/project/timesheets` | TimesheetsPage | Timesheet; biaya diposting ke GL |
 
 ### Data Warehouse
 | Path | Komponen | Fungsi |

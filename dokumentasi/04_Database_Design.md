@@ -18,11 +18,17 @@ EDP menggunakan **Database-per-Service** pattern. Semua database dijalankan di s
 | sales-service | `sales_service` | customers, quotations, quotation_lines, sales_orders, sales_order_lines |
 | purchasing-service | `purchasing_service` | suppliers, requisitions, requisition_lines, purchase_orders, purchase_order_lines |
 | warehouse-service | `warehouse_service` | products, warehouses, stock_movements, stock_balances, stock_transfers, stock_opnames |
-| production-service | `production_service` | bill_of_materials, bom_lines, work_orders, work_order_lines |
+| production-service | `production_service` | bill_of_materials, bom_lines, work_orders, work_order_lines, machines, shifts, production_runs, downtime_logs |
 | qc-service | `qc_service` | quality_standards, quality_inspections |
 | asset-service | `asset_service` | assets, maintenance_schedules |
 | iot-service | `iot_service` | devices, readings, alerts |
-| dw-service | *(tidak punya DB Postgres sendiri — baca dari 9 DB lain, tulis ClickHouse)* | |
+| crm-service | `crm_service` | leads, accounts, contacts, opportunities, activities |
+| ticketing-service | `ticketing_service` | ticket_categories, tickets, ticket_comments |
+| ecommerce-service | `ecommerce_service` | orders, order_items |
+| fleet-service | `fleet_service` | vehicles, drivers, delivery_orders |
+| project-service | `project_service` | projects, tasks, timesheets |
+| rag-service | `rag_service` | rag_documents, rag_chunks, rag_lexemes, rag_queries |
+| dw-service | *(tidak punya DB Postgres sendiri — baca dari 14 DB lain, tulis ClickHouse)* | |
 
 ---
 

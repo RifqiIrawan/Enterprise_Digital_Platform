@@ -33,7 +33,7 @@ Pastikan PostgreSQL 18 jalan (Windows service `postgresql-x64-18`) dengan role `
 CREATE ROLE platform WITH LOGIN PASSWORD 'platform';
 ALTER ROLE platform CREATEDB;
 
--- Buat 13 database untuk semua service
+-- Buat 19 database untuk semua service (dw-service tidak punya DB sendiri)
 CREATE DATABASE auth_service OWNER platform;
 CREATE DATABASE company_service OWNER platform;
 CREATE DATABASE rbac_service OWNER platform;
@@ -47,6 +47,12 @@ CREATE DATABASE production_service OWNER platform;
 CREATE DATABASE qc_service OWNER platform;
 CREATE DATABASE asset_service OWNER platform;
 CREATE DATABASE iot_service OWNER platform;
+CREATE DATABASE crm_service OWNER platform;
+CREATE DATABASE ticketing_service OWNER platform;
+CREATE DATABASE ecommerce_service OWNER platform;
+CREATE DATABASE fleet_service OWNER platform;
+CREATE DATABASE project_service OWNER platform;
+CREATE DATABASE rag_service OWNER platform;
 ```
 
 ### 3. Jalankan Infra Docker
@@ -62,7 +68,7 @@ Services yang naik: Kafka (port 9092), Kafka UI (8200), Redis (6379), ClickHouse
 
 ### 4. Jalankan Backend Services
 
-Buka 16 terminal (atau pakai process manager). Urutan yang disarankan:
+Buka 22 terminal (atau pakai process manager). Urutan yang disarankan:
 
 ```bash
 # Terminal 1: api-gateway
@@ -74,7 +80,7 @@ cd backend/services/company-service && go run ./cmd/server
 cd backend/services/rbac-service && go run ./cmd/server
 cd backend/services/audit-service && go run ./cmd/server
 
-# Terminal 6-16: Business modules
+# Terminal 6-22: Business modules
 cd backend/modules/finance-service && go run ./cmd/server
 cd backend/modules/hr-service && go run ./cmd/server
 cd backend/modules/sales-service && go run ./cmd/server
@@ -86,6 +92,12 @@ cd backend/modules/asset-service && go run ./cmd/server
 cd backend/modules/ai-bi-service && go run ./cmd/server
 cd backend/modules/iot-service && go run ./cmd/server
 cd backend/modules/dw-service && go run ./cmd/server
+cd backend/modules/crm-service && go run ./cmd/server
+cd backend/modules/ticketing-service && go run ./cmd/server
+cd backend/modules/ecommerce-service && go run ./cmd/server
+cd backend/modules/fleet-service && go run ./cmd/server
+cd backend/modules/project-service && go run ./cmd/server
+cd backend/modules/rag-service && go run ./cmd/server
 ```
 
 Migrasi database berjalan **otomatis** saat startup pertama.
@@ -104,7 +116,7 @@ Frontend tersedia di `http://localhost:23000`.
 
 ```bash
 # Cek semua service hidup
-for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095; do
+for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095 28096 28097 28098 28099 28100 28101; do
   echo -n "Port $port: "
   curl -s http://localhost:$port/health | python -c "import sys,json; d=json.load(sys.stdin); print(d['service'])" 2>/dev/null || echo "DOWN"
 done

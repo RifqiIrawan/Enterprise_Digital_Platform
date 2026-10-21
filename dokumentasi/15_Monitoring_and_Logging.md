@@ -89,7 +89,7 @@ Setiap service mengekspos `GET /health` yang mengembalikan:
 
 Cek semua service sekaligus:
 ```bash
-for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095; do
+for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095 28096 28097 28098 28099 28100 28101; do
   curl -s http://localhost:$port/health; echo
 done
 ```

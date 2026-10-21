@@ -22,6 +22,7 @@ sama dengan core services di `../services/`.
 | ecommerce-service | Order & Order Item (checkout memakai katalog warehouse) | Sales |
 | fleet-service | Kendaraan, Pengemudi, Surat Jalan | Operasional |
 | project-service | Proyek, Tugas, Timesheet (posting biaya ke GL) | Project |
+| rag-service | Chatbot dokumentasi (RAG): indeks dokumentasi, kutipan + jawaban model | AI Analyst |
 
 ## Catatan sejarah
 

@@ -31,7 +31,13 @@ Semua service ditulis dalam **Go 1.25**, dijalankan dengan `go run ./cmd/server`
 | `asset-service` | 28092 | `asset_service` | Aset, Maintenance Schedule (overdue indicator) |
 | `ai-bi-service` | 28093 | — (no DB, agregasi HTTP) | BI Dashboards, Forecasting (linear), Anomaly Detection (z-score) |
 | `iot-service` | 28094 | `iot_service` | Device, IoT Reading, Alert (threshold), Simulator via MQTT |
-| `dw-service` | 28095 | — (baca dari 9 DB lain, tulis ClickHouse) | ETL → ClickHouse facts, MinIO lake |
+| `dw-service` | 28095 | — (baca dari 14 DB lain, tulis ClickHouse) | ETL → ClickHouse facts, MinIO lake |
+| `crm-service` | 28096 | `crm_service` | Lead, Account, Contact, Opportunity, Activity (konversi Lead → Account + Contact + Opportunity) |
+| `ticketing-service` | 28097 | `ticketing_service` | Kategori tiket, Tiket, Komentar |
+| `ecommerce-service` | 28098 | `ecommerce_service` | Pesanan online dan item (shipping memotong stok di warehouse) |
+| `fleet-service` | 28099 | `fleet_service` | Kendaraan, Pengemudi, Surat Jalan |
+| `project-service` | 28100 | `project_service` | Proyek, Tugas, Timesheet (biaya diposting ke GL) |
+| `rag-service` | 28101 | `rag_service` | Chatbot dokumentasi (RAG): indeks `dokumentasi/`, jawaban model bila `ANTHROPIC_API_KEY` diisi |
 
 ---
 

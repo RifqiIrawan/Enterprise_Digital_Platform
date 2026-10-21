@@ -136,7 +136,7 @@ curl http://localhost:28085/health  # field "service" harus "finance-service"
 # 4. Jalankan semua service Go (di terminal terpisah atau via process manager)
 
 # 5. Health check semua service
-for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095; do
+for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095 28096 28097 28098 28099 28100 28101; do
   echo -n "$port: "; curl -s http://localhost:$port/health | python -m json.tool 2>/dev/null || echo "DOWN"
 done
 ```
