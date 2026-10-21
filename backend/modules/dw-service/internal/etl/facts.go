@@ -38,6 +38,7 @@ var Facts = []Fact{
 	{purchasingSourceTable, "fact_purchasing_order_lines", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Purchasing }, BackfillPurchasing, LiveKeysPurchasing},
 	{productionSourceTable, "fact_production_work_orders", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Production }, BackfillProduction, LiveKeysProduction},
 	{productionOEESourceTable, "fact_production_oee", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Production }, BackfillProductionOEE, LiveKeysProductionOEE},
+	{productionDowntimeSourceTable, "fact_production_downtime", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Production }, BackfillProductionDowntime, LiveKeysProductionDowntime},
 	{qcSourceTable, "fact_qc_inspections", func(p *sourcedb.Pools) *pgxpool.Pool { return p.QC }, BackfillQC, LiveKeysQC},
 	{assetSourceTable, "fact_asset_maintenance", func(p *sourcedb.Pools) *pgxpool.Pool { return p.Asset }, BackfillAsset, LiveKeysAsset},
 	{iotSourceTable, "fact_iot_readings", func(p *sourcedb.Pools) *pgxpool.Pool { return p.IoT }, BackfillIoT, LiveKeysIoT},

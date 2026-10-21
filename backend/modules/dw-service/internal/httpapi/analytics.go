@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -237,6 +238,47 @@ func (h *Handler) productionOEEMonthlySummary(w http.ResponseWriter, r *http.Req
 	rows, err := h.dest.ProductionOEEMonthlySummary(r.Context(), companyID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Gagal memuat ringkasan OEE: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rows)
+}
+
+// productionDowntimePareto: alasan downtime dari yang terbesar, dengan
+// kumulatifnya. from/to (YYYY-MM-DD, tanggal run, inklusif) opsional.
+func (h *Handler) productionDowntimePareto(w http.ResponseWriter, r *http.Request) {
+	if h.dest == nil {
+		writeError(w, http.StatusServiceUnavailable, "ClickHouse tidak tersedia")
+		return
+	}
+	q := r.URL.Query()
+	companyID, err := uuid.Parse(q.Get("company_id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Parameter company_id wajib berupa UUID valid")
+		return
+	}
+	parseDate := func(name string) (*time.Time, bool) {
+		v := q.Get(name)
+		if v == "" {
+			return nil, true
+		}
+		d, err := time.Parse("2006-01-02", v)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "Parameter "+name+" harus berformat YYYY-MM-DD")
+			return nil, false
+		}
+		return &d, true
+	}
+	from, ok := parseDate("from")
+	if !ok {
+		return
+	}
+	to, ok := parseDate("to")
+	if !ok {
+		return
+	}
+	rows, err := h.dest.ProductionDowntimePareto(r.Context(), companyID, from, to)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Gagal memuat Pareto downtime: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, rows)

@@ -136,6 +136,27 @@ export const PRODUCTION_OEE_SERIES = [
   { key: 'oee_pct', label: 'OEE', color: 'var(--bs-primary)' },
 ]
 
+// Chart ke-19 (fact table ke-18: fact_production_downtime). Pareto alasan
+// downtime: SATU seri (menit), karena yang dibandingkan adalah besar tiap
+// alasan, bukan dua sisi berlawanan -- jadi satu hue, sama seperti nilai
+// penjualan. Kumulatif % (garis Pareto klasik) sengaja tidak digambar di sini:
+// satuannya persen sedangkan batangnya menit, dan chart ini bersumbu tunggal.
+// Angkanya ada di endpoint (cumulative_share) dan di halaman OEE operasional.
+export const PRODUCTION_DOWNTIME_SERIES = [{ key: 'minutes', label: 'Menit downtime', color: 'var(--bs-primary)' }]
+
+// Kode alasan downtime -> teks yang dibaca orang. Dipakai halaman OEE dan
+// chart Pareto BI; satu daftar supaya "Kerusakan mesin" tidak menjadi
+// "Breakdown" di layar sebelahnya.
+export const DOWNTIME_REASON_LABEL = {
+  BREAKDOWN: 'Kerusakan mesin',
+  SETUP: 'Setup / ganti cetakan',
+  MATERIAL_SHORTAGE: 'Bahan baku habis',
+  NO_OPERATOR: 'Tidak ada operator',
+  ADJUSTMENT: 'Penyetelan',
+  PLANNED_STOP: 'Berhenti terencana',
+  OTHER: 'Lainnya',
+}
+
 // Satu-satunya formatter yang ikut tinggal di modul ini, dengan alasan yang
 // sama seperti warnanya: faktor OEE yang TIDAK BISA dihitung (bulan tanpa unit
 // selesai) bernilai null, dan menampilkannya sebagai "0%" adalah klaim yang

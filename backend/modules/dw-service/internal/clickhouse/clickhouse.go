@@ -164,6 +164,19 @@ CREATE TABLE IF NOT EXISTS fact_production_oee (
 ) ENGINE = ReplacingMergeTree(synced_at)
 PARTITION BY toYYYYMM(run_date) ORDER BY (company_id, run_id);
 
+-- fact_production_downtime: satu baris = satu catatan downtime dari run yang
+-- SUDAH DITUTUP. Pelengkap fact_production_oee, yang hanya menyimpan TOTAL menit
+-- downtime per run: tanpa alasan, pertanyaan "apa penyebab terbesar downtime
+-- bulan ini" tidak bisa dijawab dari gudang data. Dipisah jadi fact sendiri
+-- (bukan kolom array di OEE) karena satu run punya banyak catatan, dan
+-- menggabungkannya akan menggandakan planned_minutes di setiap query OEE.
+CREATE TABLE IF NOT EXISTS fact_production_downtime (
+    downtime_id UUID, company_id UUID, branch_id Nullable(UUID), run_id UUID, run_number String,
+    machine_id UUID, machine_code String, machine_name String, run_date Date,
+    reason_code String, minutes Int32, updated_at DateTime, synced_at DateTime
+) ENGINE = ReplacingMergeTree(synced_at)
+PARTITION BY toYYYYMM(run_date) ORDER BY (company_id, downtime_id);
+
 CREATE TABLE IF NOT EXISTS fact_qc_inspections (
     inspection_id UUID, company_id UUID, branch_id Nullable(UUID), inspection_number String,
     standard_id UUID, standard_code String, product_id UUID, reference_type String,
@@ -1821,6 +1834,102 @@ func (c *Client) InsertProductionOEE(ctx context.Context, rows []ProductionOEERo
 		}
 	}
 	return batch.Send()
+}
+
+type ProductionDowntimeRow struct {
+	DowntimeID  uuid.UUID
+	CompanyID   uuid.UUID
+	BranchID    *uuid.UUID
+	RunID       uuid.UUID
+	RunNumber   string
+	MachineID   uuid.UUID
+	MachineCode string
+	MachineName string
+	RunDate     time.Time
+	ReasonCode  string
+	Minutes     int32
+	UpdatedAt   time.Time
+}
+
+func (c *Client) InsertProductionDowntime(ctx context.Context, rows []ProductionDowntimeRow, syncedAt time.Time) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	batch, err := c.conn.PrepareBatch(ctx, "INSERT INTO fact_production_downtime")
+	if err != nil {
+		return fmt.Errorf("prepare production downtime batch: %w", err)
+	}
+	for _, r := range rows {
+		if err := batch.Append(
+			r.DowntimeID, r.CompanyID, r.BranchID, r.RunID, r.RunNumber, r.MachineID,
+			r.MachineCode, r.MachineName, r.RunDate, r.ReasonCode, r.Minutes, r.UpdatedAt, syncedAt,
+		); err != nil {
+			return fmt.Errorf("append production downtime row %s: %w", r.DowntimeID, err)
+		}
+	}
+	return batch.Send()
+}
+
+// ProductionDowntimeReason adalah satu batang Pareto downtime. Share dan
+// CumulativeShare berupa pecahan 0-1, dihitung dari menit seperti di
+// production-service (oee.go) supaya halaman operasional dan grafik BI tidak
+// menunjukkan dua angka untuk periode yang sama.
+type ProductionDowntimeReason struct {
+	ReasonCode      string  `json:"reason_code"`
+	Minutes         int64   `json:"minutes"`
+	Share           float64 `json:"share"`
+	CumulativeShare float64 `json:"cumulative_share"`
+}
+
+// ProductionDowntimePareto mengurutkan alasan downtime dari yang terbesar.
+// from/to opsional (tanggal run, inklusif); nil = tanpa batas. Run yang belum
+// ditutup tidak ada di fact ini, sama seperti fact_production_oee.
+func (c *Client) ProductionDowntimePareto(ctx context.Context, companyID uuid.UUID, from, to *time.Time) ([]ProductionDowntimeReason, error) {
+	query := `
+		SELECT reason_code, toInt64(sum(minutes)) AS total_minutes
+		FROM fact_production_downtime FINAL
+		WHERE company_id = ?`
+	args := []any{companyID}
+	if from != nil {
+		query += ` AND run_date >= ?`
+		args = append(args, *from)
+	}
+	if to != nil {
+		query += ` AND run_date <= ?`
+		args = append(args, *to)
+	}
+	query += `
+		GROUP BY reason_code
+		ORDER BY total_minutes DESC, reason_code ASC`
+
+	rows, err := c.conn.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query production downtime pareto: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ProductionDowntimeReason{}
+	var total int64
+	for rows.Next() {
+		var r ProductionDowntimeReason
+		if err := rows.Scan(&r.ReasonCode, &r.Minutes); err != nil {
+			return nil, fmt.Errorf("scan production downtime pareto row: %w", err)
+		}
+		total += r.Minutes
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	var running int64
+	for i := range out {
+		running += out[i].Minutes
+		if total > 0 {
+			out[i].Share = math.Round(float64(out[i].Minutes)/float64(total)*10000) / 10000
+			out[i].CumulativeShare = math.Round(float64(running)/float64(total)*10000) / 10000
+		}
+	}
+	return out, nil
 }
 
 type QCInspectionRow struct {

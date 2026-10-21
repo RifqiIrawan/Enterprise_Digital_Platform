@@ -82,6 +82,7 @@ var SilverFacts = map[string]string{
 	"purchasing_order_lines": "LineID",
 	"production_work_orders": "WOID",
 	"production_oee":         "RunID",
+	"production_downtime":    "DowntimeID",
 	"qc_inspections":         "InspectionID",
 	"asset_maintenance":      "ScheduleID",
 	"iot_readings":           "ReadingID",

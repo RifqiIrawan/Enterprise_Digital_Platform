@@ -46,6 +46,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /analytics/qc-monthly-summary", h.qcMonthlySummary)
 	mux.HandleFunc("GET /analytics/production-monthly-summary", h.productionMonthlySummary)
 	mux.HandleFunc("GET /analytics/production-oee-monthly-summary", h.productionOEEMonthlySummary)
+	mux.HandleFunc("GET /analytics/production-downtime-pareto", h.productionDowntimePareto)
 	mux.HandleFunc("GET /analytics/purchasing-supplier-summary", h.purchasingSupplierSummary)
 	mux.HandleFunc("GET /analytics/ticketing-monthly-summary", h.ticketingMonthlySummary)
 	mux.HandleFunc("GET /analytics/payroll-period-summary", h.payrollPeriodSummary)
@@ -128,6 +129,12 @@ func RunSync(ctx context.Context, sources *sourcedb.Pools, dest *ch.Client, lake
 		results = append(results, syncResult{Fact: "production_oee", Error: err.Error()})
 	} else {
 		results = append(results, syncResult{Fact: "production_oee", Rows: n})
+	}
+
+	if n, err := etl.SyncProductionDowntime(ctx, sources.Production, dest, lake); err != nil {
+		results = append(results, syncResult{Fact: "production_downtime", Error: err.Error()})
+	} else {
+		results = append(results, syncResult{Fact: "production_downtime", Rows: n})
 	}
 
 	if n, err := etl.SyncQC(ctx, sources.QC, dest, lake); err != nil {

@@ -109,6 +109,97 @@ func extractProduction(ctx context.Context, source *pgxpool.Pool, watermark time
 	return out, maxWatermark, nil
 }
 
+const productionDowntimeSourceTable = "production_downtime"
+
+// Satu baris per catatan downtime, hanya dari run CLOSED -- batas yang sama
+// dengan fact_production_oee, supaya jumlah menit downtime di kedua fact selalu
+// sama untuk periode yang sama. Watermark memakai production_runs.updated_at
+// (naik saat run ditutup), BUKAN downtime_logs.created_at: catatan downtime
+// dibuat selagi run masih berjalan, jadi watermark created_at sudah lewat
+// ketika run ditutup dan catatannya tidak akan pernah terambil.
+const productionDowntimeExtractSQL = `
+	SELECT d.id, pr.company_id, pr.branch_id, pr.id, pr.run_number,
+	       pr.machine_id, m.code, m.name, pr.run_date,
+	       d.reason_code, d.minutes, pr.updated_at
+	FROM downtime_logs d
+	JOIN production_runs pr ON pr.id = d.production_run_id
+	JOIN machines m ON m.id = pr.machine_id
+	WHERE pr.status = 'CLOSED' AND pr.updated_at >= $1
+	ORDER BY pr.updated_at`
+
+// SyncProductionDowntime memuat fact_production_downtime: alasan dan menit tiap
+// catatan downtime dari run yang sudah ditutup. Pelengkap SyncProductionOEE,
+// yang hanya membawa total menit per run.
+func SyncProductionDowntime(ctx context.Context, source *pgxpool.Pool, dest *ch.Client, lake *datalake.Client) (int, error) {
+	watermark, err := dest.GetWatermark(ctx, productionDowntimeSourceTable)
+	if err != nil {
+		return 0, fmt.Errorf("get production downtime watermark: %w", err)
+	}
+
+	out, maxWatermark, err := extractProductionDowntime(ctx, source, watermark)
+	if err != nil {
+		return 0, err
+	}
+
+	if len(out) == 0 {
+		return 0, nil
+	}
+
+	syncedAt := time.Now()
+	if err := dest.InsertProductionDowntime(ctx, out, syncedAt); err != nil {
+		return 0, fmt.Errorf("load production downtime rows: %w", err)
+	}
+	if err := lake.WriteJSONLines(ctx, productionDowntimeSourceTable, out, syncedAt); err != nil {
+		log.Printf("dw-service: datalake write for %s failed (ClickHouse sync still succeeded): %v", productionDowntimeSourceTable, err)
+	}
+	if err := dest.SetWatermark(ctx, productionDowntimeSourceTable, maxWatermark); err != nil {
+		return 0, fmt.Errorf("advance production downtime watermark: %w", err)
+	}
+	return len(out), nil
+}
+
+func eachProductionDowntime(ctx context.Context, source *pgxpool.Pool, watermark time.Time, fn func(ch.ProductionDowntimeRow) error) (time.Time, error) {
+	rows, err := source.Query(ctx, productionDowntimeExtractSQL, watermark)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("extract production downtime rows: %w", err)
+	}
+	defer rows.Close()
+
+	maxWatermark := watermark
+	for rows.Next() {
+		var r ch.ProductionDowntimeRow
+		if err := rows.Scan(
+			&r.DowntimeID, &r.CompanyID, &r.BranchID, &r.RunID, &r.RunNumber,
+			&r.MachineID, &r.MachineCode, &r.MachineName, &r.RunDate,
+			&r.ReasonCode, &r.Minutes, &r.UpdatedAt,
+		); err != nil {
+			return time.Time{}, fmt.Errorf("scan production downtime row: %w", err)
+		}
+		if err := fn(r); err != nil {
+			return time.Time{}, err
+		}
+		if r.UpdatedAt.After(maxWatermark) {
+			maxWatermark = r.UpdatedAt
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return time.Time{}, fmt.Errorf("iterate production downtime rows: %w", err)
+	}
+	return maxWatermark, nil
+}
+
+func extractProductionDowntime(ctx context.Context, source *pgxpool.Pool, watermark time.Time) ([]ch.ProductionDowntimeRow, time.Time, error) {
+	var out []ch.ProductionDowntimeRow
+	maxWatermark, err := eachProductionDowntime(ctx, source, watermark, func(r ch.ProductionDowntimeRow) error {
+		out = append(out, r)
+		return nil
+	})
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	return out, maxWatermark, nil
+}
+
 const productionOEESourceTable = "production_oee"
 
 // Hanya run CLOSED yang diekstrak. Itu aturan yang sama dengan halaman OEE di

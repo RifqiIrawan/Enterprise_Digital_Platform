@@ -1,5 +1,13 @@
 import RoleDashboard, { formatCount } from './RoleDashboard.jsx'
-import { PRODUCTION_SERIES, PRODUCTION_OEE_SERIES, QC_SERIES, ASSET_MAINTENANCE_SERIES, formatPercent } from './chartSeries.js'
+import {
+  PRODUCTION_SERIES,
+  PRODUCTION_OEE_SERIES,
+  PRODUCTION_DOWNTIME_SERIES,
+  DOWNTIME_REASON_LABEL,
+  QC_SERIES,
+  ASSET_MAINTENANCE_SERIES,
+  formatPercent,
+} from './chartSeries.js'
 
 // Produksi, mutu, dan kondisi mesin dibaca sebagai satu gambar: work order yang
 // meleset, cacat yang naik, dan maintenance yang terlambat biasanya adalah tiga
@@ -18,6 +26,14 @@ const CHARTS = [
     note: 'Availability x Performance x Quality, hanya dari production run yang sudah ditutup.',
     series: PRODUCTION_OEE_SERIES,
     format: formatPercent,
+  },
+  {
+    endpoint: 'production-downtime-pareto',
+    title: 'Penyebab Downtime (Pareto)',
+    note: 'Menit downtime per alasan, dari yang terbesar, hanya dari production run yang sudah ditutup.',
+    series: PRODUCTION_DOWNTIME_SERIES,
+    categoryKey: 'reason_code',
+    tick: (code) => DOWNTIME_REASON_LABEL[code] ?? code,
   },
   {
     endpoint: 'qc-monthly-summary',

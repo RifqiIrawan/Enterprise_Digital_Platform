@@ -121,8 +121,9 @@ describe('Dashboard per peran', () => {
 
     // Chart menolak menggambar kalau nilainya masih string; kalau konversinya
     // hilang, yang muncul adalah "Belum ada data." untuk grafik yang datanya ada.
-    // Dashboard Manufaktur punya empat grafik (OEE menyusul di Fase 3), dan
-    // hanya satu yang diberi data di test ini -- jadi tiga sisanya kosong.
-    await waitFor(() => expect(screen.queryAllByText('Belum ada data.').length).toBe(3))
+    // Dashboard Manufaktur punya lima grafik (OEE di Fase 3, Pareto downtime
+    // menyusul), dan hanya satu yang diberi data di test ini -- jadi empat
+    // sisanya kosong.
+    await waitFor(() => expect(screen.queryAllByText('Belum ada data.').length).toBe(4))
   })
 })

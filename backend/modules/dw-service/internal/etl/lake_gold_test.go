@@ -33,15 +33,15 @@ func TestSilverFactsCoverEveryFact(t *testing.T) {
 		assetSourceTable, crmSourceTable, ecommerceSourceTable, financeSourceTable,
 		fleetSourceTable, hrSourceTable, hrLeaveSourceTable, hrKPISourceTable,
 		inventorySourceTable, iotSourceTable, productionSourceTable,
-		productionOEESourceTable, projectSourceTable, purchasingSourceTable,
+		productionOEESourceTable, productionDowntimeSourceTable, projectSourceTable, purchasingSourceTable,
 		qcSourceTable, salesSourceTable, ticketingSourceTable,
 	} {
 		if _, ok := datalake.SilverFacts[f]; !ok {
 			t.Errorf("fact ETL %q belum terdaftar di datalake.SilverFacts", f)
 		}
 	}
-	if len(datalake.SilverFacts) != 17 {
-		t.Errorf("SilverFacts punya %d fact, ETL punya 17", len(datalake.SilverFacts))
+	if len(datalake.SilverFacts) != 18 {
+		t.Errorf("SilverFacts punya %d fact, ETL punya 18", len(datalake.SilverFacts))
 	}
 }
 

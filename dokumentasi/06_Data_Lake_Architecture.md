@@ -175,3 +175,12 @@ Yang perlu diketahui sebelum mengharapkan hasilnya:
 - **Asumsi urutan.** Objek Bronze yang muncul belakangan dengan key lebih tua dari penanda tidak terlihat oleh build inkremental sampai build penuh berikutnya (paling lama 24 jam); ini terjadi hanya kalau penulis menahan objek lebih dari 10 menit sejak `synced_at`-nya (mis. insert ClickHouse yang sangat lambat). Rekonsiliasi akan melihatnya sebagai selisih, dan `?full=true` memulihkannya (diuji).
 
 **Yang TIDAK diukur:** fact lain (diasumsikan orde yang sama; baris IoT lebih sempit sehingga memori per baris lebih kecil), waktu `count(*) ... FINAL` untuk rekonsiliasi dan query analitik ClickHouse pada puluhan juta baris, biaya sort ekstrak Postgres tanpa indeks `updated_at`, dan ruang disk. Tahap tertinggi yang dijalankan adalah 500 rb baris — 1 jt akan butuh ±3,5 GB sementara hanya ±3,4 GB RAM yang bebas — sehingga angka di atasnya adalah ekstrapolasi.
+
+## Fact tambahan: `production_downtime` (2026-10-21)
+
+`fact_production_oee` hanya menyimpan TOTAL menit downtime per run, jadi alasan berhentinya tidak bisa ditanyakan dari gudang data. `fact_production_downtime` (fact ke-18, Silver id `DowntimeID`) menyimpan satu baris per catatan downtime dari run yang sudah ditutup, dengan `reason_code` dan menitnya. Dua keputusan yang perlu diketahui:
+
+- **Watermark memakai `production_runs.updated_at`, bukan `downtime_logs.created_at`.** Catatan downtime dibuat selagi run masih berjalan; watermark `created_at` sudah lewat saat run ditutup dan catatannya tidak akan pernah terambil. Menutup run menaikkan `updated_at`, jadi semua catatan run itu terambil saat itu (diuji).
+- **Batasnya sama dengan `fact_production_oee`** (hanya run CLOSED), sehingga jumlah menit downtime di kedua fact selalu sama untuk periode yang sama (diuji).
+
+Endpoint: `GET /api/dw/analytics/production-downtime-pareto?company_id=...&from=YYYY-MM-DD&to=YYYY-MM-DD` (`from`/`to` opsional, tanggal run, inklusif) mengembalikan alasan dari yang terbesar dengan `minutes`, `share`, dan `cumulative_share` (pecahan 0-1, baris terakhir tepat 1). Dashboard Manufaktur menampilkannya sebagai bar menit per alasan; garis kumulatif tidak digambar karena chart-nya bersumbu tunggal.

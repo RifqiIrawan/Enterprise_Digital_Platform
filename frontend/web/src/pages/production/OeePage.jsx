@@ -6,16 +6,9 @@ import StatTile from '../../components/dashboard/StatTile.jsx'
 // jadi tidak ada alasan menulis SVG kedua yang perilakunya sedikit berbeda.
 import GroupedBarChart from '../aibi/GroupedBarChart.jsx'
 import { useCompany } from '../../store/CompanyContext.jsx'
+import { DOWNTIME_REASON_LABEL } from '../bi/chartSeries.js'
 
-const REASON_LABEL = {
-  BREAKDOWN: 'Kerusakan mesin',
-  SETUP: 'Setup / ganti cetakan',
-  MATERIAL_SHORTAGE: 'Bahan baku habis',
-  NO_OPERATOR: 'Tidak ada operator',
-  ADJUSTMENT: 'Penyetelan',
-  PLANNED_STOP: 'Berhenti terencana',
-  OTHER: 'Lainnya',
-}
+const REASON_LABEL = DOWNTIME_REASON_LABEL
 
 // Availability, Performance, dan Quality adalah tiga faktor yang BERBEDA jenis
 // (waktu, kecepatan, mutu), bukan dua sisi berlawanan dan bukan bagian satu

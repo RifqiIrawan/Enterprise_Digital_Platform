@@ -98,6 +98,13 @@ func BackfillProductionOEE(ctx context.Context, source *pgxpool.Pool, lake *data
 	})
 }
 
+func BackfillProductionDowntime(ctx context.Context, source *pgxpool.Pool, lake *datalake.Client) (int, error) {
+	return backfill(ctx, lake, productionDowntimeSourceTable, func() ([]ch.ProductionDowntimeRow, error) {
+		rows, _, err := extractProductionDowntime(ctx, source, time.Time{})
+		return rows, err
+	})
+}
+
 func BackfillProject(ctx context.Context, source *pgxpool.Pool, lake *datalake.Client) (int, error) {
 	return backfill(ctx, lake, projectSourceTable, func() ([]ch.ProjectTimesheetRow, error) {
 		rows, _, err := extractProject(ctx, source, time.Time{})
@@ -206,6 +213,13 @@ func LiveKeysIoT(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, e
 func LiveKeysProduction(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
 	return liveKeys(productionSourceTable, func(fn func(ch.ProductionWorkOrderRow) error) error {
 		_, err := eachProduction(ctx, source, time.Time{}, fn)
+		return err
+	})
+}
+
+func LiveKeysProductionDowntime(ctx context.Context, source *pgxpool.Pool) (*datalake.KeySet, error) {
+	return liveKeys(productionDowntimeSourceTable, func(fn func(ch.ProductionDowntimeRow) error) error {
+		_, err := eachProductionDowntime(ctx, source, time.Time{}, fn)
 		return err
 	})
 }
