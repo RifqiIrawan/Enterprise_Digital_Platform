@@ -432,6 +432,9 @@ var Rules = []Rule{
 	// hanya membandingkan hitungan, tanpa isi baris: cukup View.
 	{"POST", "/api/dw/lake/backfill", need("/dw/sync-status", Create)},
 	{"GET", "/api/dw/lake/reconcile", need("/dw/sync-status", View)},
+	// Memutar ulang event dari dead-letter topic menulis ulang fact di gudang
+	// data, jadi Create seperti sync dan backfill.
+	{"POST", "/api/dw/streaming/replay", need("/dw/sync-status", Create)},
 	{"GET", "/api/dw/lake/gold/*", viewAny("/ai-bi/dashboards", "/bi/executive", "/bi/finance", "/bi/sales")},
 
 	// ---------- rag-service (Fase 10) ----------
