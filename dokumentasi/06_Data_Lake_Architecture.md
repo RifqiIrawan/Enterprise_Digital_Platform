@@ -152,7 +152,19 @@ Semuanya **linear**: sync ±15 µs dan ±2 KB per baris (±68 rb baris/dtk), bui
 
 **Perbaikan yang bisa dilakukan sebelum pindah ke Spark/dbt** (belum dikerjakan; urut menurut dampak): (a) daftar kunci hidup hanya menyimpan kunci sebagai pasangan UUID 16 byte, bukan baris utuh; (b) Silver inkremental — pertahankan Silver sebelumnya dan gabungkan hanya objek Bronze yang lebih baru dari penanda build terakhir, sehingga biaya mengikuti data baru, bukan seluruh riwayat; (c) sync/backfill berpotongan (mis. 100 rb baris per objek dan per batch insert) dengan memori terbatas; (d) pemadatan Bronze untuk objek yang sudah sepenuhnya tertimpa. Di atas puluhan juta baris per fact, Spark/dbt seperti yang diantisipasi di awal menjadi masuk akal, dan kontrak yang sudah ada (aturan kunci, invarian `bronze = silver + duplikat + rejected + pruned`, rekonsiliasi) bisa dipindahkan sebagai test.
 
-**Pembaruan: Silver inkremental sudah dibuat (perbaikan (b) di atas), tetapi belum diukur.** Angka pada tabel di atas diambil SEBELUM perubahan itu. Pengukuran ulang pada 500 rb baris (dengan jeda 10,5 menit supaya objek Bronze mengendap) dihentikan sebelum build inkremental sempat berjalan, jadi TIDAK ada angka penghematan. Yang terverifikasi adalah **kebenarannya**: hasil inkremental identik byte-per-byte dengan build penuh setelah tiap dari 25 ronde acak (baris baru, pembaruan, baris berulang antar objek), dan merusak urutan merge (versi lama menang pada kunci yang sama) langsung tertangkap di ronde pertama.
+**Pembaruan: Silver inkremental sudah dibuat (perbaikan (b) di atas); hasil ukurnya ada di bawah.** Angka pada tabel di atas diambil SEBELUM perubahan itu. Pengukuran ulang pada 500 rb baris (dengan jeda 10,5 menit supaya objek Bronze mengendap) dihentikan sebelum build inkremental sempat berjalan, jadi TIDAK ada angka penghematan. Yang terverifikasi adalah **kebenarannya**: hasil inkremental identik byte-per-byte dengan build penuh setelah tiap dari 25 ronde acak (baris baru, pembaruan, baris berulang antar objek), dan merusak urutan merge (versi lama menang pada kunci yang sama) langsung tertangkap di ronde pertama.
+
+**Hasil ukur Silver inkremental (2026-10-21).** Diukur dengan `TestSilverScale_IncrementalVsFull` (`BENCH_ROWS=500000 go test ./internal/datalake -run SilverScale -v`), baris ±250 B, MinIO lokal, umur objek Bronze dipalsukan lewat nama key. Puncak heap Go selama build (bukan RSS proses), delta = 1% baris (separuh pembaruan, separuh baru). Hasil inkremental identik byte-per-byte dengan build penuh paksa pada tiap skenario.
+
+| 500 rb baris | Waktu | Puncak heap |
+|---|---|---|
+| Build penuh | ±27 dtk | ±420 MB |
+| Inkremental, tanpa data baru | ±8 dtk | ±34 MB |
+| Inkremental, delta 1% | ±9,5 dtk | ±39 MB |
+| Penuh + kunci hidup 500 rb | ±27 dtk | ±440–460 MB |
+| Inkremental + kunci hidup 500 rb | ±7,5 dtk | ±145–155 MB |
+
+Pada 100 rb baris: penuh ±6–8 dtk / 91 MB, inkremental ±2–3 dtk / 34 MB. Kesimpulan: inkremental ±3× lebih cepat dan memori ±12× lebih kecil (±3× dengan peta kunci hidup, karena peta itulah yang kini mendominasi), dan biayanya tumbuh dengan ukuran Silver, bukan dengan delta (tanpa data baru pun ±8 dtk, karena Silver lama tetap dibaca dan ditulis ulang sebagai aliran). Memori build penuh tetap linear (±0,85 KB/baris di heap Go; angka 3,5 KB/baris di atas mencakup seluruh proses). **Tidak diukur:** ekstraksi kunci hidup dari Postgres (peta sintetis dibangun di memori), MinIO di jaringan, dan di atas 500 rb baris. Kunci hidup 16 byte (perbaikan (a)) masih perbaikan berikutnya yang paling berdampak.
 
 Yang perlu diketahui sebelum mengharapkan hasilnya:
 
