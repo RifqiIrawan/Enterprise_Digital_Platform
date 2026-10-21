@@ -3,6 +3,8 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,33 +51,100 @@ func findOrCreateProduct(ctx context.Context, tx pgx.Tx, companyID, name, unit s
 	return p, err
 }
 
+// insufficientStockError: sebuah mutasi OUT akan membuat saldo di bawah nol.
+// Stok tidak boleh negatif -- saldo negatif berarti barang keluar yang tidak
+// pernah tercatat masuk, dan laporan stok serta HPP yang dibangun di atasnya
+// ikut salah. Penanganannya di pemanggil: 409 dengan pesan yang menyebut angka.
+type insufficientStockError struct {
+	WarehouseID string
+	ProductID   string
+	Requested   float64
+	Available   float64
+	// Label diisi saat galat dibuat (SKU - nama produk, kode gudang) supaya
+	// pesannya bisa dibaca orang, bukan UUID.
+	ProductLabel   string
+	WarehouseLabel string
+}
+
+func (e *insufficientStockError) Error() string {
+	return fmt.Sprintf("Stok tidak cukup untuk %s di gudang %s: diminta %s, tersedia %s",
+		e.ProductLabel, e.WarehouseLabel, formatQty(e.Requested), formatQty(e.Available))
+}
+
+func formatQty(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+
+// writeStockError menerjemahkan galat applyStockMovement: stok tidak cukup
+// adalah 409 yang bisa ditindaklanjuti pengguna, sisanya galat server.
+func writeStockError(w http.ResponseWriter, err error, fallback string) {
+	var ins *insufficientStockError
+	if errors.As(err, &ins) {
+		writeErrorCode(w, http.StatusConflict, ins.Error(), "INSUFFICIENT_STOCK")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, fallback)
+}
+
 // applyStockMovement mencatat satu baris stock_movements dan menyelaraskan
 // stock_balances (increment untuk IN, decrement untuk OUT) dalam transaksi
 // yang sama, dipakai oleh seluruh alur yang menggerakkan stok (manual entry,
-// batch dari PO/SO, transfer confirm, opname post).
+// batch dari PO/SO/pesanan e-commerce/work order, transfer confirm, opname post).
+//
+// OUT hanya berhasil kalau saldo cukup: pengurangan ditulis sebagai UPDATE
+// bersyarat (quantity >= diminta), jadi dua OUT bersamaan atas saldo yang sama
+// tidak bisa sama-sama lolos -- baris saldo terkunci oleh UPDATE pertama dan
+// yang kedua dievaluasi terhadap angka barunya. IN tidak pernah ditolak, juga
+// pada saldo yang sudah negatif dari masa sebelum aturan ini: barang masuk
+// justru cara saldo itu pulih.
 func applyStockMovement(ctx context.Context, tx pgx.Tx, companyID string, branchID *string, warehouseID, productID, movementType string, quantity float64, referenceType string, referenceID *string, notes string, movementDate time.Time, actor *string) (model.StockMovement, error) {
 	var mv model.StockMovement
+
+	if movementType == "OUT" {
+		tag, err := tx.Exec(ctx, `
+			UPDATE stock_balances SET quantity = quantity - $3, updated_at = now()
+			WHERE warehouse_id = $1 AND product_id = $2 AND quantity >= $3`,
+			warehouseID, productID, quantity)
+		if err != nil {
+			return mv, err
+		}
+		if tag.RowsAffected() == 0 {
+			return mv, newInsufficientStockError(ctx, tx, warehouseID, productID, quantity)
+		}
+	} else {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO stock_balances (warehouse_id, product_id, quantity, updated_at)
+			VALUES ($1, $2, $3, now())
+			ON CONFLICT (warehouse_id, product_id) DO UPDATE SET quantity = stock_balances.quantity + $3, updated_at = now()`,
+			warehouseID, productID, quantity); err != nil {
+			return mv, err
+		}
+	}
+
 	err := tx.QueryRow(ctx, `
 		INSERT INTO stock_movements (company_id, branch_id, warehouse_id, product_id, movement_type, quantity, reference_type, reference_id, notes, movement_date, actor_user_id)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		RETURNING id, company_id, branch_id, warehouse_id, product_id, movement_type, quantity, reference_type, reference_id, notes, movement_date, actor_user_id, created_at`,
 		companyID, branchID, warehouseID, productID, movementType, quantity, referenceType, referenceID, notes, movementDate, actor,
 	).Scan(&mv.ID, &mv.CompanyID, &mv.BranchID, &mv.WarehouseID, &mv.ProductID, &mv.MovementType, &mv.Quantity, &mv.ReferenceType, &mv.ReferenceID, &mv.Notes, &mv.MovementDate, &mv.ActorUserID, &mv.CreatedAt)
-	if err != nil {
-		return mv, err
-	}
-
-	delta := quantity
-	if movementType == "OUT" {
-		delta = -quantity
-	}
-	_, err = tx.Exec(ctx, `
-		INSERT INTO stock_balances (warehouse_id, product_id, quantity, updated_at)
-		VALUES ($1, $2, $3, now())
-		ON CONFLICT (warehouse_id, product_id) DO UPDATE SET quantity = stock_balances.quantity + $3, updated_at = now()`,
-		warehouseID, productID, delta,
-	)
 	return mv, err
+}
+
+// newInsufficientStockError membaca saldo saat ini dan label produk/gudang
+// untuk pesan galat. Hanya jalan di jalur gagal, jadi dua query tambahan itu
+// tidak membebani mutasi yang normal.
+func newInsufficientStockError(ctx context.Context, tx pgx.Tx, warehouseID, productID string, requested float64) error {
+	e := &insufficientStockError{WarehouseID: warehouseID, ProductID: productID, Requested: requested,
+		ProductLabel: productID, WarehouseLabel: warehouseID}
+	_ = tx.QueryRow(ctx, `SELECT COALESCE((SELECT quantity FROM stock_balances WHERE warehouse_id = $1 AND product_id = $2), 0)`,
+		warehouseID, productID).Scan(&e.Available)
+	var sku, name string
+	if tx.QueryRow(ctx, `SELECT sku, name FROM products WHERE id = $1`, productID).Scan(&sku, &name) == nil {
+		e.ProductLabel = sku + " - " + name
+	}
+	var code string
+	if tx.QueryRow(ctx, `SELECT code FROM warehouses WHERE id = $1`, warehouseID).Scan(&code) == nil {
+		e.WarehouseLabel = code
+	}
+	return e
 }
 
 func (h *Handler) listStockBalances(w http.ResponseWriter, r *http.Request) {
@@ -217,7 +286,7 @@ func (h *Handler) createManualStockMovement(w http.ResponseWriter, r *http.Reque
 	actor := actorFromHeader(r)
 	mv, err := applyStockMovement(ctx, tx, req.CompanyID, req.BranchID, req.WarehouseID, req.ProductID, req.MovementType, req.Quantity, "MANUAL", nil, req.Notes, movementDate, actor)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Gagal mencatat mutasi stok")
+		writeStockError(w, err, "Gagal mencatat mutasi stok")
 		return
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -323,7 +392,7 @@ func (h *Handler) postStockMovementBatch(w http.ResponseWriter, r *http.Request)
 		}
 		mv, err := applyStockMovement(ctx, tx, req.CompanyID, req.BranchID, req.WarehouseID, product.ID, req.MovementType, l.Quantity, req.ReferenceType, referenceID, req.Notes, movementDate, actor)
 		if err != nil {
-			writeError(w, http.StatusInternalServerError, "Gagal mencatat mutasi stok untuk produk: "+l.ProductName)
+			writeStockError(w, err, "Gagal mencatat mutasi stok untuk produk: "+l.ProductName)
 			return
 		}
 		mv.ProductSKU = product.SKU

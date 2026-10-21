@@ -248,7 +248,7 @@ func (h *Handler) postStockOpname(w http.ResponseWriter, r *http.Request) {
 			quantity = -diff
 		}
 		if _, err := applyStockMovement(ctx, tx, o.CompanyID, o.BranchID, o.WarehouseID, l.ProductID, movementType, quantity, "OPNAME", &o.ID, "Stock opname "+o.OpnameNumber, o.OpnameDate, actor); err != nil {
-			writeError(w, http.StatusInternalServerError, "Gagal mencatat penyesuaian stok")
+			writeStockError(w, err, "Gagal mencatat penyesuaian stok")
 			return
 		}
 	}

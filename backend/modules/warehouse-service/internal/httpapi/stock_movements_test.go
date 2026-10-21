@@ -166,16 +166,15 @@ func TestPostStockMovementBatch_ByProductID(t *testing.T) {
 	companyID := newCompanyID(t)
 	wh := mustSeedWarehouse(t, srv, companyID)
 	p := mustSeedProduct(t, srv, companyID)
+	mustGiveStock(t, srv, companyID, wh.ID, p.ID, 10)
 
 	resp := postJSON(t, srv.URL+"/stock-movements/batch", map[string]any{
 		"company_id": companyID, "warehouse_id": wh.ID, "movement_type": "OUT", "reference_type": "SALES_ORDER",
 		"lines": []map[string]any{{"product_id": p.ID, "quantity": 3}},
 	})
-	// OUT below zero is still allowed by this handler (no negative-stock guard
-	// in applyStockMovement) -- document actual behavior rather than assume.
 	requireStatus(t, resp, http.StatusCreated)
-	if got := mustGetStockQuantity(t, srv, companyID, wh.ID, p.ID); got != -3 {
-		t.Errorf("quantity after OUT 3 from zero balance = %.2f, want -3.00 (no negative-stock guard)", got)
+	if got := mustGetStockQuantity(t, srv, companyID, wh.ID, p.ID); got != 7 {
+		t.Errorf("quantity after OUT 3 from 10 = %.2f, want 7.00", got)
 	}
 }
 

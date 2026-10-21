@@ -232,7 +232,7 @@ func (h *Handler) confirmStockTransfer(w http.ResponseWriter, r *http.Request) {
 
 	for _, l := range lines {
 		if _, err := applyStockMovement(ctx, tx, t.CompanyID, t.BranchID, t.FromWarehouseID, l.ProductID, "OUT", l.Quantity, "TRANSFER", &t.ID, "Mutasi "+t.TransferNumber, t.TransferDate, actor); err != nil {
-			writeError(w, http.StatusInternalServerError, "Gagal mencatat stok keluar dari gudang asal")
+			writeStockError(w, err, "Gagal mencatat stok keluar dari gudang asal")
 			return
 		}
 		if _, err := applyStockMovement(ctx, tx, t.CompanyID, t.BranchID, t.ToWarehouseID, l.ProductID, "IN", l.Quantity, "TRANSFER", &t.ID, "Mutasi "+t.TransferNumber, t.TransferDate, actor); err != nil {

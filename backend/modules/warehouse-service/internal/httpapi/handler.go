@@ -99,3 +99,11 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
 }
+
+// writeErrorCode menambah kode yang bisa dibaca mesin di samping pesan, supaya
+// service pemanggil (sales, e-commerce, production) bisa membedakan "stok
+// tidak cukup" -- yang bisa diperbaiki pengguna -- dari galat server tanpa
+// mencocokkan teks pesan.
+func writeErrorCode(w http.ResponseWriter, status int, message, code string) {
+	writeJSON(w, status, map[string]string{"error": message, "code": code})
+}
