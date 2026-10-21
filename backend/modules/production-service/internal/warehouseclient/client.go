@@ -17,6 +17,14 @@ import (
 	"time"
 )
 
+// InsufficientStockError: warehouse-service menolak mutasi OUT karena saldo
+// tidak cukup. Berbeda dari galat lain, ini bisa diperbaiki pengguna (tambah
+// stok, kurangi jumlah), jadi pemanggil meneruskannya sebagai 409 dengan pesan
+// aslinya -- bukan 502 yang membungkus JSON mentah.
+type InsufficientStockError struct{ Message string }
+
+func (e *InsufficientStockError) Error() string { return e.Message }
+
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -82,6 +90,15 @@ func (c *Client) postJSON(path, actorUserID string, body any) ([]byte, error) {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode == http.StatusConflict {
+		var e struct {
+			Error string `json:"error"`
+			Code  string `json:"code"`
+		}
+		if json.Unmarshal(respBody, &e) == nil && e.Code == "INSUFFICIENT_STOCK" {
+			return nil, &InsufficientStockError{Message: e.Error}
+		}
 	}
 	if resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("warehouse-service returned %d: %s", resp.StatusCode, string(respBody))

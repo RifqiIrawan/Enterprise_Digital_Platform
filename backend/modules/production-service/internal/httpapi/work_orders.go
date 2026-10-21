@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -357,6 +358,11 @@ func (h *Handler) completeWorkOrder(w http.ResponseWriter, r *http.Request) {
 		Lines:         componentLines,
 	})
 	if err != nil {
+		var ins *warehouseclient.InsufficientStockError
+		if errors.As(err, &ins) {
+			writeError(w, http.StatusConflict, ins.Message)
+			return
+		}
 		writeError(w, http.StatusBadGateway, fmt.Sprintf("Gagal mencatat konsumsi bahan baku di warehouse-service: %v", err))
 		return
 	}
