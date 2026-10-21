@@ -5,9 +5,9 @@
 
 ## Overview
 
-Semua endpoint diakses lewat **api-gateway** (`http://localhost:8079`) dengan prefix `/api/{service}/`. JWT token wajib di header `Authorization: Bearer <token>` untuk semua endpoint kecuali `/api/auth/login` dan health checks.
+Semua endpoint diakses lewat **api-gateway** (`http://localhost:28079`) dengan prefix `/api/{service}/`. JWT token wajib di header `Authorization: Bearer <token>` untuk semua endpoint kecuali `/api/auth/login` dan health checks.
 
-**Base URL dev**: `http://localhost:8079`  
+**Base URL dev**: `http://localhost:28079`  
 **Auth**: JWT custom (bukan Keycloak)
 
 ---

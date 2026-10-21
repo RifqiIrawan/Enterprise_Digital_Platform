@@ -15,7 +15,7 @@ spec:
         app: company-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8082"
+        prometheus.io/port: "28082"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/company-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8082
+            - containerPort: 28082
           envFrom:
             - configMapRef:
                 name: company-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8082
+              port: 28082
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8082
+              port: 28082
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: company-service
   ports:
-    - port: 8082
-      targetPort: 8082
+    - port: 28082
+      targetPort: 28082

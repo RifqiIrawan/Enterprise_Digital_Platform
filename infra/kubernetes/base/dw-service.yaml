@@ -15,7 +15,7 @@ spec:
         app: dw-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8095"
+        prometheus.io/port: "28095"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/dw-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8095
+            - containerPort: 28095
           envFrom:
             - configMapRef:
                 name: dw-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8095
+              port: 28095
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8095
+              port: 28095
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: dw-service
   ports:
-    - port: 8095
-      targetPort: 8095
+    - port: 28095
+      targetPort: 28095

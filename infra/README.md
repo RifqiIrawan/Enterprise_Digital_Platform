@@ -50,7 +50,7 @@ Service yang naik:
 | Redis | 6379 | Cache, session, rate limiting |
 | MinIO | 9004 (API), 9003 (Console) | Object storage (S3-compatible). API port sengaja BUKAN 9002 (default sebelumnya) — sesi Data Lake (2026-07-16/17) menemukan itu bentrok dengan container project lain di mesin dev (`smart-parking-mosquitto`, tidak terkait project ini) |
 | Kafka | 9092 (host/native clients), internal listener `kafka:29092` (container clients, lihat di bawah) | Event streaming (KRaft mode, tanpa Zookeeper) |
-| Kafka UI | 8099 | Dashboard untuk inspeksi topic/consumer (host 8090 dipakai production-service) |
+| Kafka UI | 28099 | Dashboard untuk inspeksi topic/consumer (host 28090 dipakai production-service) |
 | Mosquitto | 1883 | Broker MQTT untuk IoT Simulator (`backend/modules/iot-service`) — simulator publish, iot-service subscribe untuk ingest. Config di `infra/mosquitto/mosquitto.conf` (anonymous access, dev-only) |
 | Prometheus | 9090 | Scrape `/metrics` dari seluruh 16 service Go tiap 15 detik, lihat `infra/prometheus/prometheus.yml`. Target di-scrape lewat `host.docker.internal:<port>` — jalan sama baiknya untuk service yang jalan native (`go run`), sebagai container di compose ini, maupun sebagai pod K8s yang di-`kubectl port-forward` ke port host yang sama |
 | Alertmanager | 9093 | Menerima alert dari Prometheus (aturannya di `infra/prometheus/rules/edp-alerts.yml`), mengelompokkan per `alertname`+`service`, lalu meneruskannya ke webhook di `infra/alertmanager/alertmanager.yml`. Tujuan pengiriman masih `REPLACE_ME_ALERT_WEBHOOK` — repo ini tidak menyimpan kredensial, jadi pengirimannya gagal (tercatat di log Alertmanager) sementara pengelompokan & UI-nya tetap jalan |
@@ -188,8 +188,8 @@ response Kafka akan mengarahkan container client untuk reconnect ke
 
 Port host yang dipetakan sama persis dengan menjalankan tiap service native
 (lihat tabel port di `NEXT_SESSION.md` bagian "Cara Menjalankan") — jadi
-frontend tetap diakses di `http://localhost:3000` dan API gateway di
-`http://localhost:8079`, baik service-nya jalan native maupun sebagai
+frontend tetap diakses di `http://localhost:23000` dan API gateway di
+`http://localhost:28079`, baik service-nya jalan native maupun sebagai
 container.
 
 Rebuild image setelah ganti kode: `docker compose build <nama-service>` lalu
@@ -200,6 +200,29 @@ Rebuild image setelah ganti kode: `docker compose build <nama-service>` lalu
 `host.docker.internal`, container network yang sama). Untuk deployment
 staging/prod sungguhan (topologi berbeda, tanpa `host.docker.internal`), lihat
 `environments/` di bawah — bukan file compose ini.
+
+## Peta port aplikasi
+
+Port service dan frontend sengaja jauh dari port yang dipakai proyek lain di mesin dev (mis. 8080 dan 8090 diambil proyek lain, dan 18082-18087 juga terpakai, jadi pergeseran +10000 pun bentrok). Semuanya = port lama + 20000:
+
+| Port | Service | Port | Service |
+|---|---|---|---|
+| 23000 | frontend (Vite / nginx di compose) | 28091 | qc-service |
+| 28079 | api-gateway | 28092 | asset-service |
+| 28081 | auth-service | 28093 | ai-bi-service |
+| 28082 | company-service | 28094 | iot-service |
+| 28083 | rbac-service | 28095 | dw-service |
+| 28084 | audit-service | 28096 | crm-service |
+| 28085 | finance-service | 28097 | ticketing-service |
+| 28086 | hr-service | 28098 | ecommerce-service |
+| 28087 | sales-service | 28099 | fleet-service |
+| 28088 | purchasing-service | 28100 | project-service |
+| 28089 | warehouse-service | 28101 | rag-service |
+| 28090 | production-service | | |
+
+Yang TIDAK dipindah: port tool pihak ketiga (PostgreSQL 5432 native, Redis 6379, Kafka 9092, MinIO 9004/9003, ClickHouse 8123/9101, Kafka UI 8200, Prometheus, Grafana 3001, Jaeger, Mosquitto). Itu port standar yang dipakai klien dan tooling lain, dan Postgres bukan milik repo ini. Setiap port bisa ditimpa lewat env `PORT` per service (dan `*_SERVICE_URL` di gateway).
+
+Port-port di atas diperiksa kosong (tidak ada listener, tidak masuk rentang yang dicadangkan Windows/Hyper-V) saat dipindahkan. Kalau bentrok lagi, geser seluruh blok sekaligus (nilai lama + offset yang sama), bukan satu service: gateway, compose, Kubernetes, Prometheus, env example, dan default di `config.go` semuanya memegang angka yang sama.
 
 ## Image registry & CD (GHCR)
 

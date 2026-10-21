@@ -21,7 +21,7 @@ Setiap Company dan Branch memiliki `company_id` / `branch_id` yang direferensika
 ```
 go run ./cmd/server
 ```
-Default port: `8082`. Butuh PostgreSQL (`company_service` db).
+Default port: `28082`. Butuh PostgreSQL (`company_service` db).
 
 ## Struktur
 ```

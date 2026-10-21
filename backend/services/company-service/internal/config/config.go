@@ -12,7 +12,7 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:         getEnv("PORT", "8082"),
+		Port:         getEnv("PORT", "28082"),
 		DatabaseURL:  getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/company_service?sslmode=disable"),
 		RedisURL:     getEnv("REDIS_URL", "localhost:6379"),
 		KafkaBrokers: getEnv("KAFKA_BROKERS", "localhost:9092"),

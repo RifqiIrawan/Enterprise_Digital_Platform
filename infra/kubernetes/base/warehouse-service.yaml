@@ -15,7 +15,7 @@ spec:
         app: warehouse-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8089"
+        prometheus.io/port: "28089"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/warehouse-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8089
+            - containerPort: 28089
           envFrom:
             - configMapRef:
                 name: warehouse-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8089
+              port: 28089
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8089
+              port: 28089
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: warehouse-service
   ports:
-    - port: 8089
-      targetPort: 8089
+    - port: 28089
+      targetPort: 28089

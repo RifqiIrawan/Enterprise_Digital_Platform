@@ -29,7 +29,7 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:            getEnv("PORT", "8101"),
+		Port:            getEnv("PORT", "28101"),
 		DatabaseURL:     getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/rag_service?sslmode=disable"),
 		KafkaBrokers:    getEnv("KAFKA_BROKERS", "localhost:9092"),
 		OTLPEndpoint:    getEnv("OTLP_ENDPOINT", "localhost:4318"),

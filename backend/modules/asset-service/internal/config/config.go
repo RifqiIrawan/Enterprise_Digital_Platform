@@ -14,11 +14,11 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:              getEnv("PORT", "8092"),
+		Port:              getEnv("PORT", "28092"),
 		DatabaseURL:       getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/asset_service?sslmode=disable"),
 		KafkaBrokers:      getEnv("KAFKA_BROKERS", "localhost:9092"),
 		OTLPEndpoint:      getEnv("OTLP_ENDPOINT", "localhost:4318"),
-		FinanceServiceURL: getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),
+		FinanceServiceURL: getEnv("FINANCE_SERVICE_URL", "http://localhost:28085"),
 	}
 }
 

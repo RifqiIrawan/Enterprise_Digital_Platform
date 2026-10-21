@@ -138,10 +138,10 @@ Sidebar menu didapat dari `GET /api/rbac/menu-tree` — service return tree menu
 ## Koneksi ke Backend
 
 ```
-VITE_API_BASE_URL=http://localhost:8079  (default, diteruskan ke Vite saat build)
+VITE_API_BASE_URL=http://localhost:28079  (default, diteruskan ke Vite saat build)
 
 apiClient.get('/api/finance/accounts', { params: { company_id, branch_id } })
     └── axios instance dengan base URL = VITE_API_BASE_URL
 ```
 
-Semua panggilan lewat `api-gateway:8079` dengan prefix `/api/{service}/`.
+Semua panggilan lewat `api-gateway:28079` dengan prefix `/api/{service}/`.

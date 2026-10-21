@@ -449,10 +449,10 @@ func TestPreflightIsAnsweredWithoutAToken(t *testing.T) {
 	gw := newGateway(t, backend.URL)
 
 	resp := do(t, http.MethodOptions, gw.URL+"/api/hr/employees",
-		map[string]string{"Origin": "http://localhost:3000"}, "")
+		map[string]string{"Origin": "http://localhost:23000"}, "")
 	requireStatus(t, resp, http.StatusNoContent)
 
-	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
+	if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "http://localhost:23000" {
 		t.Errorf("expected the localhost origin to be echoed, got %q", got)
 	}
 	if got := resp.Header.Get("Access-Control-Allow-Headers"); !strings.Contains(got, "Authorization") {
@@ -473,7 +473,7 @@ func TestCORSOriginHandling(t *testing.T) {
 		origin string
 		want   string
 	}{
-		{"http://localhost:3000", "http://localhost:3000"},
+		{"http://localhost:23000", "http://localhost:23000"},
 		{"http://localhost:5173", "http://localhost:5173"},
 		{"http://127.0.0.1:3002", "http://127.0.0.1:3002"},
 		{"https://situs-lain.test", testOrigin},

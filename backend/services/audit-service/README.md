@@ -16,7 +16,7 @@ Mencatat seluruh perubahan state penting di platform secara event-driven (bukan 
 ```
 go run ./cmd/server
 ```
-Default port: `8084`. Butuh PostgreSQL/ClickHouse dan Kafka.
+Default port: `28084`. Butuh PostgreSQL/ClickHouse dan Kafka.
 
 ## Struktur
 ```

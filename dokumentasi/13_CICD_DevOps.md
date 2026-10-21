@@ -105,7 +105,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
-ARG VITE_API_BASE_URL=http://localhost:8079
+ARG VITE_API_BASE_URL=http://localhost:28079
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 COPY . .
 RUN npm run build
@@ -134,9 +134,9 @@ docker compose up -d   # Jalankan 19 container
 - `PLAINTEXT://localhost:9092` — untuk proses Go native di host
 - `INTERNAL://kafka:29092` — untuk container-to-container
 
-URL lintas-service di docker-compose pakai nama container: `http://finance-service:8085`.
+URL lintas-service di docker-compose pakai nama container: `http://finance-service:28085`.
 
-Frontend `VITE_API_BASE_URL` tetap `http://localhost:8079` — karena yang manggil API adalah browser (client-side JS), bukan container.
+Frontend `VITE_API_BASE_URL` tetap `http://localhost:28079` — karena yang manggil API adalah browser (client-side JS), bukan container.
 
 ---
 

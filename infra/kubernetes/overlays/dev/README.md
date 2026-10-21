@@ -34,19 +34,19 @@ probes hit `/health` on each service, `/` on frontend).
 No Ingress in this overlay (see kustomization.yaml) — use port-forward:
 
 ```
-kubectl -n edp-dev port-forward svc/api-gateway 8079:8079
-curl http://localhost:8079/health
+kubectl -n edp-dev port-forward svc/api-gateway 28079:28079
+curl http://localhost:28079/health
 
 kubectl -n edp-dev port-forward svc/frontend 3000:80
-# open http://localhost:3000
+# open http://localhost:23000
 ```
 
 Or check a cross-service call works end-to-end (same kind of check used to
 validate the docker-compose stack):
 
 ```
-kubectl -n edp-dev port-forward svc/ai-bi-service 8093:8093
-curl "http://localhost:8093/dashboards/summary?company_id=<any-uuid>"
+kubectl -n edp-dev port-forward svc/ai-bi-service 28093:28093
+curl "http://localhost:28093/dashboards/summary?company_id=<any-uuid>"
 # "errors": [] confirms ai-bi-service reached all 8 other Services by name
 ```
 

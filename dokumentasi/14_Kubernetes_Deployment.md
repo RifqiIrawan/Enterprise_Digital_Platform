@@ -54,14 +54,14 @@ spec:
       - name: finance-service
         image: REPLACE_ME_REGISTRY/finance-service:latest
         ports:
-        - containerPort: 8085
+        - containerPort: 28085
         envFrom:
         - configMapRef:
             name: finance-service-config
         livenessProbe:
           httpGet:
             path: /health
-            port: 8085
+            port: 28085
           initialDelaySeconds: 10
           periodSeconds: 30
         resources:
@@ -80,8 +80,8 @@ spec:
   selector:
     app: finance-service
   ports:
-  - port: 8085
-    targetPort: 8085
+  - port: 28085
+    targetPort: 28085
 ```
 
 ### ConfigMap per Service
@@ -92,10 +92,10 @@ Setiap service punya `{service}-config` ConfigMap dengan semua env var dari `con
 configMapGenerator:
 - name: finance-service-config
   literals:
-  - PORT=8085
+  - PORT=28085
   - DATABASE_URL=REPLACE_ME_DATABASE_URL_FINANCE
   - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-  - FINANCE_SERVICE_URL=http://finance-service:8085  # lintas-service pakai K8s DNS
+  - FINANCE_SERVICE_URL=http://finance-service:28085  # lintas-service pakai K8s DNS
 ```
 
 **Penting**: `JWT_SECRET` **tidak ada** di base ConfigMap (bahkan sebagai placeholder). Pod `auth-service` dan `api-gateway` akan gagal start kalau overlay tidak menyediakan Secret-nya (fail-closed by design).
@@ -105,7 +105,7 @@ configMapGenerator:
 ```yaml
 spec:
   rules:
-  - host: api.edp.local       # → api-gateway:8079
+  - host: api.edp.local       # → api-gateway:28079
   - host: edp.local           # → frontend:80
 ```
 
@@ -195,12 +195,12 @@ kubectl get pods -n edp-dev
 # Semua harus 1/1 Running
 
 # Akses via port-forward (tidak ada Ingress di dev)
-kubectl port-forward -n edp-dev svc/api-gateway 8079:8079
+kubectl port-forward -n edp-dev svc/api-gateway 28079:28079
 kubectl port-forward -n edp-dev svc/frontend 3000:80
 
 # Verifikasi
-curl http://localhost:8079/health
-curl http://localhost:3000
+curl http://localhost:28079/health
+curl http://localhost:23000
 
 # Teardown
 kubectl delete -k infra/kubernetes/overlays/dev

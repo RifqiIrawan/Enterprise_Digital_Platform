@@ -1,6 +1,6 @@
 service:
   name: audit-service
-  port: 8084
+  port: 28084
 
 database:
   url: postgres://platform:platform@localhost:5432/audit_service?sslmode=disable

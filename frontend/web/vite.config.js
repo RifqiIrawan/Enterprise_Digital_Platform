@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: 3000,
+    port: 23000,
   },
   // Vitest: jsdom dipakai karena yang diuji adalah hook & komponen React
   // (PermissionContext), bukan modul murni saja. `globals` dimatikan supaya

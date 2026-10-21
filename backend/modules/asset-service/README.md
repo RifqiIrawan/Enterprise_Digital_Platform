@@ -66,7 +66,7 @@ Kewajiban berulang, bukan kejadian sekali:
 ## Konfigurasi
 
 Selain `PORT`, `DATABASE_URL`, `KAFKA_BROKERS`, dan `OTLP_ENDPOINT`, service ini
-butuh `FINANCE_SERVICE_URL` (default `http://localhost:8085`) untuk memposting
+butuh `FINANCE_SERVICE_URL` (default `http://localhost:28085`) untuk memposting
 jurnal penyusutan — panggilan langsung service-to-service, tidak lewat gateway.
 
 ## Tes

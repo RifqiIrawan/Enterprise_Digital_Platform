@@ -15,7 +15,7 @@ spec:
         app: ticketing-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8097"
+        prometheus.io/port: "28097"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/ticketing-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8097
+            - containerPort: 28097
           envFrom:
             - configMapRef:
                 name: ticketing-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8097
+              port: 28097
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8097
+              port: 28097
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: ticketing-service
   ports:
-    - port: 8097
-      targetPort: 8097
+    - port: 28097
+      targetPort: 28097

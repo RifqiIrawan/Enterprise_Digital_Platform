@@ -15,7 +15,7 @@ spec:
         app: purchasing-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8088"
+        prometheus.io/port: "28088"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/purchasing-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8088
+            - containerPort: 28088
           envFrom:
             - configMapRef:
                 name: purchasing-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8088
+              port: 28088
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8088
+              port: 28088
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: purchasing-service
   ports:
-    - port: 8088
-      targetPort: 8088
+    - port: 28088
+      targetPort: 28088

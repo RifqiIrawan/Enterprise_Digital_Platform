@@ -50,7 +50,7 @@ Semua endpoint diakses lewat api-gateway dengan prefix `/api/crm/*` (lihat `back
 psql -U platform -h localhost -c "CREATE DATABASE crm_service;"
 
 cd backend/modules/crm-service
-go run ./cmd/server        # migrasi jalan otomatis saat startup, listen di :8096
+go run ./cmd/server        # migrasi jalan otomatis saat startup, listen di :28096
 ```
 
 Frontend: `frontend/web/src/pages/crm/{LeadsPage,AccountsPage,ContactsPage,OpportunitiesPage,ActivitiesPage}.jsx`, routes `/crm/leads`, `/crm/accounts`, `/crm/contacts`, `/crm/opportunities`, `/crm/activities` (menu ter-seed di rbac-service migration `011_seed_crm_menus.sql`).

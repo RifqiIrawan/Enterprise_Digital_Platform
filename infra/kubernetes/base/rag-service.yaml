@@ -15,7 +15,7 @@ spec:
         app: rag-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8101"
+        prometheus.io/port: "28101"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/rag-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8101
+            - containerPort: 28101
           envFrom:
             - configMapRef:
                 name: rag-service-config
@@ -54,13 +54,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8101
+              port: 28101
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8101
+              port: 28101
             initialDelaySeconds: 5
             periodSeconds: 5
       volumes:
@@ -83,5 +83,5 @@ spec:
   selector:
     app: rag-service
   ports:
-    - port: 8101
-      targetPort: 8101
+    - port: 28101
+      targetPort: 28101

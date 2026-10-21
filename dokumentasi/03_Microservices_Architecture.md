@@ -11,27 +11,27 @@ Semua service ditulis dalam **Go 1.25**, dijalankan dengan `go run ./cmd/server`
 
 | Service | Port | Database | Fungsi |
 |---------|------|----------|--------|
-| `api-gateway` | 8079 | — (Redis untuk rate limit) | JWT validation, reverse proxy ke semua service |
-| `auth-service` | 8081 | `auth_service` | Register, login, JWT issue, user management |
-| `company-service` | 8082 | `company_service` | Multi-tenant company dan branch management |
-| `rbac-service` | 8083 | `rbac_service` | Role, menu permission, RBAC seed |
-| `audit-service` | 8084 | `audit_service` | Kafka consumer → audit_logs, ClickHouse pipeline |
+| `api-gateway` | 28079 | — (Redis untuk rate limit) | JWT validation, reverse proxy ke semua service |
+| `auth-service` | 28081 | `auth_service` | Register, login, JWT issue, user management |
+| `company-service` | 28082 | `company_service` | Multi-tenant company dan branch management |
+| `rbac-service` | 28083 | `rbac_service` | Role, menu permission, RBAC seed |
+| `audit-service` | 28084 | `audit_service` | Kafka consumer → audit_logs, ClickHouse pipeline |
 
 ### Business Module Services (`backend/modules/`)
 
 | Service | Port | Database | Domain |
 |---------|------|----------|--------|
-| `finance-service` | 8085 | `finance_service` | Chart of Accounts, Journal Entry (GL), Invoice (AR/AP) |
-| `hr-service` | 8086 | `hr_service` | Karyawan, Absensi, Payroll (posting ke GL) |
-| `sales-service` | 8087 | `sales_service` | Customer, Quotation, Sales Order (invoice AR, stock out) |
-| `purchasing-service` | 8088 | `purchasing_service` | Supplier, Requisition, Purchase Order (invoice AP, stock in) |
-| `warehouse-service` | 8089 | `warehouse_service` | Produk, Gudang, Stock Movement/Balance, Transfer, Opname |
-| `production-service` | 8090 | `production_service` | Bill of Material, Work Order (konsumsi komponen + produksi) |
-| `qc-service` | 8091 | `qc_service` | Standar Mutu, Inspeksi (PASS/FAIL/PARTIAL otomatis) |
-| `asset-service` | 8092 | `asset_service` | Aset, Maintenance Schedule (overdue indicator) |
-| `ai-bi-service` | 8093 | — (no DB, agregasi HTTP) | BI Dashboards, Forecasting (linear), Anomaly Detection (z-score) |
-| `iot-service` | 8094 | `iot_service` | Device, IoT Reading, Alert (threshold), Simulator via MQTT |
-| `dw-service` | 8095 | — (baca dari 9 DB lain, tulis ClickHouse) | ETL → ClickHouse facts, MinIO lake |
+| `finance-service` | 28085 | `finance_service` | Chart of Accounts, Journal Entry (GL), Invoice (AR/AP) |
+| `hr-service` | 28086 | `hr_service` | Karyawan, Absensi, Payroll (posting ke GL) |
+| `sales-service` | 28087 | `sales_service` | Customer, Quotation, Sales Order (invoice AR, stock out) |
+| `purchasing-service` | 28088 | `purchasing_service` | Supplier, Requisition, Purchase Order (invoice AP, stock in) |
+| `warehouse-service` | 28089 | `warehouse_service` | Produk, Gudang, Stock Movement/Balance, Transfer, Opname |
+| `production-service` | 28090 | `production_service` | Bill of Material, Work Order (konsumsi komponen + produksi) |
+| `qc-service` | 28091 | `qc_service` | Standar Mutu, Inspeksi (PASS/FAIL/PARTIAL otomatis) |
+| `asset-service` | 28092 | `asset_service` | Aset, Maintenance Schedule (overdue indicator) |
+| `ai-bi-service` | 28093 | — (no DB, agregasi HTTP) | BI Dashboards, Forecasting (linear), Anomaly Detection (z-score) |
+| `iot-service` | 28094 | `iot_service` | Device, IoT Reading, Alert (threshold), Simulator via MQTT |
+| `dw-service` | 28095 | — (baca dari 9 DB lain, tulis ClickHouse) | ETL → ClickHouse facts, MinIO lake |
 
 ---
 

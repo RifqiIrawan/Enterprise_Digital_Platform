@@ -73,7 +73,7 @@ SELECT last_synced_at FROM etl_sync_state FINAL WHERE source_table = 'finance_jo
 
 ## Query Pattern dari ai-bi-service
 
-ai-bi-service (port 8093) tidak query ClickHouse langsung — dia agregasi data via HTTP ke service-service bisnis (Postgres) dan melakukan kalkulasi di Go. Untuk query analitik ClickHouse, gunakan dw-service `GET /sync/status` atau query langsung ke ClickHouse:
+ai-bi-service (port 28093) tidak query ClickHouse langsung — dia agregasi data via HTTP ke service-service bisnis (Postgres) dan melakukan kalkulasi di Go. Untuk query analitik ClickHouse, gunakan dw-service `GET /sync/status` atau query langsung ke ClickHouse:
 
 ```sql
 -- Revenue total per bulan (dari fact_sales_order_lines)

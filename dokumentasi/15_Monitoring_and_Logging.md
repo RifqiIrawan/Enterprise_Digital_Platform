@@ -40,7 +40,7 @@ Setiap service punya package `internal/logging` yang redirect writer stdlib `log
 
 **Contoh log JSON**:
 ```json
-{"time":"2026-07-21T10:00:00Z","level":"INFO","service":"finance-service","msg":"finance-service listening on :8085"}
+{"time":"2026-07-21T10:00:00Z","level":"INFO","service":"finance-service","msg":"finance-service listening on :28085"}
 ```
 
 **Keterbatasan yang disengaja** (bukan bug, trade-off yang didokumentasikan di kode): semua baris level `"INFO"` — writer tidak bisa membedakan `Printf` dari `Fatalf` karena keduanya lewat call stdlib yang sama; leveled logging sungguhan butuh setiap call site ditulis ulang pakai structured logger, di luar scope fase ini.
@@ -89,7 +89,7 @@ Setiap service mengekspos `GET /health` yang mengembalikan:
 
 Cek semua service sekaligus:
 ```bash
-for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092 8093 8094 8095; do
+for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095; do
   curl -s http://localhost:$port/health; echo
 done
 ```
@@ -147,7 +147,7 @@ ORDER BY occurred_at;
 `dw-service` menyediakan observability untuk data pipeline:
 
 ```bash
-curl http://localhost:8095/sync/status
+curl http://localhost:28095/sync/status
 ```
 
 ```json

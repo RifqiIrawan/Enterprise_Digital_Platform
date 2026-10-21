@@ -47,7 +47,7 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:                  getEnv("PORT", "8095"),
+		Port:                  getEnv("PORT", "28095"),
 		FinanceDatabaseURL:    getEnv("FINANCE_DATABASE_URL", "postgres://platform:platform@localhost:5432/finance_service?sslmode=disable"),
 		SalesDatabaseURL:      getEnv("SALES_DATABASE_URL", "postgres://platform:platform@localhost:5432/sales_service?sslmode=disable"),
 		WarehouseDatabaseURL:  getEnv("WAREHOUSE_DATABASE_URL", "postgres://platform:platform@localhost:5432/warehouse_service?sslmode=disable"),

@@ -12,7 +12,7 @@ Otorisasi berbasis role (RBAC) didelegasikan ke [`rbac-service`](../rbac-service
 ```
 go run ./cmd/server
 ```
-Default port: `8081`. Butuh PostgreSQL (`auth_service` db), Redis (session/refresh token blacklist), dan Kafka.
+Default port: `28081`. Butuh PostgreSQL (`auth_service` db), Redis (session/refresh token blacklist), dan Kafka.
 
 ## Struktur
 ```

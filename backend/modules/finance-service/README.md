@@ -42,7 +42,7 @@ Semua endpoint diakses lewat api-gateway dengan prefix `/api/finance/*` (lihat `
 ```bash
 # Database finance_service sudah dibuat (lihat infra/README.md untuk setup role `platform`)
 cd backend/modules/finance-service
-go run ./cmd/server        # migrasi jalan otomatis saat startup, listen di :8085
+go run ./cmd/server        # migrasi jalan otomatis saat startup, listen di :28085
 ```
 
 Frontend: `frontend/web/src/pages/finance/{ChartOfAccountsPage,JournalPage,InvoicesPage,ArApPage}.jsx`, routes `/finance/accounts`, `/finance/journal`, `/finance/invoices`, `/finance/ar-ap` (menu sudah ter-seed di rbac-service migration `007_seed_finance_coa_menu.sql` + `003_seed_business_menus.sql`).

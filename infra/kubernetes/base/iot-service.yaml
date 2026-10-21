@@ -15,7 +15,7 @@ spec:
         app: iot-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8094"
+        prometheus.io/port: "28094"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/iot-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8094
+            - containerPort: 28094
           envFrom:
             - configMapRef:
                 name: iot-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8094
+              port: 28094
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8094
+              port: 28094
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: iot-service
   ports:
-    - port: 8094
-      targetPort: 8094
+    - port: 28094
+      targetPort: 28094

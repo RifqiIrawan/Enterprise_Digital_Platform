@@ -15,7 +15,7 @@ spec:
         app: api-gateway
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8079"
+        prometheus.io/port: "28079"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/api-gateway:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8079
+            - containerPort: 28079
           envFrom:
             - configMapRef:
                 name: api-gateway-config
@@ -42,13 +42,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8079
+              port: 28079
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8079
+              port: 28079
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -62,5 +62,5 @@ spec:
   selector:
     app: api-gateway
   ports:
-    - port: 8079
-      targetPort: 8079
+    - port: 28079
+      targetPort: 28079

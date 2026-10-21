@@ -62,7 +62,7 @@ Skema & seed:
 ```
 go run ./cmd/server
 ```
-Default port: `8083`. Butuh PostgreSQL (`rbac_service` db).
+Default port: `28083`. Butuh PostgreSQL (`rbac_service` db).
 
 ## Struktur
 ```

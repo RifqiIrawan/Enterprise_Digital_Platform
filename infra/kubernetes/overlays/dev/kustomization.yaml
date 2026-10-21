@@ -120,7 +120,7 @@ configMapGenerator:
     behavior: merge
     literals:
       - APP_ENV=development
-      - CORS_ALLOWED_ORIGIN=http://localhost:3000
+      - CORS_ALLOWED_ORIGIN=http://localhost:23000
   - name: finance-service-config
     behavior: merge
     literals:

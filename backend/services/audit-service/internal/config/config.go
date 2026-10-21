@@ -13,7 +13,7 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:          getEnv("PORT", "8084"),
+		Port:          getEnv("PORT", "28084"),
 		DatabaseURL:   getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/audit_service?sslmode=disable"),
 		ClickHouseURL: getEnv("CLICKHOUSE_URL", "http://localhost:8123"),
 		KafkaBrokers:  getEnv("KAFKA_BROKERS", "localhost:9092"),

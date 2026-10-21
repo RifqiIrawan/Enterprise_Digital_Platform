@@ -10,5 +10,5 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /app/bin/server .
 COPY configs ./configs
-EXPOSE 8082
+EXPOSE 28082
 ENTRYPOINT ["./server"]

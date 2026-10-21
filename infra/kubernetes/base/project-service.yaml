@@ -15,7 +15,7 @@ spec:
         app: project-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8100"
+        prometheus.io/port: "28100"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/project-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8100
+            - containerPort: 28100
           envFrom:
             - configMapRef:
                 name: project-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8100
+              port: 28100
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8100
+              port: 28100
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: project-service
   ports:
-    - port: 8100
-      targetPort: 8100
+    - port: 28100
+      targetPort: 28100

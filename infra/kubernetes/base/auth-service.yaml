@@ -15,7 +15,7 @@ spec:
         app: auth-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8081"
+        prometheus.io/port: "28081"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/auth-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8081
+            - containerPort: 28081
           envFrom:
             - configMapRef:
                 name: auth-service-config
@@ -43,13 +43,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8081
+              port: 28081
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8081
+              port: 28081
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -63,5 +63,5 @@ spec:
   selector:
     app: auth-service
   ports:
-    - port: 8081
-      targetPort: 8081
+    - port: 28081
+      targetPort: 28081

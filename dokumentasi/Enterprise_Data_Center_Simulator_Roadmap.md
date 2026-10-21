@@ -31,27 +31,27 @@
 
 | Service | Port | DB | Fitur Utama |
 |---------|------|----|-------------|
-| api-gateway | 8079 | — | JWT validation, reverse proxy |
-| auth-service | 8081 | auth_service | Register, login, JWT |
-| company-service | 8082 | company_service | Multi-tenant company/branch |
-| rbac-service | 8083 | rbac_service | Role, menu, permission |
-| audit-service | 8084 | audit_service | Kafka → audit_logs, ClickHouse |
-| finance-service | 8085 | finance_service | GL, CoA, Invoice AR/AP |
-| hr-service | 8086 | hr_service | Karyawan, Absensi, Payroll |
-| sales-service | 8087 | sales_service | Customer, Quotation, SO |
-| purchasing-service | 8088 | purchasing_service | Supplier, PR, PO |
-| warehouse-service | 8089 | warehouse_service | Produk, Stok, Transfer, Opname |
-| production-service | 8090 | production_service | BOM, Work Order |
-| qc-service | 8091 | qc_service | Standar Mutu, Inspeksi |
-| asset-service | 8092 | asset_service | Aset, Maintenance |
-| ai-bi-service | 8093 | — | BI Dashboard, Forecasting, Anomaly |
-| iot-service | 8094 | iot_service | Device, MQTT, Alert, Simulator |
-| dw-service | 8095 | — | ETL → ClickHouse (14 facts) + MinIO |
-| crm-service | 8096 | crm_service | Leads, Accounts, Contacts, Opportunities, Activities |
-| ticketing-service | 8097 | ticketing_service | Ticket Categories, Tickets, Comments |
-| ecommerce-service | 8098 | ecommerce_service | Orders, Order Items (checkout online) |
-| fleet-service | 8099 | fleet_service | Kendaraan, Pengemudi, Surat Jalan |
-| project-service | 8100 | project_service | Proyek, Tugas, Timesheet (biaya ke GL) |
+| api-gateway | 28079 | — | JWT validation, reverse proxy |
+| auth-service | 28081 | auth_service | Register, login, JWT |
+| company-service | 28082 | company_service | Multi-tenant company/branch |
+| rbac-service | 28083 | rbac_service | Role, menu, permission |
+| audit-service | 28084 | audit_service | Kafka → audit_logs, ClickHouse |
+| finance-service | 28085 | finance_service | GL, CoA, Invoice AR/AP |
+| hr-service | 28086 | hr_service | Karyawan, Absensi, Payroll |
+| sales-service | 28087 | sales_service | Customer, Quotation, SO |
+| purchasing-service | 28088 | purchasing_service | Supplier, PR, PO |
+| warehouse-service | 28089 | warehouse_service | Produk, Stok, Transfer, Opname |
+| production-service | 28090 | production_service | BOM, Work Order |
+| qc-service | 28091 | qc_service | Standar Mutu, Inspeksi |
+| asset-service | 28092 | asset_service | Aset, Maintenance |
+| ai-bi-service | 28093 | — | BI Dashboard, Forecasting, Anomaly |
+| iot-service | 28094 | iot_service | Device, MQTT, Alert, Simulator |
+| dw-service | 28095 | — | ETL → ClickHouse (14 facts) + MinIO |
+| crm-service | 28096 | crm_service | Leads, Accounts, Contacts, Opportunities, Activities |
+| ticketing-service | 28097 | ticketing_service | Ticket Categories, Tickets, Comments |
+| ecommerce-service | 28098 | ecommerce_service | Orders, Order Items (checkout online) |
+| fleet-service | 28099 | fleet_service | Kendaraan, Pengemudi, Surat Jalan |
+| project-service | 28100 | project_service | Proyek, Tugas, Timesheet (biaya ke GL) |
 
 ### Integrasi Utama
 
@@ -61,7 +61,7 @@
 - **DW Batch ETL**: dw-service → 14 Postgres DB → ClickHouse + MinIO (setiap 5 menit)
 - **DW Streaming ETL**: Kafka (17 topics) → dw-service → ClickHouse + MinIO (<100ms)
 - **IoT Pipeline**: iot-service simulator → MQTT → Mosquitto → subscribe → Postgres + Kafka
-- **Observability**: semua 21 service → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) port 8096, ticketing-service (Fase 11) port 8097, ecommerce-service (Fase 12) port 8098, fleet-service (Fase 13) port 8099, dan project-service (Fase 14) port 8100 sudah ditambahkan ke target list statis `infra/prometheus/prometheus.yml` sejak production-readiness masing-masing (2026-08-09/10/13/16)
+- **Observability**: semua 21 service → Prometheus (metrics) + Grafana, JSON logs + request ID → Loki/Promtail, OpenTelemetry spans → Jaeger. crm-service (Fase 10) port 28096, ticketing-service (Fase 11) port 28097, ecommerce-service (Fase 12) port 28098, fleet-service (Fase 13) port 28099, dan project-service (Fase 14) port 28100 sudah ditambahkan ke target list statis `infra/prometheus/prometheus.yml` sejak production-readiness masing-masing (2026-08-09/10/13/16)
 - **Stock-out E-Commerce**: ecommerce-service → warehouse-service (via HTTP `POST /stock-movements/batch`, `reference_type=ECOMMERCE_ORDER`) saat order SHIPPED, pola identik Sales Order FULFILLED
 - **Penugasan orang**: project-service → hr-service (via HTTP `GET /employees/{id}`) untuk memvalidasi + men-snapshot nama karyawan pada proyek/tugas/timesheet, dan menurunkan tarif per jam default dari `basic_salary`
 
@@ -101,7 +101,7 @@ cd backend/modules/finance-service && go run ./cmd/server
 # 3. Start frontend
 cd frontend/web && npm run dev
 
-# 4. Buka http://localhost:3000
+# 4. Buka http://localhost:23000
 # Login: admin@edp.local / Admin@12345
 ```
 

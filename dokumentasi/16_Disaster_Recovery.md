@@ -50,7 +50,7 @@ Tidak ada WAL-G, tidak ada point-in-time recovery, tidak ada automated backup sc
 clickhouse-client --query "SELECT * FROM dw.fact_finance_journal_lines FORMAT JSONEachRow" > backup_finance_$(date +%Y%m%d).jsonl
 
 # Re-sync dari Postgres kalau data hilang
-curl -X POST http://localhost:8095/sync
+curl -X POST http://localhost:28095/sync
 ```
 
 Re-sync `POST /sync` akan mengisi ulang ClickHouse dari Postgres karena watermark direset (atau bisa diset manual di `etl_sync_state`).
@@ -113,7 +113,7 @@ Data hilang, harus diisi ulang dari backup atau manual entry.
 docker compose up -d clickhouse
 
 # Re-sync semua data dari Postgres
-curl -X POST http://localhost:8095/sync
+curl -X POST http://localhost:28095/sync
 ```
 
 `POST /sync` mengambil ulang semua data dari Postgres (bukan hanya incremental) kalau watermark di `etl_sync_state` di-reset atau tidak ada.
@@ -130,13 +130,13 @@ Get-Service postgresql-x64-18  # PowerShell
 cd infra && docker compose up -d
 
 # 3. Cek tidak ada port konflik dengan project lain
-curl http://localhost:8082/health  # cek field "service" di response
-curl http://localhost:8085/health  # field "service" harus "finance-service"
+curl http://localhost:28082/health  # cek field "service" di response
+curl http://localhost:28085/health  # field "service" harus "finance-service"
 
 # 4. Jalankan semua service Go (di terminal terpisah atau via process manager)
 
 # 5. Health check semua service
-for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092 8093 8094 8095; do
+for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095; do
   echo -n "$port: "; curl -s http://localhost:$port/health | python -m json.tool 2>/dev/null || echo "DOWN"
 done
 ```

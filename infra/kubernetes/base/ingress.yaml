@@ -27,7 +27,7 @@ spec:
               service:
                 name: api-gateway
                 port:
-                  number: 8079
+                  number: 28079
     - host: REPLACE_ME_DOMAIN
       http:
         paths:

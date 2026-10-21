@@ -15,7 +15,7 @@ spec:
         app: fleet-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8099"
+        prometheus.io/port: "28099"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/fleet-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8099
+            - containerPort: 28099
           envFrom:
             - configMapRef:
                 name: fleet-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8099
+              port: 28099
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8099
+              port: 28099
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: fleet-service
   ports:
-    - port: 8099
-      targetPort: 8099
+    - port: 28099
+      targetPort: 28099

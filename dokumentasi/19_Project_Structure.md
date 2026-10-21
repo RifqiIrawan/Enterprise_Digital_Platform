@@ -17,24 +17,24 @@ Enterprise_Digital_Platform/
 │   ├── go.work.sum
 │   │
 │   ├── services/               # Platform services (Fase 1)
-│   │   ├── api-gateway/        # Port 8079 — JWT validation + reverse proxy
-│   │   ├── auth-service/       # Port 8081 — Register, login, JWT issue
-│   │   ├── company-service/    # Port 8082 — Multi-tenant company/branch
-│   │   ├── rbac-service/       # Port 8083 — Role, menu, permission
-│   │   └── audit-service/      # Port 8084 — Kafka consumer → audit_logs
+│   │   ├── api-gateway/        # Port 28079 — JWT validation + reverse proxy
+│   │   ├── auth-service/       # Port 28081 — Register, login, JWT issue
+│   │   ├── company-service/    # Port 28082 — Multi-tenant company/branch
+│   │   ├── rbac-service/       # Port 28083 — Role, menu, permission
+│   │   └── audit-service/      # Port 28084 — Kafka consumer → audit_logs
 │   │
 │   └── modules/                # Business module services (Fase 2+)
-│       ├── finance-service/    # Port 8085 — GL, Invoice
-│       ├── hr-service/         # Port 8086 — Karyawan, Payroll
-│       ├── sales-service/      # Port 8087 — Quotation, Sales Order
-│       ├── purchasing-service/ # Port 8088 — PR, Purchase Order
-│       ├── warehouse-service/  # Port 8089 — Produk, Stok
-│       ├── production-service/ # Port 8090 — BOM, Work Order
-│       ├── qc-service/         # Port 8091 — Inspeksi Kualitas
-│       ├── asset-service/      # Port 8092 — Aset, Maintenance
-│       ├── ai-bi-service/      # Port 8093 — BI, Forecasting, Anomaly
-│       ├── iot-service/        # Port 8094 — Device, MQTT, Simulator
-│       └── dw-service/         # Port 8095 — ETL → ClickHouse + MinIO
+│       ├── finance-service/    # Port 28085 — GL, Invoice
+│       ├── hr-service/         # Port 28086 — Karyawan, Payroll
+│       ├── sales-service/      # Port 28087 — Quotation, Sales Order
+│       ├── purchasing-service/ # Port 28088 — PR, Purchase Order
+│       ├── warehouse-service/  # Port 28089 — Produk, Stok
+│       ├── production-service/ # Port 28090 — BOM, Work Order
+│       ├── qc-service/         # Port 28091 — Inspeksi Kualitas
+│       ├── asset-service/      # Port 28092 — Aset, Maintenance
+│       ├── ai-bi-service/      # Port 28093 — BI, Forecasting, Anomaly
+│       ├── iot-service/        # Port 28094 — Device, MQTT, Simulator
+│       └── dw-service/         # Port 28095 — ETL → ClickHouse + MinIO
 │
 ├── frontend/
 │   └── web/                    # React 18 + Vite SPA

@@ -19,7 +19,7 @@ type Config struct {
 
 func Load() *Config {
 	cfg := &Config{
-		Port:            getEnv("PORT", "8081"),
+		Port:            getEnv("PORT", "28081"),
 		AppEnv:          getEnv("APP_ENV", "development"),
 		DatabaseURL:     getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/auth_service?sslmode=disable"),
 		RedisURL:        getEnv("REDIS_URL", "localhost:6379"),

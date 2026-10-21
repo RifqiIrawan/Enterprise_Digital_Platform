@@ -15,7 +15,7 @@ spec:
         app: sales-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8087"
+        prometheus.io/port: "28087"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/sales-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8087
+            - containerPort: 28087
           envFrom:
             - configMapRef:
                 name: sales-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8087
+              port: 28087
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8087
+              port: 28087
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: sales-service
   ports:
-    - port: 8087
-      targetPort: 8087
+    - port: 28087
+      targetPort: 28087

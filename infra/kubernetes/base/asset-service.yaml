@@ -15,7 +15,7 @@ spec:
         app: asset-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8092"
+        prometheus.io/port: "28092"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/asset-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8092
+            - containerPort: 28092
           envFrom:
             - configMapRef:
                 name: asset-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8092
+              port: 28092
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8092
+              port: 28092
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: asset-service
   ports:
-    - port: 8092
-      targetPort: 8092
+    - port: 28092
+      targetPort: 28092

@@ -56,7 +56,7 @@ cd infra
 docker compose up -d
 ```
 
-Services yang naik: Kafka (port 9092), Kafka UI (8099), Redis (6379), ClickHouse (9101 native, 8123 HTTP), MinIO (9004 API, 9001 Console), Mosquitto (1883).
+Services yang naik: Kafka (port 9092), Kafka UI (8200), Redis (6379), ClickHouse (9101 native, 8123 HTTP), MinIO (9004 API, 9001 Console), Mosquitto (1883).
 
 **Jika image Bitnami gagal pull**: pastikan pakai `bitnamilegacy/kafka:3.7.1` di `docker-compose.yml` (bukan `bitnami/kafka` yang sudah berbayar).
 
@@ -98,13 +98,13 @@ npm install
 npm run dev
 ```
 
-Frontend tersedia di `http://localhost:3000`.
+Frontend tersedia di `http://localhost:23000`.
 
 ### 6. Verifikasi
 
 ```bash
 # Cek semua service hidup
-for port in 8079 8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092 8093 8094 8095; do
+for port in 28079 28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095; do
   echo -n "Port $port: "
   curl -s http://localhost:$port/health | python -c "import sys,json; d=json.load(sys.stdin); print(d['service'])" 2>/dev/null || echo "DOWN"
 done
@@ -112,7 +112,7 @@ done
 
 ### 7. Login
 
-Buka `http://localhost:3000` dan login dengan:
+Buka `http://localhost:23000` dan login dengan:
 - **Email**: `admin@edp.local`
 - **Password**: `Admin@12345`
 
@@ -187,7 +187,7 @@ Setelah modul jalan dan diverifikasi:
 ### Port konflik
 ```bash
 # Cek siapa yang pakai port tertentu
-curl http://localhost:8082/health  # Lihat field "service"
+curl http://localhost:28082/health  # Lihat field "service"
 # Kalau bukan "company-service", ada proses lain di port itu
 ```
 

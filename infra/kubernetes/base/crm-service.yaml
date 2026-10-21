@@ -15,7 +15,7 @@ spec:
         app: crm-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8096"
+        prometheus.io/port: "28096"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/crm-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8096
+            - containerPort: 28096
           envFrom:
             - configMapRef:
                 name: crm-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8096
+              port: 28096
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8096
+              port: 28096
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: crm-service
   ports:
-    - port: 8096
-      targetPort: 8096
+    - port: 28096
+      targetPort: 28096

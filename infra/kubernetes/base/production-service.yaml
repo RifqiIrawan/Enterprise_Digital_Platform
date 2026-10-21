@@ -15,7 +15,7 @@ spec:
         app: production-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8090"
+        prometheus.io/port: "28090"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/production-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8090
+            - containerPort: 28090
           envFrom:
             - configMapRef:
                 name: production-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8090
+              port: 28090
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8090
+              port: 28090
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: production-service
   ports:
-    - port: 8090
-      targetPort: 8090
+    - port: 28090
+      targetPort: 28090

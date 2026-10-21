@@ -21,45 +21,45 @@ scrape_configs:
   - job_name: edp-services
     metrics_path: /metrics
     static_configs:
-      - targets: ["host.docker.internal:8079"]
+      - targets: ["host.docker.internal:28079"]
         labels: { service: api-gateway }
-      - targets: ["host.docker.internal:8081"]
+      - targets: ["host.docker.internal:28081"]
         labels: { service: auth-service }
-      - targets: ["host.docker.internal:8082"]
+      - targets: ["host.docker.internal:28082"]
         labels: { service: company-service }
-      - targets: ["host.docker.internal:8083"]
+      - targets: ["host.docker.internal:28083"]
         labels: { service: rbac-service }
-      - targets: ["host.docker.internal:8084"]
+      - targets: ["host.docker.internal:28084"]
         labels: { service: audit-service }
-      - targets: ["host.docker.internal:8085"]
+      - targets: ["host.docker.internal:28085"]
         labels: { service: finance-service }
-      - targets: ["host.docker.internal:8086"]
+      - targets: ["host.docker.internal:28086"]
         labels: { service: hr-service }
-      - targets: ["host.docker.internal:8087"]
+      - targets: ["host.docker.internal:28087"]
         labels: { service: sales-service }
-      - targets: ["host.docker.internal:8088"]
+      - targets: ["host.docker.internal:28088"]
         labels: { service: purchasing-service }
-      - targets: ["host.docker.internal:8089"]
+      - targets: ["host.docker.internal:28089"]
         labels: { service: warehouse-service }
-      - targets: ["host.docker.internal:8090"]
+      - targets: ["host.docker.internal:28090"]
         labels: { service: production-service }
-      - targets: ["host.docker.internal:8091"]
+      - targets: ["host.docker.internal:28091"]
         labels: { service: qc-service }
-      - targets: ["host.docker.internal:8092"]
+      - targets: ["host.docker.internal:28092"]
         labels: { service: asset-service }
-      - targets: ["host.docker.internal:8093"]
+      - targets: ["host.docker.internal:28093"]
         labels: { service: ai-bi-service }
-      - targets: ["host.docker.internal:8094"]
+      - targets: ["host.docker.internal:28094"]
         labels: { service: iot-service }
-      - targets: ["host.docker.internal:8095"]
+      - targets: ["host.docker.internal:28095"]
         labels: { service: dw-service }
-      - targets: ["host.docker.internal:8096"]
+      - targets: ["host.docker.internal:28096"]
         labels: { service: crm-service }
-      - targets: ["host.docker.internal:8097"]
+      - targets: ["host.docker.internal:28097"]
         labels: { service: ticketing-service }
-      - targets: ["host.docker.internal:8098"]
+      - targets: ["host.docker.internal:28098"]
         labels: { service: ecommerce-service }
-      - targets: ["host.docker.internal:8099"]
+      - targets: ["host.docker.internal:28099"]
         labels: { service: fleet-service }
-      - targets: ["host.docker.internal:8100"]
+      - targets: ["host.docker.internal:28100"]
         labels: { service: project-service }

@@ -5,7 +5,7 @@
 
 ## Overview
 
-`ai-bi-service` (port 8093) menyediakan **tiga kapabilitas analitik** yang diimplementasikan dalam Go polos — tanpa Python, tanpa MLflow, tanpa JupyterHub, tanpa BentoML:
+`ai-bi-service` (port 28093) menyediakan **tiga kapabilitas analitik** yang diimplementasikan dalam Go polos — tanpa Python, tanpa MLflow, tanpa JupyterHub, tanpa BentoML:
 
 1. **BI Dashboards** — agregasi metrik bisnis dari 8 service
 2. **Forecasting** — proyeksi tren linear (regresi linear sederhana)
@@ -16,7 +16,7 @@
 ## Arsitektur ai-bi-service
 
 ```
-ai-bi-service (port 8093)
+ai-bi-service (port 28093)
     │
     ├── GET /dashboards/summary
     │   └── Agregasi HTTP paralel ke 8 service:

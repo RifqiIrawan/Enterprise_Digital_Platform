@@ -111,9 +111,9 @@ services:
       KAFKA_CLUSTERS_0_NAME: local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
     ports:
-      # Host 8090 clashed with production-service, then 8099 clashed with
-      # fleet-service (module 20). Moved well clear of the 807x-81xx band the
-      # Go services allocate from, so the next module does not collide again.
+      # This UI's host port clashed with production-service and then with
+      # fleet-service, so it sits well clear of the 28079+ band the Go services
+      # allocate from; the next module does not collide again.
       - "8200:8080"
     networks:
       - edp-network
@@ -163,7 +163,7 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
     ports:
-      - "3001:3000"   # host 3000 already taken by frontend below
+      - "3001:3000"   # container port 3000 (the frontend below is on host 23000)
     depends_on:
       - prometheus
     networks:
@@ -230,7 +230,7 @@ services:
       context: ../backend/services/auth-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8081"
+      PORT: "28081"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/auth_service?sslmode=disable
       REDIS_URL: redis:6379
@@ -242,7 +242,7 @@ services:
       - redis
       - kafka
     ports:
-      - "8081:8081"
+      - "28081:28081"
     networks:
       - edp-network
 
@@ -251,7 +251,7 @@ services:
       context: ../backend/services/company-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8082"
+      PORT: "28082"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/company_service?sslmode=disable
       REDIS_URL: redis:6379
@@ -262,7 +262,7 @@ services:
       - redis
       - kafka
     ports:
-      - "8082:8082"
+      - "28082:28082"
     networks:
       - edp-network
 
@@ -271,7 +271,7 @@ services:
       context: ../backend/services/rbac-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8083"
+      PORT: "28083"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/rbac_service?sslmode=disable
       REDIS_URL: redis:6379
@@ -282,7 +282,7 @@ services:
       - redis
       - kafka
     ports:
-      - "8083:8083"
+      - "28083:28083"
     networks:
       - edp-network
 
@@ -291,7 +291,7 @@ services:
       context: ../backend/services/audit-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8084"
+      PORT: "28084"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/audit_service?sslmode=disable
       CLICKHOUSE_URL: http://clickhouse:8123
@@ -303,7 +303,7 @@ services:
       - clickhouse
       - kafka
     ports:
-      - "8084:8084"
+      - "28084:28084"
     networks:
       - edp-network
 
@@ -312,7 +312,7 @@ services:
       context: ../backend/modules/finance-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8085"
+      PORT: "28085"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
@@ -321,7 +321,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8085:8085"
+      - "28085:28085"
     networks:
       - edp-network
 
@@ -330,18 +330,18 @@ services:
       context: ../backend/modules/hr-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8086"
+      PORT: "28086"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/hr_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
-      FINANCE_SERVICE_URL: http://finance-service:8085
+      FINANCE_SERVICE_URL: http://finance-service:28085
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - kafka
       - finance-service
     ports:
-      - "8086:8086"
+      - "28086:28086"
     networks:
       - edp-network
 
@@ -350,12 +350,12 @@ services:
       context: ../backend/modules/sales-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8087"
+      PORT: "28087"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
-      FINANCE_SERVICE_URL: http://finance-service:8085
-      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+      FINANCE_SERVICE_URL: http://finance-service:28085
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:28089
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -363,7 +363,7 @@ services:
       - finance-service
       - warehouse-service
     ports:
-      - "8087:8087"
+      - "28087:28087"
     networks:
       - edp-network
 
@@ -372,12 +372,12 @@ services:
       context: ../backend/modules/purchasing-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8088"
+      PORT: "28088"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/purchasing_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
-      FINANCE_SERVICE_URL: http://finance-service:8085
-      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+      FINANCE_SERVICE_URL: http://finance-service:28085
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:28089
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -385,7 +385,7 @@ services:
       - finance-service
       - warehouse-service
     ports:
-      - "8088:8088"
+      - "28088:28088"
     networks:
       - edp-network
 
@@ -394,7 +394,7 @@ services:
       context: ../backend/modules/warehouse-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8089"
+      PORT: "28089"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/warehouse_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
@@ -403,7 +403,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8089:8089"
+      - "28089:28089"
     networks:
       - edp-network
 
@@ -412,18 +412,18 @@ services:
       context: ../backend/modules/production-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8090"
+      PORT: "28090"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/production_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
-      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:28089
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - kafka
       - warehouse-service
     ports:
-      - "8090:8090"
+      - "28090:28090"
     networks:
       - edp-network
 
@@ -432,7 +432,7 @@ services:
       context: ../backend/modules/qc-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8091"
+      PORT: "28091"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/qc_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
@@ -441,7 +441,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8091:8091"
+      - "28091:28091"
     networks:
       - edp-network
 
@@ -450,7 +450,7 @@ services:
       context: ../backend/modules/rag-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8101"
+      PORT: "28101"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/rag_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
@@ -471,7 +471,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8101:8101"
+      - "28101:28101"
     networks:
       - edp-network
 
@@ -480,18 +480,18 @@ services:
       context: ../backend/modules/asset-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8092"
+      PORT: "28092"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/asset_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
-      FINANCE_SERVICE_URL: http://finance-service:8085
+      FINANCE_SERVICE_URL: http://finance-service:28085
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - kafka
       - finance-service
     ports:
-      - "8092:8092"
+      - "28092:28092"
     networks:
       - edp-network
 
@@ -500,16 +500,16 @@ services:
       context: ../backend/modules/ai-bi-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8093"
+      PORT: "28093"
       OTLP_ENDPOINT: jaeger:4318
-      SALES_SERVICE_URL: http://sales-service:8087
-      PURCHASING_SERVICE_URL: http://purchasing-service:8088
-      FINANCE_SERVICE_URL: http://finance-service:8085
-      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
-      PRODUCTION_SERVICE_URL: http://production-service:8090
-      QC_SERVICE_URL: http://qc-service:8091
-      HR_SERVICE_URL: http://hr-service:8086
-      ASSET_SERVICE_URL: http://asset-service:8092
+      SALES_SERVICE_URL: http://sales-service:28087
+      PURCHASING_SERVICE_URL: http://purchasing-service:28088
+      FINANCE_SERVICE_URL: http://finance-service:28085
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:28089
+      PRODUCTION_SERVICE_URL: http://production-service:28090
+      QC_SERVICE_URL: http://qc-service:28091
+      HR_SERVICE_URL: http://hr-service:28086
+      ASSET_SERVICE_URL: http://asset-service:28092
     # No database/Kafka of its own -- pure live HTTP aggregation, see
     # backend/modules/ai-bi-service/internal/httpapi/summary.go.
     depends_on:
@@ -522,7 +522,7 @@ services:
       - hr-service
       - asset-service
     ports:
-      - "8093:8093"
+      - "28093:28093"
     networks:
       - edp-network
 
@@ -531,7 +531,7 @@ services:
       context: ../backend/modules/iot-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8094"
+      PORT: "28094"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/iot_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
@@ -542,7 +542,7 @@ services:
       - kafka
       - mosquitto
     ports:
-      - "8094:8094"
+      - "28094:28094"
     networks:
       - edp-network
 
@@ -551,7 +551,7 @@ services:
       context: ../backend/modules/dw-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8095"
+      PORT: "28095"
       OTLP_ENDPOINT: jaeger:4318
       FINANCE_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/finance_service?sslmode=disable
       SALES_DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/sales_service?sslmode=disable
@@ -593,7 +593,7 @@ services:
       - minio
       - kafka
     ports:
-      - "8095:8095"
+      - "28095:28095"
     networks:
       - edp-network
 
@@ -602,7 +602,7 @@ services:
       context: ../backend/modules/crm-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8096"
+      PORT: "28096"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/crm_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
@@ -611,7 +611,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8096:8096"
+      - "28096:28096"
     networks:
       - edp-network
 
@@ -620,7 +620,7 @@ services:
       context: ../backend/modules/ticketing-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8097"
+      PORT: "28097"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/ticketing_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
@@ -629,7 +629,7 @@ services:
     depends_on:
       - kafka
     ports:
-      - "8097:8097"
+      - "28097:28097"
     networks:
       - edp-network
 
@@ -638,18 +638,18 @@ services:
       context: ../backend/modules/ecommerce-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8098"
+      PORT: "28098"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/ecommerce_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
-      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:28089
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - kafka
       - warehouse-service
     ports:
-      - "8098:8098"
+      - "28098:28098"
     networks:
       - edp-network
 
@@ -658,18 +658,18 @@ services:
       context: ../backend/modules/fleet-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8099"
+      PORT: "28099"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/fleet_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
-      ECOMMERCE_SERVICE_URL: http://ecommerce-service:8098
+      ECOMMERCE_SERVICE_URL: http://ecommerce-service:28098
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       - kafka
       - ecommerce-service
     ports:
-      - "8099:8099"
+      - "28099:28099"
     networks:
       - edp-network
 
@@ -678,12 +678,12 @@ services:
       context: ../backend/modules/project-service
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8100"
+      PORT: "28100"
       OTLP_ENDPOINT: jaeger:4318
       DATABASE_URL: postgres://platform:platform@host.docker.internal:5432/project_service?sslmode=disable
       KAFKA_BROKERS: kafka:29092
-      HR_SERVICE_URL: http://hr-service:8086
-      FINANCE_SERVICE_URL: http://finance-service:8085
+      HR_SERVICE_URL: http://hr-service:28086
+      FINANCE_SERVICE_URL: http://finance-service:28085
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -691,7 +691,7 @@ services:
       - hr-service
       - finance-service
     ports:
-      - "8100:8100"
+      - "28100:28100"
     networks:
       - edp-network
 
@@ -700,31 +700,31 @@ services:
       context: ../backend/services/api-gateway
       dockerfile: deployments/Dockerfile
     environment:
-      PORT: "8079"
+      PORT: "28079"
       OTLP_ENDPOINT: jaeger:4318
-      AUTH_SERVICE_URL: http://auth-service:8081
-      COMPANY_SERVICE_URL: http://company-service:8082
-      RBAC_SERVICE_URL: http://rbac-service:8083
-      AUDIT_SERVICE_URL: http://audit-service:8084
-      FINANCE_SERVICE_URL: http://finance-service:8085
-      HR_SERVICE_URL: http://hr-service:8086
-      SALES_SERVICE_URL: http://sales-service:8087
-      PURCHASING_SERVICE_URL: http://purchasing-service:8088
-      WAREHOUSE_SERVICE_URL: http://warehouse-service:8089
-      PRODUCTION_SERVICE_URL: http://production-service:8090
-      QC_SERVICE_URL: http://qc-service:8091
-      ASSET_SERVICE_URL: http://asset-service:8092
-      AI_BI_SERVICE_URL: http://ai-bi-service:8093
-      DW_SERVICE_URL: http://dw-service:8095
-      IOT_SERVICE_URL: http://iot-service:8094
-      CRM_SERVICE_URL: http://crm-service:8096
-      TICKETING_SERVICE_URL: http://ticketing-service:8097
-      ECOMMERCE_SERVICE_URL: http://ecommerce-service:8098
-      FLEET_SERVICE_URL: http://fleet-service:8099
-      PROJECT_SERVICE_URL: http://project-service:8100
-      RAG_SERVICE_URL: http://rag-service:8101
+      AUTH_SERVICE_URL: http://auth-service:28081
+      COMPANY_SERVICE_URL: http://company-service:28082
+      RBAC_SERVICE_URL: http://rbac-service:28083
+      AUDIT_SERVICE_URL: http://audit-service:28084
+      FINANCE_SERVICE_URL: http://finance-service:28085
+      HR_SERVICE_URL: http://hr-service:28086
+      SALES_SERVICE_URL: http://sales-service:28087
+      PURCHASING_SERVICE_URL: http://purchasing-service:28088
+      WAREHOUSE_SERVICE_URL: http://warehouse-service:28089
+      PRODUCTION_SERVICE_URL: http://production-service:28090
+      QC_SERVICE_URL: http://qc-service:28091
+      ASSET_SERVICE_URL: http://asset-service:28092
+      AI_BI_SERVICE_URL: http://ai-bi-service:28093
+      DW_SERVICE_URL: http://dw-service:28095
+      IOT_SERVICE_URL: http://iot-service:28094
+      CRM_SERVICE_URL: http://crm-service:28096
+      TICKETING_SERVICE_URL: http://ticketing-service:28097
+      ECOMMERCE_SERVICE_URL: http://ecommerce-service:28098
+      FLEET_SERVICE_URL: http://fleet-service:28099
+      PROJECT_SERVICE_URL: http://project-service:28100
+      RAG_SERVICE_URL: http://rag-service:28101
       JWT_SECRET: ${JWT_SECRET:-change-me}
-      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:3000}
+      CORS_ALLOWED_ORIGIN: ${CORS_ALLOWED_ORIGIN:-http://localhost:23000}
       # Penegakan hak akses per endpoint (lihat api-gateway/internal/authz).
       # Ditulis eksplisit walau defaultnya sudah "true" supaya terlihat bahwa
       # stack ini memang menegakkannya -- dan supaya mematikannya jadi
@@ -753,7 +753,7 @@ services:
       - fleet-service
       - project-service
     ports:
-      - "8079:8079"
+      - "28079:28079"
     networks:
       - edp-network
 
@@ -765,10 +765,10 @@ services:
         # Baked into the JS bundle at build time -- points at the
         # host-exposed api-gateway port since this is what the user's
         # browser (not the container network) has to reach.
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8079}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:28079}
     depends_on:
       - api-gateway
     ports:
-      - "3000:80"
+      - "23000:80"
     networks:
       - edp-network

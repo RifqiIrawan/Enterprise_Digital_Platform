@@ -2549,3 +2549,12 @@ Silver kini dibangun inkremental (commit `7cd9e64`): disimpan terurut menurut ku
 - Gold baru dua dataset; belum ada UI untuknya.
 - ~~Verifikasi browser BOM/Work Order formula dan grafik OEE~~ — SUDAH (2026-09-27): daftar BOM membedakan "Formula · batch 1000" dari Per Unit; form Buat BOM mode Formula menampilkan Ukuran Batch, komponen dalam % dan peringatan total <100% secara langsung; WO formula tampil "2000 / 2 batch"; halaman OEE menampilkan 71,4 / 85,7 / 88,9 / 93,8 (sama dengan endpoint DW) beserta grafik tiga faktor dan Pareto downtime; nol error konsol. Untuk menjalankannya: warehouse-service harus di port alternatif (8089 dipakai aplikasi PHP lain) dan production-service + gateway diberi `WAREHOUSE_SERVICE_URL`.
 - ~~Halaman OEE menampilkan 0,0% untuk periode kosong~~ — DIPERBAIKI (2026-09-27): tanpa run tertutup keempat tile menampilkan "—" dengan keterangan "belum ada run tertutup pada periode ini" (0% adalah klaim berbeda dari "belum ada yang bisa diukur", sama seperti prinsip null-bukan-nol di dw-service). Sekaligus memperbaiki bug tanggal: default "Dari" (tanggal 1 bulan ini) dibuat dengan `toISOString()` yang UTC, sehingga di UTC+7 jadi 31/08 alih-alih 01/09 (dan "Sampai" bisa mundur sehari sesudah tengah malam); sekarang tanggal lokal. Catatan sebelumnya yang menyebut default-nya "30 hari terakhir" keliru — defaultnya awal bulan ini, jadi run bulan lalu tampak kosong sampai "Dari" digeser. Test regresi tanggal hanya menangkap bug di mesin berzona positif (di UTC lolos juga dengan kode lama).
+
+
+---
+
+## Pergeseran port: semua port aplikasi +20000 (2026-10-21)
+
+Port 8090 diambil proses proyek lain (`sep-backend.exe`, Smart_Enterprise_Platform) sehingga production-service gagal naik dan gateway meneruskan `/api/production` ke program yang salah; blok 18079-18101 juga sudah terpakai (18082-18087). Atas permintaan user, seluruh port aplikasi dipindah ke blok kosong 28079-28101 (frontend 3000 -> 23000), diperiksa kosong dan di luar rentang cadangan Windows sebelum dipakai.
+
+**Angka port di catatan di atas BELUM diubah** -- log ini sengaja dibiarkan sebagai riwayat. Baca "8079" sebagai 28079, "8090" sebagai 28090, "3000" sebagai 23000, dst. Peta port yang berlaku ada di `infra/README.md` ("Peta port aplikasi"). Port infra pihak ketiga (Postgres 5432, Redis, Kafka, MinIO, ClickHouse, Kafka UI 8200) tidak dipindah.

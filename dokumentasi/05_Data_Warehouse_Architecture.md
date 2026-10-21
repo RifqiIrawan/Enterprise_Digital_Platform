@@ -5,7 +5,7 @@
 
 ## Overview
 
-`dw-service` (port 8095) adalah modul dedicated untuk analytical data pipeline. Service ini membaca langsung dari database Postgres 9 service lain (bukan lewat HTTP API mereka) dan menulis ke ClickHouse sebagai destinasi OLAP, dengan MinIO sebagai raw data lake (bronze layer).
+`dw-service` (port 28095) adalah modul dedicated untuk analytical data pipeline. Service ini membaca langsung dari database Postgres 9 service lain (bukan lewat HTTP API mereka) dan menulis ke ClickHouse sebagai destinasi OLAP, dengan MinIO sebagai raw data lake (bronze layer).
 
 **Tidak menggunakan**: dbt, Airbyte, Debezium, Airflow, star schema dengan dimension tables terpisah.
 

@@ -15,7 +15,7 @@ spec:
         app: ecommerce-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8098"
+        prometheus.io/port: "28098"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/ecommerce-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8098
+            - containerPort: 28098
           envFrom:
             - configMapRef:
                 name: ecommerce-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8098
+              port: 28098
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8098
+              port: 28098
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: ecommerce-service
   ports:
-    - port: 8098
-      targetPort: 8098
+    - port: 28098
+      targetPort: 28098

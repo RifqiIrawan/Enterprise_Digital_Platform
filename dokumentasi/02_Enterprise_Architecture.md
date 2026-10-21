@@ -10,16 +10,16 @@ EDP menggunakan **microservices berbasis Go** dengan komunikasi HTTP sinkron (le
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                  BROWSER (React SPA)                    │
-│           http://localhost:3000 (Vite dev)             │
+│           http://localhost:23000 (Vite dev)             │
 └───────────────────────────┬─────────────────────────────┘
                             │ HTTP
 ┌───────────────────────────▼─────────────────────────────┐
-│              API GATEWAY (Go, port 8079)                │
+│              API GATEWAY (Go, port 28079)                │
 │  JWT validation │ Reverse proxy │ Route prefix mapping  │
 └──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──┬──────────┘
    │  │  │  │  │  │  │  │  │  │  │  │  │  │  │
   Auth Comp RBAC Aud Fin HR  Sal Pur War Pro QC  Ast AI  IoT DW
-  8081 8082 8083 8084 8085 8086 8087 8088 8089 8090 8091 8092 8093 8094 8095
+  28081 28082 28083 28084 28085 28086 28087 28088 28089 28090 28091 28092 28093 28094 28095
 
 ┌─────────────────────────────────────────────────────────┐
 │              APACHE KAFKA (single broker)               │

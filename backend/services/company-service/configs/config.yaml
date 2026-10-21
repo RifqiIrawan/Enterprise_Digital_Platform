@@ -1,6 +1,6 @@
 service:
   name: company-service
-  port: 8082
+  port: 28082
 
 database:
   url: postgres://platform:platform@localhost:5432/company_service?sslmode=disable

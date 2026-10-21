@@ -38,7 +38,7 @@ Semua endpoint diakses lewat api-gateway dengan prefix `/api/ticketing/*` (lihat
 psql -U platform -h localhost -c "CREATE DATABASE ticketing_service;"
 
 cd backend/modules/ticketing-service
-go run ./cmd/server        # migrasi jalan otomatis saat startup, listen di :8097
+go run ./cmd/server        # migrasi jalan otomatis saat startup, listen di :28097
 ```
 
 Frontend: `frontend/web/src/pages/ticketing/{TicketCategoriesPage,TicketsPage,TicketCommentsPage}.jsx`, routes `/ticketing/categories`, `/ticketing/tickets`, `/ticketing/comments` (menu ter-seed di rbac-service migration `012_seed_ticketing_menus.sql`).

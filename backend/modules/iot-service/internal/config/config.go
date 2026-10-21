@@ -17,7 +17,7 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:                     getEnv("PORT", "8094"),
+		Port:                     getEnv("PORT", "28094"),
 		DatabaseURL:              getEnv("DATABASE_URL", "postgres://platform:platform@localhost:5432/iot_service?sslmode=disable"),
 		KafkaBrokers:             getEnv("KAFKA_BROKERS", "localhost:9092"),
 		MQTTBrokerURL:            getEnv("MQTT_BROKER_URL", "tcp://localhost:1883"),

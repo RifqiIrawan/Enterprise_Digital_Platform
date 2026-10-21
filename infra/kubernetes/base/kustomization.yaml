@@ -31,7 +31,7 @@ resources:
 # overridden per environment via a `configMapGenerator` with
 # `behavior: merge` in each overlay (see overlays/dev/kustomization.yaml
 # for a real example). Cross-service URLs use plain K8s Service DNS names
-# (e.g. http://finance-service:8085), which resolve correctly within any
+# (e.g. http://finance-service:28085), which resolve correctly within any
 # namespace as long as that namespace has all these Services deployed --
 # true in every overlay here, so those values do NOT need per-environment
 # overrides, only the external infra ones (DATABASE_URL, KAFKA_BROKERS,
@@ -52,7 +52,7 @@ resources:
 configMapGenerator:
   - name: auth-service-config
     literals:
-      - PORT=8081
+      - PORT=28081
       - APP_ENV=REPLACE_ME_APP_ENV
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_AUTH
       - REDIS_URL=REPLACE_ME_REDIS_URL
@@ -63,7 +63,7 @@ configMapGenerator:
 
   - name: company-service-config
     literals:
-      - PORT=8082
+      - PORT=28082
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_COMPANY
       - REDIS_URL=REPLACE_ME_REDIS_URL
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
@@ -71,7 +71,7 @@ configMapGenerator:
 
   - name: rbac-service-config
     literals:
-      - PORT=8083
+      - PORT=28083
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_RBAC
       - REDIS_URL=REPLACE_ME_REDIS_URL
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
@@ -79,7 +79,7 @@ configMapGenerator:
 
   - name: audit-service-config
     literals:
-      - PORT=8084
+      - PORT=28084
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_AUDIT
       - CLICKHOUSE_URL=REPLACE_ME_CLICKHOUSE_URL
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
@@ -88,90 +88,90 @@ configMapGenerator:
 
   - name: api-gateway-config
     literals:
-      - PORT=8079
+      - PORT=28079
       - APP_ENV=REPLACE_ME_APP_ENV
-      - AUTH_SERVICE_URL=http://auth-service:8081
-      - COMPANY_SERVICE_URL=http://company-service:8082
-      - RBAC_SERVICE_URL=http://rbac-service:8083
-      - AUDIT_SERVICE_URL=http://audit-service:8084
-      - FINANCE_SERVICE_URL=http://finance-service:8085
-      - HR_SERVICE_URL=http://hr-service:8086
-      - SALES_SERVICE_URL=http://sales-service:8087
-      - PURCHASING_SERVICE_URL=http://purchasing-service:8088
-      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
-      - PRODUCTION_SERVICE_URL=http://production-service:8090
-      - QC_SERVICE_URL=http://qc-service:8091
-      - ASSET_SERVICE_URL=http://asset-service:8092
-      - AI_BI_SERVICE_URL=http://ai-bi-service:8093
-      - DW_SERVICE_URL=http://dw-service:8095
-      - IOT_SERVICE_URL=http://iot-service:8094
-      - CRM_SERVICE_URL=http://crm-service:8096
-      - TICKETING_SERVICE_URL=http://ticketing-service:8097
-      - ECOMMERCE_SERVICE_URL=http://ecommerce-service:8098
-      - FLEET_SERVICE_URL=http://fleet-service:8099
-      - PROJECT_SERVICE_URL=http://project-service:8100
-      - RAG_SERVICE_URL=http://rag-service:8101
+      - AUTH_SERVICE_URL=http://auth-service:28081
+      - COMPANY_SERVICE_URL=http://company-service:28082
+      - RBAC_SERVICE_URL=http://rbac-service:28083
+      - AUDIT_SERVICE_URL=http://audit-service:28084
+      - FINANCE_SERVICE_URL=http://finance-service:28085
+      - HR_SERVICE_URL=http://hr-service:28086
+      - SALES_SERVICE_URL=http://sales-service:28087
+      - PURCHASING_SERVICE_URL=http://purchasing-service:28088
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:28089
+      - PRODUCTION_SERVICE_URL=http://production-service:28090
+      - QC_SERVICE_URL=http://qc-service:28091
+      - ASSET_SERVICE_URL=http://asset-service:28092
+      - AI_BI_SERVICE_URL=http://ai-bi-service:28093
+      - DW_SERVICE_URL=http://dw-service:28095
+      - IOT_SERVICE_URL=http://iot-service:28094
+      - CRM_SERVICE_URL=http://crm-service:28096
+      - TICKETING_SERVICE_URL=http://ticketing-service:28097
+      - ECOMMERCE_SERVICE_URL=http://ecommerce-service:28098
+      - FLEET_SERVICE_URL=http://fleet-service:28099
+      - PROJECT_SERVICE_URL=http://project-service:28100
+      - RAG_SERVICE_URL=http://rag-service:28101
       - CORS_ALLOWED_ORIGIN=REPLACE_ME_CORS_ALLOWED_ORIGIN
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: finance-service-config
     literals:
-      - PORT=8085
+      - PORT=28085
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_FINANCE
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: hr-service-config
     literals:
-      - PORT=8086
+      - PORT=28086
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_HR
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-      - FINANCE_SERVICE_URL=http://finance-service:8085
+      - FINANCE_SERVICE_URL=http://finance-service:28085
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: sales-service-config
     literals:
-      - PORT=8087
+      - PORT=28087
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_SALES
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-      - FINANCE_SERVICE_URL=http://finance-service:8085
-      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - FINANCE_SERVICE_URL=http://finance-service:28085
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:28089
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: purchasing-service-config
     literals:
-      - PORT=8088
+      - PORT=28088
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_PURCHASING
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-      - FINANCE_SERVICE_URL=http://finance-service:8085
-      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - FINANCE_SERVICE_URL=http://finance-service:28085
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:28089
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: warehouse-service-config
     literals:
-      - PORT=8089
+      - PORT=28089
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_WAREHOUSE
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: production-service-config
     literals:
-      - PORT=8090
+      - PORT=28090
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_PRODUCTION
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:28089
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: qc-service-config
     literals:
-      - PORT=8091
+      - PORT=28091
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_QC
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: rag-service-config
     literals:
-      - PORT=8101
+      - PORT=28101
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_RAG
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
@@ -182,23 +182,23 @@ configMapGenerator:
 
   - name: asset-service-config
     literals:
-      - PORT=8092
+      - PORT=28092
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_ASSET
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-      - FINANCE_SERVICE_URL=http://finance-service:8085
+      - FINANCE_SERVICE_URL=http://finance-service:28085
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: ai-bi-service-config
     literals:
-      - PORT=8093
-      - SALES_SERVICE_URL=http://sales-service:8087
-      - PURCHASING_SERVICE_URL=http://purchasing-service:8088
-      - FINANCE_SERVICE_URL=http://finance-service:8085
-      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
-      - PRODUCTION_SERVICE_URL=http://production-service:8090
-      - QC_SERVICE_URL=http://qc-service:8091
-      - HR_SERVICE_URL=http://hr-service:8086
-      - ASSET_SERVICE_URL=http://asset-service:8092
+      - PORT=28093
+      - SALES_SERVICE_URL=http://sales-service:28087
+      - PURCHASING_SERVICE_URL=http://purchasing-service:28088
+      - FINANCE_SERVICE_URL=http://finance-service:28085
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:28089
+      - PRODUCTION_SERVICE_URL=http://production-service:28090
+      - QC_SERVICE_URL=http://qc-service:28091
+      - HR_SERVICE_URL=http://hr-service:28086
+      - ASSET_SERVICE_URL=http://asset-service:28092
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   # dw-service has no database of its own -- it connects READ-ONLY straight
@@ -208,7 +208,7 @@ configMapGenerator:
   # internal/config/config.go.
   - name: dw-service-config
     literals:
-      - PORT=8095
+      - PORT=28095
       - FINANCE_DATABASE_URL=REPLACE_ME_DATABASE_URL_FINANCE
       - SALES_DATABASE_URL=REPLACE_ME_DATABASE_URL_SALES
       - WAREHOUSE_DATABASE_URL=REPLACE_ME_DATABASE_URL_WAREHOUSE
@@ -242,7 +242,7 @@ configMapGenerator:
 
   - name: iot-service-config
     literals:
-      - PORT=8094
+      - PORT=28094
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_IOT
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - MQTT_BROKER_URL=REPLACE_ME_MQTT_BROKER_URL
@@ -252,39 +252,39 @@ configMapGenerator:
 
   - name: crm-service-config
     literals:
-      - PORT=8096
+      - PORT=28096
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_CRM
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: ticketing-service-config
     literals:
-      - PORT=8097
+      - PORT=28097
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_TICKETING
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: ecommerce-service-config
     literals:
-      - PORT=8098
+      - PORT=28098
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_ECOMMERCE
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-      - WAREHOUSE_SERVICE_URL=http://warehouse-service:8089
+      - WAREHOUSE_SERVICE_URL=http://warehouse-service:28089
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: fleet-service-config
     literals:
-      - PORT=8099
+      - PORT=28099
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_FLEET
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-      - ECOMMERCE_SERVICE_URL=http://ecommerce-service:8098
+      - ECOMMERCE_SERVICE_URL=http://ecommerce-service:28098
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT
 
   - name: project-service-config
     literals:
-      - PORT=8100
+      - PORT=28100
       - DATABASE_URL=REPLACE_ME_DATABASE_URL_PROJECT
       - KAFKA_BROKERS=REPLACE_ME_KAFKA_BROKERS
-      - HR_SERVICE_URL=http://hr-service:8086
-      - FINANCE_SERVICE_URL=http://finance-service:8085
+      - HR_SERVICE_URL=http://hr-service:28086
+      - FINANCE_SERVICE_URL=http://finance-service:28085
       - OTLP_ENDPOINT=REPLACE_ME_OTLP_ENDPOINT

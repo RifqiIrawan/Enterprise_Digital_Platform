@@ -40,10 +40,10 @@ Semua endpoint diakses lewat api-gateway dengan prefix `/api/ecommerce/*` (lihat
 psql -U platform -h localhost -c "CREATE DATABASE ecommerce_service;"
 
 cd backend/modules/ecommerce-service
-go run ./cmd/server        # migrasi jalan otomatis saat startup, listen di :8098
+go run ./cmd/server        # migrasi jalan otomatis saat startup, listen di :28098
 ```
 
-Butuh `warehouse-service` aktif (default `WAREHOUSE_SERVICE_URL=http://localhost:8089`) supaya `POST /orders/{id}/ship` bisa mencatat stok keluar sungguhan.
+Butuh `warehouse-service` aktif (default `WAREHOUSE_SERVICE_URL=http://localhost:28089`) supaya `POST /orders/{id}/ship` bisa mencatat stok keluar sungguhan.
 
 Frontend: `frontend/web/src/pages/ecommerce/OrdersPage.jsx`, route `/ecommerce/orders` (menu ter-seed di rbac-service migration `013_seed_ecommerce_menus.sql`).
 

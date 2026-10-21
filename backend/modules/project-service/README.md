@@ -3,7 +3,7 @@
 Modul ke-21. Proyek, tugas, dan timesheet, dengan integrasi ke `hr-service`
 (karyawan) dan `finance-service` (posting biaya ke GL).
 
-Port `8100`, database `project_service`, route gateway `/api/project`.
+Port `28100`, database `project_service`, route gateway `/api/project`.
 
 Status: **selesai, termasuk production-readiness** (modul inti 2026-08-16,
 production-readiness 2026-08-16 hari yang sama). Dockerfile, blok

@@ -3,7 +3,7 @@
 Modul ke-20. Armada kendaraan, pengemudi, dan surat jalan (delivery order),
 dengan integrasi dua arah ke `ecommerce-service`.
 
-Port `8099`, database `fleet_service`, route gateway `/api/fleet`.
+Port `28099`, database `fleet_service`, route gateway `/api/fleet`.
 
 Status: **diimplementasikan, termasuk production-readiness** (modul inti
 2026-08-12, production-readiness 2026-08-13/15) — Dockerfile, blok

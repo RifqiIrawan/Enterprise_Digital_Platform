@@ -18,7 +18,7 @@ environment-specific values for `REPLACE_ME_*` placeholders, and the
   registry needed for a local cluster that shares the same Docker image
   store (Docker Desktop Kubernetes, or `kind --load`/`minikube image load`
   for other local clusters).
-- **Cross-service URLs** use plain K8s Service DNS (`http://finance-service:8085`)
+- **Cross-service URLs** use plain K8s Service DNS (`http://finance-service:28085`)
   — this resolves correctly in any namespace as long as that namespace has
   all the Services from this base deployed, which every overlay here does.
   These do NOT need per-environment overrides.

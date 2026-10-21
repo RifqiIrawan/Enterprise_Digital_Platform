@@ -28,16 +28,16 @@ Super admin melewati pemeriksaan ini sepenuhnya. Endpoint yang ditandai internal
 go run ./cmd/server
 ```
 
-Default port: `8079` (env `PORT`). Env lain yang perlu diketahui:
+Default port: `28079` (env `PORT`). Env lain yang perlu diketahui:
 
 | Env | Default | Keterangan |
 |---|---|---|
 | `JWT_SECRET` | `change-me` | harus sama dengan auth-service; wajib diisi eksplisit kalau `APP_ENV` bukan `development` |
-| `RBAC_SERVICE_URL` | `http://localhost:8083` | sumber hak akses yang ditegakkan gateway |
+| `RBAC_SERVICE_URL` | `http://localhost:28083` | sumber hak akses yang ditegakkan gateway |
 | `AUTHZ_ENFORCE` | `true` | jalan keluar darurat; `false` mengembalikan perilaku lama (token valid = boleh apa saja) |
 | `AUTHZ_CACHE_TTL` | `30s` | selama ini hak yang sudah diambil dipakai apa adanya — juga jeda maksimum berlakunya pencabutan hak |
 | `AUTHZ_STALE_GRACE` | `5m` | seberapa lama jawaban lama boleh dipakai saat rbac-service tidak bisa dihubungi |
-| `CORS_ALLOWED_ORIGIN` | `http://localhost:3000` | origin frontend (localhost port berapa pun selalu diizinkan untuk dev) |
+| `CORS_ALLOWED_ORIGIN` | `http://localhost:23000` | origin frontend (localhost port berapa pun selalu diizinkan untuk dev) |
 
 `*_SERVICE_URL` untuk 20 service lainnya mengikuti pola yang sama — lihat `internal/config/config.go`.
 

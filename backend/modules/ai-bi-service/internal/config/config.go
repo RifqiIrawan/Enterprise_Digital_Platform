@@ -20,16 +20,16 @@ type Config struct {
 
 func Load() *Config {
 	return &Config{
-		Port:                 getEnv("PORT", "8093"),
+		Port:                 getEnv("PORT", "28093"),
 		OTLPEndpoint:         getEnv("OTLP_ENDPOINT", "localhost:4318"),
-		SalesServiceURL:      getEnv("SALES_SERVICE_URL", "http://localhost:8087"),
-		PurchasingServiceURL: getEnv("PURCHASING_SERVICE_URL", "http://localhost:8088"),
-		FinanceServiceURL:    getEnv("FINANCE_SERVICE_URL", "http://localhost:8085"),
-		WarehouseServiceURL:  getEnv("WAREHOUSE_SERVICE_URL", "http://localhost:8089"),
-		ProductionServiceURL: getEnv("PRODUCTION_SERVICE_URL", "http://localhost:8090"),
-		QCServiceURL:         getEnv("QC_SERVICE_URL", "http://localhost:8091"),
-		HRServiceURL:         getEnv("HR_SERVICE_URL", "http://localhost:8086"),
-		AssetServiceURL:      getEnv("ASSET_SERVICE_URL", "http://localhost:8092"),
+		SalesServiceURL:      getEnv("SALES_SERVICE_URL", "http://localhost:28087"),
+		PurchasingServiceURL: getEnv("PURCHASING_SERVICE_URL", "http://localhost:28088"),
+		FinanceServiceURL:    getEnv("FINANCE_SERVICE_URL", "http://localhost:28085"),
+		WarehouseServiceURL:  getEnv("WAREHOUSE_SERVICE_URL", "http://localhost:28089"),
+		ProductionServiceURL: getEnv("PRODUCTION_SERVICE_URL", "http://localhost:28090"),
+		QCServiceURL:         getEnv("QC_SERVICE_URL", "http://localhost:28091"),
+		HRServiceURL:         getEnv("HR_SERVICE_URL", "http://localhost:28086"),
+		AssetServiceURL:      getEnv("ASSET_SERVICE_URL", "http://localhost:28092"),
 	}
 }
 

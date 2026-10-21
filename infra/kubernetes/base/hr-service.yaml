@@ -15,7 +15,7 @@ spec:
         app: hr-service
       annotations:
         prometheus.io/scrape: "true"
-        prometheus.io/port: "8086"
+        prometheus.io/port: "28086"
         prometheus.io/path: "/metrics"
     spec:
       containers:
@@ -23,7 +23,7 @@ spec:
           image: REPLACE_ME_REGISTRY/hr-service:latest
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 8086
+            - containerPort: 28086
           envFrom:
             - configMapRef:
                 name: hr-service-config
@@ -37,13 +37,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8086
+              port: 28086
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /health
-              port: 8086
+              port: 28086
             initialDelaySeconds: 5
             periodSeconds: 5
 ---
@@ -57,5 +57,5 @@ spec:
   selector:
     app: hr-service
   ports:
-    - port: 8086
-      targetPort: 8086
+    - port: 28086
+      targetPort: 28086

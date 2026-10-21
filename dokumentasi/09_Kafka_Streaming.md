@@ -40,7 +40,7 @@ kafka:
 ## Kafka UI
 
 ```
-http://localhost:8099  (port 8099, bukan 8090 — diganti untuk menghindari konflik dengan production-service)
+http://localhost:28099  (port 28099, bukan 28090 — diganti untuk menghindari konflik dengan production-service)
 ```
 
 ---
