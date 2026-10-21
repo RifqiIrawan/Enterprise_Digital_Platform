@@ -201,6 +201,12 @@ Rebuild image setelah ganti kode: `docker compose build <nama-service>` lalu
 staging/prod sungguhan (topologi berbeda, tanpa `host.docker.internal`), lihat
 `environments/` di bawah — bukan file compose ini.
 
+## Image registry & CD (GHCR)
+
+`.github/workflows/cd-images.yml` membangun ke-23 image (22 service Go + frontend) dan mendorongnya ke GitHub Container Registry sebagai `ghcr.io/<owner>/edp/<service>`. Jalan saat tag `v*` didorong (`git tag v1.0.0 && git push --tags`) atau lewat *Run workflow* (input `tag` opsional); tidak jalan di tiap push ke master. Tiap image mendapat tag `sha-<commit>` dan, untuk tag git, tag versinya.
+
+Manifest Kubernetes memakai `REPLACE_ME_REGISTRY/<service>:<tag>`, jadi overlay staging/prod cukup memetakan `REPLACE_ME_REGISTRY` ke `ghcr.io/<owner>/edp` lewat `images:` (newName/newTag) dengan tag yang sama. Package GHCR baru berstatus private; cluster butuh `imagePullSecret` dengan token `read:packages`, atau package dijadikan publik dari pengaturan package. **Belum pernah dijalankan** -- workflow ini baru ditulis dan divalidasi struktur serta path Dockerfile-nya saja; run pertama akan menunjukkan apakah ke-23 Dockerfile benar-benar terbangun tanpa `go.work`.
+
 ## Environment config staging/prod
 
 `environments/staging/` dan `environments/production/` berisi template env

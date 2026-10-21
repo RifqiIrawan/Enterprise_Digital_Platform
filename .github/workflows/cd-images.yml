@@ -1,0 +1,104 @@
+name: CD Images
+
+# Membangun ke-23 image (22 service Go + frontend) dan mendorongnya ke GitHub
+# Container Registry (ghcr.io). Sengaja TIDAK jalan di tiap push ke master:
+# 23 build per push mahal dan kebanyakan commit tidak akan dideploy. Jalan
+# hanya saat tag versi (v*) didorong, atau dipicu manual.
+#
+# Nama image mengikuti manifest Kubernetes, yang memakai
+#   REPLACE_ME_REGISTRY/<service>:<tag>
+# jadi REPLACE_ME_REGISTRY = ghcr.io/<owner>/edp, dan image-nya
+#   ghcr.io/<owner>/edp/auth-service:v1.2.3   (juga :sha-<7 hex>)
+# Overlay staging/prod tinggal memetakan REPLACE_ME_REGISTRY ke awalan itu dan
+# memakai tag yang sama (kustomize `images:` newName/newTag).
+#
+# Tiap image dibangun dari konteks yang sama dengan infra/docker-compose.yml
+# (folder service itu sendiri, deployments/Dockerfile). Itu juga yang membuat
+# workflow ini menangkap Dockerfile yang hanya lolos karena go.work -- build
+# Docker tidak memakainya.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag image tambahan (mis. staging). Kosong = hanya sha-<commit>."
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      # Satu service gagal tidak boleh membatalkan 21 lainnya: hasil
+      # parsialnya masih berguna dan kegagalannya terbaca per service.
+      fail-fast: false
+      # Dibatasi supaya runner tidak kehabisan memori/disk oleh banyak
+      # `go mod download` sekaligus (pelajaran dari build Docker lokal).
+      max-parallel: 6
+      matrix:
+        include:
+          - { name: api-gateway, context: backend/services/api-gateway, dockerfile: deployments/Dockerfile }
+          - { name: auth-service, context: backend/services/auth-service, dockerfile: deployments/Dockerfile }
+          - { name: company-service, context: backend/services/company-service, dockerfile: deployments/Dockerfile }
+          - { name: rbac-service, context: backend/services/rbac-service, dockerfile: deployments/Dockerfile }
+          - { name: audit-service, context: backend/services/audit-service, dockerfile: deployments/Dockerfile }
+          - { name: finance-service, context: backend/modules/finance-service, dockerfile: deployments/Dockerfile }
+          - { name: hr-service, context: backend/modules/hr-service, dockerfile: deployments/Dockerfile }
+          - { name: sales-service, context: backend/modules/sales-service, dockerfile: deployments/Dockerfile }
+          - { name: purchasing-service, context: backend/modules/purchasing-service, dockerfile: deployments/Dockerfile }
+          - { name: warehouse-service, context: backend/modules/warehouse-service, dockerfile: deployments/Dockerfile }
+          - { name: production-service, context: backend/modules/production-service, dockerfile: deployments/Dockerfile }
+          - { name: qc-service, context: backend/modules/qc-service, dockerfile: deployments/Dockerfile }
+          - { name: asset-service, context: backend/modules/asset-service, dockerfile: deployments/Dockerfile }
+          - { name: ai-bi-service, context: backend/modules/ai-bi-service, dockerfile: deployments/Dockerfile }
+          - { name: iot-service, context: backend/modules/iot-service, dockerfile: deployments/Dockerfile }
+          - { name: dw-service, context: backend/modules/dw-service, dockerfile: deployments/Dockerfile }
+          - { name: crm-service, context: backend/modules/crm-service, dockerfile: deployments/Dockerfile }
+          - { name: ticketing-service, context: backend/modules/ticketing-service, dockerfile: deployments/Dockerfile }
+          - { name: ecommerce-service, context: backend/modules/ecommerce-service, dockerfile: deployments/Dockerfile }
+          - { name: fleet-service, context: backend/modules/fleet-service, dockerfile: deployments/Dockerfile }
+          - { name: project-service, context: backend/modules/project-service, dockerfile: deployments/Dockerfile }
+          - { name: rag-service, context: backend/modules/rag-service, dockerfile: deployments/Dockerfile }
+          - { name: frontend, context: frontend/web, dockerfile: Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+
+      # GHCR menolak nama dengan huruf besar, dan owner GitHub boleh
+      # mengandungnya.
+      - name: Hitung awalan image
+        id: prefix
+        run: echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/edp" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.prefix.outputs.registry }}/${{ matrix.name }}
+          tags: |
+            type=ref,event=tag
+            type=sha,format=short
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache per service di GitHub Actions: build ulang service yang
+          # tidak berubah (mayoritas) jadi hitungan detik.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
