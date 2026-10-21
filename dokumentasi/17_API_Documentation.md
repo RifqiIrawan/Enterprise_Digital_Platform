@@ -127,12 +127,12 @@ Query param `company_id` wajib. `branch_id` opsional (NULL-inclusive filter).
 | GET/POST | `/api/warehouse/products` | List/buat produk |
 | GET/POST | `/api/warehouse/warehouses` | List/buat gudang |
 | GET | `/api/warehouse/stock-movements` | List mutasi stok |
-| POST | `/api/warehouse/stock-movements/batch` | Batch stock movement (service-to-service) |
+| POST | `/api/warehouse/stock-movements/batch` | Batch stock movement (service-to-service). OUT yang melebihi saldo → `409` (`code: INSUFFICIENT_STOCK`), batch dibatalkan seluruhnya |
 | GET | `/api/warehouse/stock-balances` | Saldo stok per warehouse |
 | GET/POST | `/api/warehouse/stock-transfers` | List/buat transfer |
-| POST | `/api/warehouse/stock-transfers/{id}/confirm` | Konfirmasi transfer → pindah stok |
+| POST | `/api/warehouse/stock-transfers/{id}/confirm` | Konfirmasi transfer → pindah stok (`409` jika gudang asal kurang) |
 | GET/POST | `/api/warehouse/stock-opnames` | List/buat opname |
-| POST | `/api/warehouse/stock-opnames/{id}/post` | Post opname → adjust saldo |
+| POST | `/api/warehouse/stock-opnames/{id}/post` | Post opname → adjust saldo (`409` jika penyesuaian turun melampaui saldo saat ini) |
 
 ---
 
@@ -140,6 +140,8 @@ Query param `company_id` wajib. `branch_id` opsional (NULL-inclusive filter).
 
 ```
 GET/POST /api/production/boms              # Bill of Material
+GET/PUT  /api/production/boms/{id}         # PUT: name/is_active + opsional lines (ganti seluruh komponen) & batch_size
+GET      /api/production/oee               # OEE per mesin + downtime_by_reason (minutes, share, cumulative_share)
 GET/POST /api/production/work-orders       # Work Order
 POST /api/production/work-orders/{id}/start     # Mulai WO
 POST /api/production/work-orders/{id}/complete  # Selesai → konsumsi + produksi
@@ -168,6 +170,12 @@ GET /api/aibi/anomaly-detection/{domain}  # Z-score outlier detection
 
 GET  /api/dw/sync/status  # Status per fact table (row count + watermark)
 POST /api/dw/sync         # Trigger manual batch ETL
+GET  /api/dw/analytics/production-downtime-pareto?company_id=&from=&to=  # Pareto alasan downtime (from/to opsional, YYYY-MM-DD)
+POST /api/dw/lake/build[?full=true]  # Bangun Silver (inkremental) + Gold
+GET  /api/dw/lake/reconcile          # Silver vs ClickHouse per fact (hitungan baris)
+POST /api/dw/lake/backfill           # Tulis seluruh tabel sumber ke Bronze
+GET  /api/dw/lake/gold/{finance-monthly|sales-monthly}?company_id=  # Dataset Gold per company
+POST /api/dw/streaming/replay?topic=&limit=  # Putar ulang event dari dead-letter topic
 ```
 
 ---

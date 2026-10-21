@@ -2558,3 +2558,26 @@ Silver kini dibangun inkremental (commit `7cd9e64`): disimpan terurut menurut ku
 Port 8090 diambil proses proyek lain (`sep-backend.exe`, Smart_Enterprise_Platform) sehingga production-service gagal naik dan gateway meneruskan `/api/production` ke program yang salah; blok 18079-18101 juga sudah terpakai (18082-18087). Atas permintaan user, seluruh port aplikasi dipindah ke blok kosong 28079-28101 (frontend 3000 -> 23000), diperiksa kosong dan di luar rentang cadangan Windows sebelum dipakai.
 
 **Angka port di catatan di atas BELUM diubah** -- log ini sengaja dibiarkan sebagai riwayat. Baca "8079" sebagai 28079, "8090" sebagai 28090, "3000" sebagai 23000, dst. Peta port yang berlaku ada di `infra/README.md` ("Peta port aplikasi"). Port infra pihak ketiga (Postgres 5432, Redis, Kafka, MinIO, ClickHouse, Kafka UI 8200) tidak dipindah.
+
+---
+
+## Ringkasan sesi 2026-10-21 (angka port di bawah = port BARU, lihat bagian sebelumnya)
+
+**Selesai** (semua di `master`, dengan test):
+
+- **Halaman Data Lake** `/dw/data-lake` (Gold finance/sales, rekonsiliasi, tombol build) + migrasi rbac `025`.
+- **Silver inkremental diukur** (500 rb baris: ±3x lebih cepat, ±12x lebih hemat heap) lewat `TestSilverScale_IncrementalVsFull` (`BENCH_ROWS=...`); kunci hidup dipadatkan (`datalake.KeySet`) lalu diambil dengan **query dua kolom** yang diturunkan dari SQL ekstrak tiap fact (`etl/keysonly.go`), dijaga `TestKeysOnly_MatchesStreamedExtract` untuk semua 18 fact (300 rb baris: ±4,9 dtk -> ±1,3 dtk, ±212 -> ±35 MB).
+- **Edit komponen BOM** (`PUT /boms/{id}` dengan `lines`/`batch_size`) + dialog edit di UI.
+- **`fact_production_downtime`** (fact ke-18) + `GET /analytics/production-downtime-pareto` + chart Pareto di Dashboard Manufaktur; kumulatif Pareto di halaman OEE.
+- **Stok tidak boleh negatif**: OUT yang melebihi saldo -> 409 `INSUFFICIENT_STOCK` (satu titik: `applyStockMovement`, UPDATE bersyarat); sales/e-commerce/production meneruskannya sebagai 409. Tanpa CHECK di DB, sengaja (IN pada saldo negatif lama harus tetap bisa).
+- **Workflow CD image** `.github/workflows/cd-images.yml` (GHCR).
+- **Kebijakan gateway** untuk `POST /api/dw/streaming/replay` yang sebelumnya hilang (test `TestPolicyCoversEveryRegisteredRoute` gagal sejak commit DLQ replay).
+- **Semua port aplikasi +20000** (gateway 28079, frontend 23000).
+
+**Belum / perlu diketahui:**
+
+- **`cd-images.yml` BELUM PERNAH DIJALANKAN.** Run pertama (tag `v*` atau Run workflow) akan menunjukkan apakah ke-23 Dockerfile terbangun tanpa `go.work`. Itu mendorong image ke registry, jadi keputusan user.
+- **Halaman baru belum dilihat di browser** (ekstensi Chrome tidak terhubung): Data Lake, dialog edit BOM, badge Pareto, chart Pareto BI, pesan 409 stok. Yang terverifikasi hanya data/aturannya lewat HTTP langsung ke service, dan test unit frontend. Login dev yang dikenal: `admin@edp.local` (passwordnya tidak ditemukan di dokumen saat dicari).
+- **Masih terbuka (kecil):** Gold baru dua dataset (finance & sales bulanan); fact lain belum punya Gold. `production_downtime` hanya punya chart Pareto, belum tren per bulan atau per mesin.
+- `backend/go.work.sum` selalu tampak modified di working tree dan sengaja tidak pernah di-commit. Isinya sempat hilang sebagian (dibuang tidak sengaja lewat `git checkout`) dan ter-regenerasi sebagian oleh tooling Go; tidak dikenal efek sampingnya.
+- Port 8090 di mesin ini dipakai proyek lain (`sep-backend.exe`); jangan dihentikan dari sini.

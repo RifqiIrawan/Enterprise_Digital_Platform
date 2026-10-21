@@ -14,7 +14,7 @@
 | **Fase 4** | Hardening — 251+ automated tests, branch-level filtering, company switcher | ✅ Selesai |
 | **Fase 5** | Production-Readiness — Dockerfile, docker-compose, K8s Kustomize, env templates, CI | ✅ Selesai |
 | **Fase 6** | IoT — iot-service: Device, MQTT pipeline, threshold alerts, IoT Simulator | ✅ Selesai |
-| **Fase 7** | Data Warehouse — dw-service: 14 fact tables (ClickHouse), Batch ETL, Kafka Streaming ETL | ✅ Selesai |
+| **Fase 7** | Data Warehouse — dw-service: 18 fact tables (ClickHouse), Batch ETL, Kafka Streaming ETL | ✅ Selesai |
 | **Fase 8** | Data Lake — MinIO bronze layer (JSON Lines), dual-write dengan ClickHouse | ✅ Selesai |
 | **Fase 9** | Observability — Prometheus/Grafana (metrics), JSON logs + Loki/Promtail, OpenTelemetry + Jaeger (tracing) | ✅ Selesai |
 | **Fase 10** | CRM — crm-service: Leads, Accounts, Contacts, Opportunities, Activities, konversi Lead transaksional | ✅ Selesai, termasuk production-readiness (Dockerfile/docker-compose/K8s/CI/env/Prometheus, 2026-08-09) — dan fact table dw-service `fact_crm_opportunities` (2026-08-11) |
@@ -46,7 +46,7 @@
 | asset-service | 28092 | asset_service | Aset, Maintenance |
 | ai-bi-service | 28093 | — | BI Dashboard, Forecasting, Anomaly |
 | iot-service | 28094 | iot_service | Device, MQTT, Alert, Simulator |
-| dw-service | 28095 | — | ETL → ClickHouse (14 facts) + MinIO |
+| dw-service | 28095 | — | ETL → ClickHouse (18 facts) + MinIO |
 | crm-service | 28096 | crm_service | Leads, Accounts, Contacts, Opportunities, Activities |
 | ticketing-service | 28097 | ticketing_service | Ticket Categories, Tickets, Comments |
 | ecommerce-service | 28098 | ecommerce_service | Orders, Order Items (checkout online) |
@@ -78,7 +78,7 @@ Ini adalah platform yang sudah berfungsi penuh, bukan "belum selesai". Yang beri
 | Fitur | Deskripsi |
 |-------|-----------|
 | **ClickHouse Materialized View** | ✅ MV pertama (`mv_finance_monthly_line_state`) sudah ada sejak 2026-08-08, backing `finance-monthly-summary` — MV tambahan untuk 13 fact table lain masih bisa dikerjakan kalau ada kebutuhan. `fact_crm_opportunities` (`crm-pipeline-summary`, 2026-08-12), `fact_project_timesheets` (`project-cost-summary`, 2026-08-16), dan `fact_fleet_delivery_orders` (`fleet-delivery-monthly-summary`, 2026-08-16) sekarang punya endpoint analitik tapi sengaja masih query-only; `fact_ticketing_tickets`/`fact_ecommerce_order_lines` belum punya endpoint sama sekali |
-| **Silver/Gold Data Lake** | Transformation layer di atas MinIO bronze (butuh Spark atau dbt) |
+| **Silver/Gold Data Lake** | ✅ Sudah ada sejak 2026-09-26, dibangun di Go (bukan Spark/dbt): Silver inkremental untuk 18 fact, Gold finance & sales bulanan, rekonsiliasi terhadap ClickHouse, halaman `/dw/data-lake`. Lihat `06_Data_Lake_Architecture.md` |
 | **Modul bisnis tambahan** | ✅ CRM (Leads/Accounts/Contacts/Opportunities/Activities, termasuk konversi Lead→Account+Contact+Opportunity transaksional) sudah ada sejak 2026-08-08 sebagai module ke-17, production-readiness lengkap sejak 2026-08-09, fact table `fact_crm_opportunities` sejak 2026-08-11. ✅ Ticketing (Ticket Categories/Tickets/Comments, alur status close/reopen) sudah ada sejak 2026-08-09 sebagai module ke-18, production-readiness lengkap sejak 2026-08-09 (hari yang sama), fact table `fact_ticketing_tickets` sejak 2026-08-11. ✅ E-Commerce (Orders/Order Items, checkout dengan katalog produk direuse dari warehouse-service, stock-out otomatis saat SHIPPED) sudah ada sejak 2026-08-10 sebagai module ke-19, production-readiness lengkap sejak 2026-08-10 (hari yang sama), fact table `fact_ecommerce_order_lines` sejak 2026-08-11. ✅ Fleet & Delivery (Kendaraan/Pengemudi/Surat Jalan, integrasi dua arah ke ecommerce-service) sudah ada sejak 2026-08-12 sebagai module ke-20, production-readiness lengkap sejak 2026-08-13, fact table `fact_fleet_delivery_orders` sejak 2026-08-16. ✅ Project Management (Proyek/Tugas/Timesheet, integrasi ke hr-service + posting biaya kolektif ke GL finance-service) sudah ada sejak 2026-08-16 sebagai module ke-21, production-readiness lengkap sejak 2026-08-16 (hari yang sama), fact table `fact_project_timesheets` sejak 2026-08-16 |
 | **Frontend charts di BI** | ✅ 6 chart dari `dw-service` di BI Dashboards — 3 time series bulanan (Revenue vs Expense, Stock In vs Out, Sales Value) sejak 2026-08-08, plus Pipeline CRM per Stage (2026-08-12) dan Biaya Proyek per Proyek (2026-08-16) yang sumbu X-nya kategorikal, dan Pengiriman per Bulan (2026-08-16, dengan rata-rata lama pengiriman sebagai teks ringkas di bawah judul). Semuanya memakai komponen `GroupedBarChart` yang sama (generik untuk 1 atau N seri, sumbu kategori bisa di-override) — chart tambahan lain masih bisa dikerjakan kalau ada kebutuhan |
 | **Production deployment** | Real cloud infra (managed Postgres, Kafka cluster, K8s managed) |

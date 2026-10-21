@@ -157,7 +157,7 @@ stock_balances (materialized, di-update transaksional bersamaan dengan stock_mov
 ├── id UUID PK
 ├── warehouse_id UUID → warehouses.id
 ├── product_id UUID → products.id
-└── quantity NUMERIC(15,2)  -- saldo saat ini (bisa negatif kalau validasi longgar)
+└── quantity NUMERIC(15,2)  -- saldo saat ini; OUT yang melebihi saldo ditolak (409), jadi tidak boleh negatif. Baris lama yang sudah negatif tetap bisa pulih lewat IN (sengaja tanpa CHECK di DB)
 ```
 
 ---

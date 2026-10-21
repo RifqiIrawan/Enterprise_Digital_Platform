@@ -174,7 +174,7 @@ patches:
       value: 3
 ```
 
-Yang belum ada di staging/prod: real ConfigMap values (butuh managed infra), Secrets dari secret manager, registry yang sesungguhnya, Ingress host yang valid.
+Yang belum ada di staging/prod: real ConfigMap values (butuh managed infra), Secrets dari secret manager, registry yang sesungguhnya (workflow `cd-images.yml` mendorong ke `ghcr.io/<owner>/edp`, tetapi belum pernah dijalankan dan overlay staging/prod belum memetakan `REPLACE_ME_REGISTRY` ke sana), Ingress host yang valid.
 
 ---
 

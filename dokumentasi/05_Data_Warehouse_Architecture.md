@@ -53,7 +53,7 @@
 
 ---
 
-## 12 Fact Tables di ClickHouse
+## 18 Fact Tables di ClickHouse
 
 | Fact Table | Source | Watermark Column | Engine |
 |------------|--------|-----------------|--------|
@@ -69,6 +69,14 @@
 | `fact_crm_opportunities` | crm_service | opportunities.updated_at | ReplacingMergeTree(synced_at) |
 | `fact_ticketing_tickets` | ticketing_service | tickets.updated_at | ReplacingMergeTree(synced_at) |
 | `fact_ecommerce_order_lines` | ecommerce_service | orders.updated_at | ReplacingMergeTree(synced_at) |
+| `fact_hr_leave_requests` | hr_service | leave_requests.updated_at | ReplacingMergeTree(synced_at) |
+| `fact_hr_kpi_reviews` | hr_service | kpi_reviews.updated_at | ReplacingMergeTree(synced_at) |
+| `fact_production_oee` | production_service | production_runs.updated_at (hanya run CLOSED) | ReplacingMergeTree(synced_at) |
+| `fact_production_downtime` | production_service | production_runs.updated_at (hanya run CLOSED) | ReplacingMergeTree(synced_at) |
+| `fact_fleet_delivery_orders` | fleet_service | delivery_orders.updated_at | ReplacingMergeTree(synced_at) |
+| `fact_project_timesheets` | project_service | timesheets.updated_at | ReplacingMergeTree(synced_at) |
+
+`fact_production_downtime` (satu baris per catatan downtime) melengkapi `fact_production_oee`, yang hanya membawa total menit downtime per run. Watermark keduanya memakai `production_runs.updated_at`, bukan `downtime_logs.created_at`: catatan downtime dibuat selagi run masih berjalan, jadi watermark `created_at` sudah lewat saat run ditutup. Endpoint: `GET /api/dw/analytics/production-downtime-pareto`.
 
 Semua tabel **denormalized** — JOIN dimensi (customer_name, account_code, dll) dilakukan saat extract dari Postgres, bukan saat query di ClickHouse. Ini sesuai best practice ClickHouse sebagai kolom-store OLAP.
 

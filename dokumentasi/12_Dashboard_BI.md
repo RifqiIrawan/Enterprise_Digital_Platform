@@ -75,7 +75,8 @@ BI layer EDP adalah **React SPA** (`frontend/web/`) yang mengkonsumsi semua serv
 ### Production, QC, Asset
 | Path | Komponen | Fungsi |
 |------|----------|--------|
-| `/production/bom` | BomPage | Bill of Material |
+| `/production/bom` | BomPage | Bill of Material: buat dan sunting komponen / formula (persen per batch) |
+| `/production/oee` | OeePage | OEE per mesin (Availability × Performance × Quality) dan penyebab downtime dengan kumulatif Pareto |
 | `/production/work-orders` | WorkOrdersPage | WO lifecycle |
 | `/production/schedule` | ProductionSchedulePage | View WO by date |
 | `/qc/standards` | QualityStandardsPage | Standar mutu per produk |
@@ -101,6 +102,7 @@ BI layer EDP adalah **React SPA** (`frontend/web/`) yang mengkonsumsi semua serv
 | Path | Komponen | Fungsi |
 |------|----------|--------|
 | `/dw/sync-status` | SyncStatusPage | Status ETL per fact table + tombol Sync Now |
+| `/dw/data-lake` | DataLakePage | Dataset Gold (revenue vs expense, nilai penjualan per bulan), rekonsiliasi Silver vs ClickHouse, tombol Build Silver + Gold |
 
 ---
 

@@ -5,7 +5,7 @@
 
 ## Overview
 
-CI/CD EDP menggunakan **GitHub Actions** untuk build, test, dan verifikasi. Tidak ada ArgoCD, tidak ada Helm, tidak ada registry push otomatis — ini adalah CI-only pipeline, CD dilakukan manual.
+CI/CD EDP menggunakan **GitHub Actions** untuk build, test, dan verifikasi. Tidak ada ArgoCD dan tidak ada Helm. Image dibangun dan didorong ke GitHub Container Registry oleh workflow `cd-images.yml` (dipicu tag `v*` atau manual); deploy ke cluster tetap manual (`kubectl apply -k`).
 
 ---
 
@@ -139,6 +139,10 @@ URL lintas-service di docker-compose pakai nama container: `http://finance-servi
 Frontend `VITE_API_BASE_URL` tetap `http://localhost:28079` — karena yang manggil API adalah browser (client-side JS), bukan container.
 
 ---
+
+## CD Image (GHCR)
+
+`.github/workflows/cd-images.yml` membangun ke-23 image (22 service Go + frontend) dari Dockerfile masing-masing dan mendorongnya ke `ghcr.io/<owner>/edp/<service>` dengan tag `sha-<commit>` dan, untuk tag git, tag versinya. Jalan saat tag `v*` didorong atau lewat *Run workflow*; tidak jalan di tiap push ke master (23 build per push mahal). Satu service gagal tidak membatalkan yang lain (`fail-fast: false`), dan build dibatasi 6 paralel. **Workflow ini belum pernah dijalankan**: yang sudah dicek hanya struktur YAML dan path ke-23 Dockerfile. Run pertama akan menunjukkan apakah semua Dockerfile benar-benar terbangun tanpa `go.work`. Detail pemetaan ke manifest Kubernetes ada di `infra/README.md`.
 
 ## Deployment ke Kubernetes
 
