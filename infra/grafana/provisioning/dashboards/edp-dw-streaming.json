@@ -1,0 +1,186 @@
+{
+  "id": null,
+  "uid": "edp-dw-streaming",
+  "title": "EDP - DW Streaming (Kafka)",
+  "tags": [
+    "edp",
+    "dw-service",
+    "kafka"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "description": "Metrik consumer Kafka dw-service. Ekspresi dead-letter, lag, dan retry SENGAJA sama dengan grup edp-dw-streaming di infra/prometheus/rules/edp-alerts.yml.",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Event dead-letter (15 menit terakhir)",
+      "type": "stat",
+      "description": "Alert berbunyi bila > 0. Replay: POST /api/dw/streaming/replay?topic=X.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (topic) (increase(dw_streaming_events_total{outcome=\"dead_lettered\"}[15m]))",
+          "legendFormat": "{{topic}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Lag event P95 per topic",
+      "type": "timeseries",
+      "description": "Waktu dari publish ke selesai diproses. Alert di atas 300 detik.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, topic) (rate(dw_streaming_event_latency_seconds_bucket[10m])))",
+          "legendFormat": "{{topic}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Laju retry handler",
+      "type": "timeseries",
+      "description": "Alert di atas 0,1/detik.",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (topic) (rate(dw_streaming_handler_retries_total[10m]))",
+          "legendFormat": "{{topic}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Event per hasil akhir",
+      "type": "timeseries",
+      "description": "processed = sukses (mungkin setelah retry); dead_lettered = dikirim ke <topic>.dlq.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (topic, outcome) (rate(dw_streaming_events_total[5m]))",
+          "legendFormat": "{{topic}} / {{outcome}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Durasi handler P95 per topic",
+      "type": "timeseries",
+      "description": "Per percobaan: lookup Postgres + insert ClickHouse. Naik bila salah satunya melambat.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, topic) (rate(dw_streaming_handler_duration_seconds_bucket[10m])))",
+          "legendFormat": "{{topic}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
