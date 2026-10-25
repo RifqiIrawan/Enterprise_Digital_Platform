@@ -578,3 +578,90 @@ func TestGold_EcommerceAgreesWithClickHouse(t *testing.T) {
 		t.Errorf("Aug = %d order / %d baris / %s, want 1 / 2 / 150.5", got[0].OrderCount, got[0].LineCount, got[0].Revenue)
 	}
 }
+
+// TestGold_TicketingAgreesWithClickHouse menjaga dua jebakan yang tidak terlihat
+// di data berzona UTC: (1) bulan ditentukan dari instan UTC, bukan dari awalan
+// teks yang ditulis Bronze dengan offset zona asal; (2) lama penyelesaian
+// adalah selisih BATAS menit, jadi 10:00:59 -> 10:01:01 bernilai 1 menit.
+func TestGold_TicketingAgreesWithClickHouse(t *testing.T) {
+	ctx := context.Background()
+	lake := testLake(t)
+	companyID := uuid.New()
+	v1, v2 := time.Now().Add(-time.Hour), time.Now()
+	wib := time.FixedZone("WIB", 7*3600)
+	west := time.FixedZone("UTC-5", -5*3600)
+
+	mk := func(created time.Time, priority string, resolved *time.Time) ch.TicketingTicketRow {
+		r := ticketRow(companyID, "2026-08-01T00:00:00Z", priority, 0)
+		r.CreatedAt, r.ResolvedAt, r.UpdatedAt = created, resolved, created
+		return r
+	}
+	at := func(tm time.Time) *time.Time { return &tm }
+
+	// 01/09 03:00 WIB = 31/08 20:00 UTC -> Agustus (teks "2026-09" salah).
+	aug := mk(time.Date(2026, 9, 1, 3, 0, 0, 0, wib), "NORMAL", nil)
+	// 31/08 23:30 UTC-5 = 01/09 04:30 UTC -> September (teks "2026-08" salah).
+	sep := mk(time.Date(2026, 8, 31, 23, 30, 0, 0, west), "URGENT", nil)
+	// 10:00:59 -> 10:01:01 : dua detik, tapi melewati satu batas menit.
+	c1 := time.Date(2026, 8, 10, 10, 0, 59, 0, time.UTC)
+	boundary := mk(c1, "NORMAL", at(time.Date(2026, 8, 10, 10, 1, 1, 0, time.UTC)))
+	// selesai tepat 90 menit.
+	c2 := time.Date(2026, 8, 12, 8, 0, 0, 0, time.UTC)
+	ninety := mk(c2, "URGENT", at(c2.Add(90*time.Minute)))
+	// versi lama: belum selesai; versi baru (id sama): sudah selesai.
+	c3 := time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC)
+	later := mk(c3, "NORMAL", nil)
+	laterDone := later
+	laterDone.ResolvedAt = at(c3.Add(30 * time.Minute))
+	other := mk(time.Date(2026, 8, 5, 9, 0, 0, 0, time.UTC), "URGENT", nil)
+	other.CompanyID = uuid.New()
+
+	batches := []struct {
+		rows []ch.TicketingTicketRow
+		at   time.Time
+	}{
+		{[]ch.TicketingTicketRow{later}, v1},
+		{[]ch.TicketingTicketRow{aug, sep, boundary, ninety, laterDone, other}, v2},
+	}
+	for _, b := range batches {
+		if err := chClient.InsertTicketingTickets(ctx, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+		if err := lake.WriteJSONLines(ctx, ticketingSourceTable, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, e := range lake.BuildAll(ctx, nil, true).Errors {
+		t.Errorf("BuildAll: %s", e)
+	}
+
+	want, err := chClient.TicketingMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readGold[datalake.TicketingMonthlyRow](t, lake, datalake.GoldTicketingMonthly, companyID)
+	if len(want) != 2 || len(got) != 2 {
+		t.Fatalf("ticketing months: clickhouse=%d gold=%d, want 2 each: %+v", len(want), len(got), got)
+	}
+	for i := range want {
+		g, w := got[i], want[i]
+		if g.Month != w.Month || uint64(g.TicketCount) != w.TicketCount || uint64(g.ResolvedCount) != w.ResolvedCount ||
+			uint64(g.OpenCount) != w.OpenCount || uint64(g.UrgentCount) != w.UrgentCount {
+			t.Errorf("%s: gold %+v != clickhouse %+v", w.Month, g, w)
+		}
+		switch {
+		case g.AvgResolveHours == nil && w.AvgResolveHours == nil:
+		case g.AvgResolveHours == nil || w.AvgResolveHours == nil:
+			t.Errorf("%s avg hours gold=%v clickhouse=%v (nil harus sama-sama nil)", w.Month, g.AvgResolveHours, w.AvgResolveHours)
+		case math.Abs(*g.AvgResolveHours-*w.AvgResolveHours) > 0.0001:
+			t.Errorf("%s avg hours gold=%v clickhouse=%v", w.Month, *g.AvgResolveHours, *w.AvgResolveHours)
+		}
+	}
+	// Agustus: aug(open) + boundary(1m) + ninety(90m) + later(30m) = 4 tiket, 3 selesai.
+	if got[0].TicketCount != 4 || got[0].ResolvedCount != 3 || got[0].ResolveMinutes != 121 {
+		t.Errorf("Aug = %d tiket / %d selesai / %d menit, want 4 / 3 / 121", got[0].TicketCount, got[0].ResolvedCount, got[0].ResolveMinutes)
+	}
+	if got[1].TicketCount != 1 || got[1].UrgentCount != 1 || got[1].AvgResolveHours != nil {
+		t.Errorf("Sep = %+v, want 1 tiket URGENT tanpa rata-rata", got[1])
+	}
+}

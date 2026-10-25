@@ -59,6 +59,10 @@ function mockApi({ gold = {}, rec = reconcile } = {}) {
       return Promise.resolve({
         data: gold.ecommerce ?? [{ company_id: 'company-1', month: '2026-07-01', order_count: 2, line_count: 3, items_sold: '5', revenue: '150500', avg_order_value: 75250 }],
       })
+    if (url.includes('ticketing-monthly'))
+      return Promise.resolve({
+        data: gold.ticketing ?? [{ company_id: 'company-1', month: '2026-07-01', ticket_count: 5, resolved_count: 3, open_count: 2, urgent_count: 1, avg_resolve_hours: 1.5 }],
+      })
     if (url.includes('reconcile')) return Promise.resolve({ data: rec })
     return Promise.resolve({ data: [] })
   })
@@ -132,6 +136,16 @@ describe('DataLakePage', () => {
     expect(await screen.findByText('Penjualan E-commerce per Bulan')).toBeTruthy()
     await waitFor(() =>
       expect(apiClient.get).toHaveBeenCalledWith('/api/dw/lake/gold/ecommerce-monthly', { params: { company_id: 'company-1' } })
+    )
+    expect(screen.queryAllByText(/Dataset Gold kosong/).length).toBe(0)
+  })
+
+  it('meminta Gold tiket dan menggambar chartnya', async () => {
+    mockApi()
+    render(<DataLakePage />)
+    expect(await screen.findByText('Tiket per Bulan Pembuatan')).toBeTruthy()
+    await waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith('/api/dw/lake/gold/ticketing-monthly', { params: { company_id: 'company-1' } })
     )
     expect(screen.queryAllByText(/Dataset Gold kosong/).length).toBe(0)
   })

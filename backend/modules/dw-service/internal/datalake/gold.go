@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/shopspring/decimal"
 )
@@ -35,6 +36,7 @@ const (
 	GoldQCMonthly         = "qc_monthly"
 	GoldProductionMonthly = "production_monthly"
 	GoldEcommerceMonthly  = "ecommerce_monthly"
+	GoldTicketingMonthly  = "ticketing_monthly"
 )
 
 type InventoryMonthlyRow struct {
@@ -118,6 +120,10 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 	if err != nil {
 		return nil, err
 	}
+	tick, err := c.buildTicketingMonthly(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return []GoldStats{
 		{Dataset: GoldFinanceMonthly, Rows: fin},
 		{Dataset: GoldSalesMonthly, Rows: sales},
@@ -127,6 +133,7 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 		{Dataset: GoldQCMonthly, Rows: qc},
 		{Dataset: GoldProductionMonthly, Rows: prod},
 		{Dataset: GoldEcommerceMonthly, Rows: ecom},
+		{Dataset: GoldTicketingMonthly, Rows: tick},
 	}, nil
 }
 
@@ -702,4 +709,78 @@ func (c *Client) buildEcommerceMonthly(ctx context.Context) (int, error) {
 		buf.WriteByte('\n')
 	}
 	return len(keys), c.put(ctx, goldKey(GoldEcommerceMonthly), buf.Bytes())
+}
+
+// TicketingMonthlyRow: tiket per bulan PEMBUATANNYA. Bulan ditentukan dalam UTC,
+// seperti kolom DateTime ClickHouse (server UTC): Bronze menulis waktu dengan
+// offset zona asalnya, jadi mengambil awalan "YYYY-MM" dari teksnya akan
+// menempatkan tiket 01/09 03:00+07:00 di September padahal ClickHouse
+// menghitungnya Agustus.
+//
+// Lama penyelesaian = selisih BATAS MENIT (dateDiff('minute') ClickHouse), bukan
+// detik terlewat dibagi 60: 10:00:59 -> 10:01:01 dihitung 1 menit.
+// ResolveMinutes disimpan sebagai jumlah supaya rata-rata bisa dihitung ulang.
+type TicketingMonthlyRow struct {
+	CompanyID       string   `json:"company_id"`
+	Month           string   `json:"month"` // YYYY-MM-01 (UTC)
+	TicketCount     int      `json:"ticket_count"`
+	ResolvedCount   int      `json:"resolved_count"`
+	OpenCount       int      `json:"open_count"`
+	UrgentCount     int      `json:"urgent_count"`
+	ResolveMinutes  int64    `json:"resolve_minutes_total"`
+	AvgResolveHours *float64 `json:"avg_resolve_hours"`
+}
+
+func (c *Client) buildTicketingMonthly(ctx context.Context) (int, error) {
+	agg := map[monthKey]*TicketingMonthlyRow{}
+	err := c.EachSilver(ctx, "tickets", func(l []byte) error {
+		var r struct {
+			CompanyID  string
+			Priority   string
+			CreatedAt  time.Time
+			ResolvedAt *time.Time
+		}
+		if err := json.Unmarshal(l, &r); err != nil {
+			return fmt.Errorf("gold ticketing: baris Silver rusak: %w", err)
+		}
+		created := r.CreatedAt.UTC()
+		if created.IsZero() {
+			return nil
+		}
+		month := time.Date(created.Year(), created.Month(), 1, 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+		k := monthKey{r.CompanyID, month}
+		row := agg[k]
+		if row == nil {
+			row = &TicketingMonthlyRow{CompanyID: r.CompanyID, Month: month}
+			agg[k] = row
+		}
+		row.TicketCount++
+		if r.Priority == "URGENT" {
+			row.UrgentCount++
+		}
+		if r.ResolvedAt == nil {
+			row.OpenCount++
+			return nil
+		}
+		row.ResolvedCount++
+		row.ResolveMinutes += r.ResolvedAt.Unix()/60 - created.Unix()/60
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	keys := sortedMonthKeys(agg)
+	var buf bytes.Buffer
+	for _, k := range keys {
+		row := agg[k]
+		if row.ResolvedCount > 0 {
+			avg := float64(row.ResolveMinutes) / float64(row.ResolvedCount) / 60
+			row.AvgResolveHours = &avg
+		}
+		b, _ := json.Marshal(row)
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	return len(keys), c.put(ctx, goldKey(GoldTicketingMonthly), buf.Bytes())
 }
