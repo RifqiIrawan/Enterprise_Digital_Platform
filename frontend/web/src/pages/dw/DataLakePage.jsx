@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import GroupedBarChart from '../aibi/GroupedBarChart.jsx'
-import { FINANCE_SERIES, SALES_SERIES } from '../bi/chartSeries.js'
+import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES } from '../bi/chartSeries.js'
 import { useCompany } from '../../store/CompanyContext.jsx'
 import { usePagePermission } from '../../store/PermissionContext.jsx'
 
@@ -22,7 +22,7 @@ function toSeries(rows, keys) {
     .sort((a, b) => a.month.localeCompare(b.month))
 }
 
-function GoldChart({ title, hint, data, series }) {
+function GoldChart({ title, hint, data, series, formatValue = rupiah }) {
   return (
     <div className="card p-3">
       <div className="fw-semibold">{title}</div>
@@ -32,7 +32,7 @@ function GoldChart({ title, hint, data, series }) {
       ) : data.length === 0 ? (
         <div className="text-secondary small">Dataset Gold kosong untuk company ini. Jalankan build.</div>
       ) : (
-        <GroupedBarChart data={data} series={series} formatValue={rupiah} />
+        <GroupedBarChart data={data} series={series} formatValue={formatValue} />
       )}
     </div>
   )
@@ -43,6 +43,7 @@ function DataLakePage() {
   const { can } = usePagePermission()
   const [finance, setFinance] = useState(null)
   const [sales, setSales] = useState(null)
+  const [inventory, setInventory] = useState(null)
   const [goldError, setGoldError] = useState('')
   const [reconcile, setReconcile] = useState(null)
   const [reconcileError, setReconcileError] = useState('')
@@ -56,14 +57,17 @@ function DataLakePage() {
     Promise.all([
       apiClient.get('/api/dw/lake/gold/finance-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/sales-monthly', { params }),
+      apiClient.get('/api/dw/lake/gold/inventory-monthly', { params }),
     ])
-      .then(([f, s]) => {
+      .then(([f, s, i]) => {
         setFinance(toSeries(f.data, ['revenue', 'expense']))
         setSales(toSeries(s.data, ['sales_value']))
+        setInventory(toSeries(i.data, ['stock_in', 'stock_out']))
       })
       .catch((err) => {
         setFinance([])
         setSales([])
+        setInventory([])
         setGoldError(
           err.response?.status === 503
             ? 'Data lake (MinIO) tidak tersedia.'
@@ -139,6 +143,13 @@ function DataLakePage() {
 
       <GoldChart title="Revenue vs Expense per Bulan" hint="Dataset finance_monthly" data={finance} series={FINANCE_SERIES} />
       <GoldChart title="Nilai Penjualan per Bulan" hint="Dataset sales_monthly" data={sales} series={SALES_SERIES} />
+      <GoldChart
+        title="Stok Masuk vs Keluar per Bulan"
+        hint="Dataset inventory_monthly"
+        data={inventory}
+        series={STOCK_SERIES}
+        formatValue={number}
+      />
 
       <div className="card p-3">
         <div className="d-flex align-items-center justify-content-between mb-1">

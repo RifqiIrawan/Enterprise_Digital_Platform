@@ -114,6 +114,29 @@ func TestGold_AgreesWithClickHouse(t *testing.T) {
 		}
 	}
 
+	mv := func(typ string, id uuid.UUID, qty float64) ch.InventoryMovementRow {
+		return ch.InventoryMovementRow{
+			MovementID: id, CompanyID: companyID, WarehouseID: uuid.New(), WarehouseCode: "W", WarehouseName: "W",
+			ProductID: uuid.New(), ProductSKU: "S", ProductName: "P", MovementType: typ,
+			Quantity: qty, ReferenceType: "MANUAL", MovementDate: date,
+		}
+	}
+	inA, outA, adj := uuid.New(), uuid.New(), uuid.New()
+	// versi 1 mencatat kuantitas IN yang salah (500); versi 2 mengoreksinya.
+	invV1 := []ch.InventoryMovementRow{mv("IN", inA, 500)}
+	invV2 := []ch.InventoryMovementRow{mv("IN", inA, 120.5), mv("OUT", outA, 30.25), mv("ADJUST", adj, 9999)}
+	for _, batch := range []struct {
+		rows []ch.InventoryMovementRow
+		at   time.Time
+	}{{invV1, v1}, {invV2, v2}} {
+		if err := chClient.InsertInventoryMovements(ctx, batch.rows, batch.at); err != nil {
+			t.Fatal(err)
+		}
+		if err := lake.WriteJSONLines(ctx, inventorySourceTable, batch.rows, batch.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+
 	res := lake.BuildAll(ctx, nil, true)
 	for _, e := range res.Errors {
 		t.Errorf("BuildAll: %s", e)
@@ -153,6 +176,26 @@ func TestGold_AgreesWithClickHouse(t *testing.T) {
 	}
 	if !gotSales[0].SalesValue.Equal(decimal.RequireFromString("400.40")) {
 		t.Errorf("sales gold = %s, want 400.40 (CANCELLED and DRAFT must not count)", gotSales[0].SalesValue)
+	}
+
+	// --- inventory ---
+	wantInv, err := chClient.MonthlyStockMovementSummary(ctx, companyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotInv := readGold[datalake.InventoryMonthlyRow](t, lake, datalake.GoldInventoryMonthly, companyID)
+	if len(wantInv) != 1 || len(gotInv) != 1 {
+		t.Fatalf("inventory months: clickhouse=%d gold=%d, want 1 each", len(wantInv), len(gotInv))
+	}
+	if !gotInv[0].StockIn.Equal(wantInv[0].StockIn) || !gotInv[0].StockOut.Equal(wantInv[0].StockOut) {
+		t.Errorf("inventory gold in/out = %s/%s, clickhouse = %s/%s",
+			gotInv[0].StockIn, gotInv[0].StockOut, wantInv[0].StockIn, wantInv[0].StockOut)
+	}
+	if !gotInv[0].StockIn.Equal(decimal.RequireFromString("120.5")) || !gotInv[0].StockOut.Equal(decimal.RequireFromString("30.25")) {
+		t.Errorf("inventory gold = %s/%s, want 120.5/30.25 (corrected version wins, ADJUST must not count)", gotInv[0].StockIn, gotInv[0].StockOut)
+	}
+	if gotInv[0].Month != wantInv[0].Month {
+		t.Errorf("inventory month gold=%s clickhouse=%s", gotInv[0].Month, wantInv[0].Month)
 	}
 }
 

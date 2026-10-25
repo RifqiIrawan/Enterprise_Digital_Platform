@@ -31,6 +31,8 @@ function mockApi({ gold = {}, rec = reconcile } = {}) {
       return Promise.resolve({ data: gold.finance ?? [{ company_id: 'company-1', month: '2026-07-01', revenue: '5000000', expense: '2000000' }] })
     if (url.includes('sales-monthly'))
       return Promise.resolve({ data: gold.sales ?? [{ company_id: 'company-1', month: '2026-07-01', sales_value: '24000' }] })
+    if (url.includes('inventory-monthly'))
+      return Promise.resolve({ data: gold.inventory ?? [{ company_id: 'company-1', month: '2026-07-01', stock_in: '120.5', stock_out: '30.25' }] })
     if (url.includes('reconcile')) return Promise.resolve({ data: rec })
     return Promise.resolve({ data: [] })
   })
@@ -63,9 +65,19 @@ describe('DataLakePage', () => {
   })
 
   it('menjelaskan dataset kosong alih-alih menggambar chart kosong', async () => {
-    mockApi({ gold: { finance: [], sales: [] } })
+    mockApi({ gold: { finance: [], sales: [], inventory: [] } })
     render(<DataLakePage />)
-    expect((await screen.findAllByText(/Dataset Gold kosong/)).length).toBe(2)
+    expect((await screen.findAllByText(/Dataset Gold kosong/)).length).toBe(3)
+  })
+
+  it('meminta Gold inventory dan menggambar chart stok', async () => {
+    mockApi()
+    render(<DataLakePage />)
+    expect(await screen.findByText('Stok Masuk vs Keluar per Bulan')).toBeTruthy()
+    await waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith('/api/dw/lake/gold/inventory-monthly', { params: { company_id: 'company-1' } })
+    )
+    expect(screen.queryAllByText(/Dataset Gold kosong/).length).toBe(0)
   })
 
   it('menampilkan error build per fact dan memuat ulang Gold', async () => {

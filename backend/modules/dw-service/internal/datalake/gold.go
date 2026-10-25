@@ -20,16 +20,23 @@ import (
 // tidak punya salah satunya. gold_test.go membandingkan keduanya angka demi
 // angka.
 //
-// Hanya dua dataset -- keduanya yang punya padanan ClickHouse untuk
-// dibandingkan. Dataset Gold lain ditambahkan dengan pola yang sama, bersama
-// padanannya.
+// Hanya tiga dataset -- semuanya punya padanan ClickHouse untuk dibandingkan.
+// Dataset Gold lain ditambahkan dengan pola yang sama, bersama padanannya.
 
 const goldPrefix = "gold/"
 
 const (
-	GoldFinanceMonthly = "finance_monthly"
-	GoldSalesMonthly   = "sales_monthly"
+	GoldFinanceMonthly   = "finance_monthly"
+	GoldSalesMonthly     = "sales_monthly"
+	GoldInventoryMonthly = "inventory_monthly"
 )
+
+type InventoryMonthlyRow struct {
+	CompanyID string          `json:"company_id"`
+	Month     string          `json:"month"` // YYYY-MM-01
+	StockIn   decimal.Decimal `json:"stock_in"`
+	StockOut  decimal.Decimal `json:"stock_out"`
+}
 
 type FinanceMonthlyRow struct {
 	CompanyID string          `json:"company_id"`
@@ -72,9 +79,14 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 	if err != nil {
 		return nil, err
 	}
+	inv, err := c.buildInventoryMonthly(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return []GoldStats{
 		{Dataset: GoldFinanceMonthly, Rows: fin},
 		{Dataset: GoldSalesMonthly, Rows: sales},
+		{Dataset: GoldInventoryMonthly, Rows: inv},
 	}, nil
 }
 
@@ -179,6 +191,58 @@ func (c *Client) buildSalesMonthly(ctx context.Context) (int, error) {
 		buf.WriteByte('\n')
 	}
 	return len(keys), c.put(ctx, goldKey(GoldSalesMonthly), buf.Bytes())
+}
+
+func (c *Client) buildInventoryMonthly(ctx context.Context) (int, error) {
+	agg := map[monthKey]*InventoryMonthlyRow{}
+	err := c.EachSilver(ctx, "inventory_movements", func(l []byte) error {
+		var r struct {
+			CompanyID    string
+			MovementDate string
+			MovementType string
+			Quantity     float64
+		}
+		if err := json.Unmarshal(l, &r); err != nil {
+			return fmt.Errorf("gold inventory: baris Silver rusak: %w", err)
+		}
+		// Tanpa kolom status: setiap baris adalah pergerakan yang sudah
+		// terjadi. Tipe selain IN/OUT tidak dihitung -- sama dengan
+		// MonthlyStockMovementSummary.
+		if r.MovementType != "IN" && r.MovementType != "OUT" {
+			return nil
+		}
+		month, ok := monthOf(r.MovementDate)
+		if !ok {
+			return nil
+		}
+		k := monthKey{r.CompanyID, month}
+		row := agg[k]
+		if row == nil {
+			row = &InventoryMonthlyRow{CompanyID: r.CompanyID, Month: month}
+			agg[k] = row
+		}
+		q := decimal.NewFromFloat(r.Quantity)
+		if r.MovementType == "IN" {
+			row.StockIn = row.StockIn.Add(q)
+		} else {
+			row.StockOut = row.StockOut.Add(q)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	keys := sortedMonthKeys(agg)
+	var buf bytes.Buffer
+	for _, k := range keys {
+		row := agg[k]
+		row.StockIn, row.StockOut = row.StockIn.Round(2), row.StockOut.Round(2)
+		b, _ := json.Marshal(row)
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	return len(keys), c.put(ctx, goldKey(GoldInventoryMonthly), buf.Bytes())
 }
 
 func sortedMonthKeys[V any](m map[monthKey]V) []monthKey {
