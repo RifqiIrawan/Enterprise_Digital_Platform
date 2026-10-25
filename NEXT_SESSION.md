@@ -2581,3 +2581,13 @@ Port 8090 diambil proses proyek lain (`sep-backend.exe`, Smart_Enterprise_Platfo
 - **Masih terbuka (kecil):** Gold baru dua dataset (finance & sales bulanan); fact lain belum punya Gold. `production_downtime` hanya punya chart Pareto, belum tren per bulan atau per mesin.
 - `backend/go.work.sum` selalu tampak modified di working tree dan sengaja tidak pernah di-commit. Isinya sempat hilang sebagian (dibuang tidak sengaja lewat `git checkout`) dan ter-regenerasi sebagian oleh tooling Go; tidak dikenal efek sampingnya.
 - Port 8090 di mesin ini dipakai proyek lain (`sep-backend.exe`); jangan dihentikan dari sini.
+
+---
+
+## Sesi 2026-10-25: Gold inventory & downtime
+
+- Gold sekarang 4 dataset: `finance_monthly`, `sales_monthly`, `inventory_monthly` (`3ceb01e`), `downtime_monthly` (`f249abc`). Endpoint `GET /api/dw/lake/gold/{finance-monthly|sales-monthly|inventory-monthly|downtime-monthly}?company_id=`; kebijakan gateway `/api/dw/lake/gold/*` sudah mencakup semuanya.
+- `downtime_monthly` per (company, bulan, alasan), bukan total bulanan, supaya komposisi alasan tidak hilang; chart di halaman Data Lake menjumlahkannya per bulan.
+- Setiap dataset punya tes rekonsiliasi terhadap query ClickHouse yang sudah ada (`lake_gold_test.go`), termasuk versi baris yang dikoreksi. Lulus terhadap ClickHouse+MinIO sungguhan.
+- **Belum**: dua chart baru belum dilihat di browser; commit belum di-push. Gold untuk fact lain (production OEE, HR, purchasing, dst) belum ada.
+- Menjalankan tes Gold: `docker compose up -d minio clickhouse` di `infra/`, lalu `go test ./internal/etl -run Gold -count=1` di `backend/modules/dw-service` (tanpa ClickHouse tes di-skip dan `go test` tetap tampak `ok`).
