@@ -377,3 +377,74 @@ func TestGold_OEEAgreesWithClickHouse(t *testing.T) {
 		t.Errorf("Sep capped=%v (want true), Oct OEE=%v (want nil)", got[1].PerformanceCapped, got[2].OEEPct)
 	}
 }
+
+// TestGold_QCAgreesWithClickHouse: cacah per hasil, kuantitas, dan defect rate
+// (null untuk bulan tanpa unit) harus sama dengan QCMonthlySummary, termasuk
+// inspeksi yang dikoreksi sesudah ditulis pertama kali.
+func TestGold_QCAgreesWithClickHouse(t *testing.T) {
+	ctx := context.Background()
+	lake := testLake(t)
+	companyID := uuid.New()
+	v1, v2 := time.Now().Add(-time.Hour), time.Now()
+
+	fixed := qcRow(companyID, "2026-08-03", "PASS", 100, 0, t)
+	stale := fixed
+	stale.Result, stale.FailedQuantity = "FAIL", 100 // versi lama, harus tertimpa
+	batches := []struct {
+		rows []ch.QCInspectionRow
+		at   time.Time
+	}{
+		{[]ch.QCInspectionRow{stale}, v1},
+		{[]ch.QCInspectionRow{
+			fixed,
+			qcRow(companyID, "2026-08-10", "PARTIAL", 1000, 37.5, t),
+			qcRow(companyID, "2026-08-11", "FAIL", 2, 2, t),
+			qcRow(companyID, "2026-09-02", "PASS", 0, 0, t), // tanpa unit
+			qcRow(uuid.New(), "2026-08-03", "FAIL", 500, 500, t),
+		}, v2},
+	}
+	for _, b := range batches {
+		if err := chClient.InsertQCInspections(ctx, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+		if err := lake.WriteJSONLines(ctx, qcSourceTable, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, e := range lake.BuildAll(ctx, nil, true).Errors {
+		t.Errorf("BuildAll: %s", e)
+	}
+
+	want, err := chClient.QCMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readGold[datalake.QCMonthlyRow](t, lake, datalake.GoldQCMonthly, companyID)
+	if len(want) != 2 || len(got) != 2 {
+		t.Fatalf("qc months: clickhouse=%d gold=%d, want 2 each", len(want), len(got))
+	}
+	for i := range want {
+		g, w := got[i], want[i]
+		if g.Month != w.Month || uint64(g.InspectionCount) != w.InspectionsQty ||
+			uint64(g.PassCount) != w.PassCount || uint64(g.FailCount) != w.FailCount || uint64(g.PartialCount) != w.PartialCount {
+			t.Errorf("%s counts: gold %+v != clickhouse %+v", w.Month, g, w)
+		}
+		if !g.InspectedQuantity.Equal(w.InspectedQty) || !g.FailedQuantity.Equal(w.FailedQty) {
+			t.Errorf("%s qty: gold %s/%s, clickhouse %s/%s", w.Month, g.InspectedQuantity, g.FailedQuantity, w.InspectedQty, w.FailedQty)
+		}
+		switch {
+		case g.DefectRatePct == nil && w.DefectRatePct == nil:
+		case g.DefectRatePct == nil || w.DefectRatePct == nil:
+			t.Errorf("%s defect rate gold=%v clickhouse=%v (nil harus sama-sama nil)", w.Month, g.DefectRatePct, w.DefectRatePct)
+		case math.Abs(*g.DefectRatePct-*w.DefectRatePct) > 0.0001:
+			t.Errorf("%s defect rate gold=%v clickhouse=%v", w.Month, *g.DefectRatePct, *w.DefectRatePct)
+		}
+	}
+	// Agustus: 100 (PASS, dikoreksi) + 1000 + 2 unit; gagal 0 + 37.5 + 2.
+	if got[0].PassCount != 1 || got[0].PartialCount != 1 || got[0].FailCount != 1 {
+		t.Errorf("Aug counts = %d/%d/%d, want 1/1/1 (versi lama FAIL harus tertimpa)", got[0].PassCount, got[0].PartialCount, got[0].FailCount)
+	}
+	if got[1].DefectRatePct != nil {
+		t.Errorf("Sep defect rate = %v, want nil (tanpa unit)", *got[1].DefectRatePct)
+	}
+}

@@ -47,6 +47,10 @@ function mockApi({ gold = {}, rec = reconcile } = {}) {
           { company_id: 'company-1', month: '2026-08-01', availability_pct: 90, performance_pct: null, quality_pct: null, oee_pct: null },
         ],
       })
+    if (url.includes('qc-monthly'))
+      return Promise.resolve({
+        data: gold.qc ?? [{ company_id: 'company-1', month: '2026-07-01', pass_count: 4, partial_count: 1, fail_count: 2, defect_rate_pct: 3.5 }],
+      })
     if (url.includes('reconcile')) return Promise.resolve({ data: rec })
     return Promise.resolve({ data: [] })
   })
@@ -90,6 +94,16 @@ describe('DataLakePage', () => {
     expect(await screen.findByText('OEE per Bulan')).toBeTruthy()
     await waitFor(() =>
       expect(apiClient.get).toHaveBeenCalledWith('/api/dw/lake/gold/oee-monthly', { params: { company_id: 'company-1' } })
+    )
+    expect(screen.queryAllByText(/Dataset Gold kosong/).length).toBe(0)
+  })
+
+  it('meminta Gold QC dan menggambar chartnya', async () => {
+    mockApi()
+    render(<DataLakePage />)
+    expect(await screen.findByText('Inspeksi QC per Bulan')).toBeTruthy()
+    await waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith('/api/dw/lake/gold/qc-monthly', { params: { company_id: 'company-1' } })
     )
     expect(screen.queryAllByText(/Dataset Gold kosong/).length).toBe(0)
   })

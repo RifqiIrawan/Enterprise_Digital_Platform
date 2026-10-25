@@ -32,6 +32,7 @@ const (
 	GoldInventoryMonthly = "inventory_monthly"
 	GoldDowntimeMonthly  = "downtime_monthly"
 	GoldOEEMonthly       = "oee_monthly"
+	GoldQCMonthly        = "qc_monthly"
 )
 
 type InventoryMonthlyRow struct {
@@ -103,12 +104,17 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 	if err != nil {
 		return nil, err
 	}
+	qc, err := c.buildQCMonthly(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return []GoldStats{
 		{Dataset: GoldFinanceMonthly, Rows: fin},
 		{Dataset: GoldSalesMonthly, Rows: sales},
 		{Dataset: GoldInventoryMonthly, Rows: inv},
 		{Dataset: GoldDowntimeMonthly, Rows: down},
 		{Dataset: GoldOEEMonthly, Rows: oee},
+		{Dataset: GoldQCMonthly, Rows: qc},
 	}, nil
 }
 
@@ -476,4 +482,75 @@ func (c *Client) buildOEEMonthly(ctx context.Context) (int, error) {
 		buf.WriteByte('\n')
 	}
 	return len(keys), c.put(ctx, goldKey(GoldOEEMonthly), buf.Bytes())
+}
+
+// QCMonthlyRow: cacah hasil DAN kuantitas, karena menjawab hal berbeda (lihat
+// QCMonthlySummary). Defect rate dihitung dari kuantitas; null = belum ada unit
+// yang diinspeksi, bukan 0%.
+type QCMonthlyRow struct {
+	CompanyID         string          `json:"company_id"`
+	Month             string          `json:"month"` // YYYY-MM-01
+	InspectionCount   int             `json:"inspection_count"`
+	PassCount         int             `json:"pass_count"`
+	FailCount         int             `json:"fail_count"`
+	PartialCount      int             `json:"partial_count"`
+	InspectedQuantity decimal.Decimal `json:"inspected_quantity"`
+	FailedQuantity    decimal.Decimal `json:"failed_quantity"`
+	DefectRatePct     *float64        `json:"defect_rate_pct"`
+}
+
+func (c *Client) buildQCMonthly(ctx context.Context) (int, error) {
+	agg := map[monthKey]*QCMonthlyRow{}
+	err := c.EachSilver(ctx, "qc_inspections", func(l []byte) error {
+		var r struct {
+			CompanyID         string
+			InspectionDate    string
+			Result            string
+			InspectedQuantity float64
+			FailedQuantity    float64
+		}
+		if err := json.Unmarshal(l, &r); err != nil {
+			return fmt.Errorf("gold qc: baris Silver rusak: %w", err)
+		}
+		month, ok := monthOf(r.InspectionDate)
+		if !ok {
+			return nil
+		}
+		k := monthKey{r.CompanyID, month}
+		row := agg[k]
+		if row == nil {
+			row = &QCMonthlyRow{CompanyID: r.CompanyID, Month: month}
+			agg[k] = row
+		}
+		row.InspectionCount++
+		switch r.Result {
+		case "PASS":
+			row.PassCount++
+		case "FAIL":
+			row.FailCount++
+		case "PARTIAL":
+			row.PartialCount++
+		}
+		row.InspectedQuantity = row.InspectedQuantity.Add(decimal.NewFromFloat(r.InspectedQuantity))
+		row.FailedQuantity = row.FailedQuantity.Add(decimal.NewFromFloat(r.FailedQuantity))
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	keys := sortedMonthKeys(agg)
+	var buf bytes.Buffer
+	for _, k := range keys {
+		row := agg[k]
+		row.InspectedQuantity, row.FailedQuantity = row.InspectedQuantity.Round(2), row.FailedQuantity.Round(2)
+		if row.InspectedQuantity.IsPositive() {
+			rate, _ := row.FailedQuantity.Div(row.InspectedQuantity).Mul(decimal.NewFromInt(100)).Float64()
+			row.DefectRatePct = &rate
+		}
+		b, _ := json.Marshal(row)
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	return len(keys), c.put(ctx, goldKey(GoldQCMonthly), buf.Bytes())
 }
