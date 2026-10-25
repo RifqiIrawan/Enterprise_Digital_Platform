@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import GroupedBarChart from '../aibi/GroupedBarChart.jsx'
-import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES, PRODUCTION_DOWNTIME_SERIES, PRODUCTION_OEE_SERIES, QC_SERIES, PRODUCTION_SERIES, formatPercent } from '../bi/chartSeries.js'
+import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES, PRODUCTION_DOWNTIME_SERIES, PRODUCTION_OEE_SERIES, QC_SERIES, PRODUCTION_SERIES, ECOMMERCE_SERIES, formatPercent } from '../bi/chartSeries.js'
 import { useCompany } from '../../store/CompanyContext.jsx'
 import { usePagePermission } from '../../store/PermissionContext.jsx'
 
@@ -63,6 +63,7 @@ function DataLakePage() {
   const [oee, setOee] = useState(null)
   const [qc, setQc] = useState(null)
   const [production, setProduction] = useState(null)
+  const [ecommerce, setEcommerce] = useState(null)
   const [goldError, setGoldError] = useState('')
   const [reconcile, setReconcile] = useState(null)
   const [reconcileError, setReconcileError] = useState('')
@@ -81,8 +82,9 @@ function DataLakePage() {
       apiClient.get('/api/dw/lake/gold/oee-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/qc-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/production-monthly', { params }),
+      apiClient.get('/api/dw/lake/gold/ecommerce-monthly', { params }),
     ])
-      .then(([f, s, i, d, o, q, pr]) => {
+      .then(([f, s, i, d, o, q, pr, ec]) => {
         setFinance(toSeries(f.data, ['revenue', 'expense']))
         setSales(toSeries(s.data, ['sales_value']))
         setInventory(toSeries(i.data, ['stock_in', 'stock_out']))
@@ -90,6 +92,7 @@ function DataLakePage() {
         setOee(oeeSeries(o.data))
         setQc(toSeries(q.data, ['pass_count', 'partial_count', 'fail_count']))
         setProduction(toSeries(pr.data, ['quantity_planned', 'quantity_produced']))
+        setEcommerce(toSeries(ec.data, ['revenue']))
       })
       .catch((err) => {
         setFinance([])
@@ -99,6 +102,7 @@ function DataLakePage() {
         setOee([])
         setQc([])
         setProduction([])
+        setEcommerce([])
         setGoldError(
           err.response?.status === 503
             ? 'Data lake (MinIO) tidak tersedia.'
@@ -208,6 +212,12 @@ function DataLakePage() {
         data={production}
         series={PRODUCTION_SERIES}
         formatValue={number}
+      />
+      <GoldChart
+        title="Penjualan E-commerce per Bulan"
+        hint="Dataset ecommerce_monthly (order CANCELLED tidak dihitung)"
+        data={ecommerce}
+        series={ECOMMERCE_SERIES}
       />
 
       <div className="card p-3">

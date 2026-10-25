@@ -34,6 +34,7 @@ const (
 	GoldOEEMonthly        = "oee_monthly"
 	GoldQCMonthly         = "qc_monthly"
 	GoldProductionMonthly = "production_monthly"
+	GoldEcommerceMonthly  = "ecommerce_monthly"
 )
 
 type InventoryMonthlyRow struct {
@@ -113,6 +114,10 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 	if err != nil {
 		return nil, err
 	}
+	ecom, err := c.buildEcommerceMonthly(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return []GoldStats{
 		{Dataset: GoldFinanceMonthly, Rows: fin},
 		{Dataset: GoldSalesMonthly, Rows: sales},
@@ -121,6 +126,7 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 		{Dataset: GoldOEEMonthly, Rows: oee},
 		{Dataset: GoldQCMonthly, Rows: qc},
 		{Dataset: GoldProductionMonthly, Rows: prod},
+		{Dataset: GoldEcommerceMonthly, Rows: ecom},
 	}, nil
 }
 
@@ -626,4 +632,74 @@ func (c *Client) buildProductionMonthly(ctx context.Context) (int, error) {
 		buf.WriteByte('\n')
 	}
 	return len(keys), c.put(ctx, goldKey(GoldProductionMonthly), buf.Bytes())
+}
+
+// EcommerceMonthlyRow: CANCELLED dibuang, PENDING tetap dihitung (penjualan yang
+// sedang berjalan). avg_order_value per ORDER unik, bukan per baris.
+type EcommerceMonthlyRow struct {
+	CompanyID     string          `json:"company_id"`
+	Month         string          `json:"month"` // YYYY-MM-01
+	OrderCount    int             `json:"order_count"`
+	LineCount     int             `json:"line_count"`
+	ItemsSold     decimal.Decimal `json:"items_sold"`
+	Revenue       decimal.Decimal `json:"revenue"`
+	AvgOrderValue *float64        `json:"avg_order_value"`
+}
+
+func (c *Client) buildEcommerceMonthly(ctx context.Context) (int, error) {
+	agg := map[monthKey]*EcommerceMonthlyRow{}
+	// Order unik per (company, bulan): satu order punya banyak baris. Yang
+	// ditahan di memori hanya id order, bukan baris-barisnya.
+	orders := map[monthKey]map[string]struct{}{}
+	err := c.EachSilver(ctx, "order_items", func(l []byte) error {
+		var r struct {
+			CompanyID   string
+			OrderID     string
+			OrderDate   string
+			OrderStatus string
+			Quantity    float64
+			Amount      float64
+		}
+		if err := json.Unmarshal(l, &r); err != nil {
+			return fmt.Errorf("gold ecommerce: baris Silver rusak: %w", err)
+		}
+		if r.OrderStatus == "CANCELLED" {
+			return nil
+		}
+		month, ok := monthOf(r.OrderDate)
+		if !ok {
+			return nil
+		}
+		k := monthKey{r.CompanyID, month}
+		row := agg[k]
+		if row == nil {
+			row = &EcommerceMonthlyRow{CompanyID: r.CompanyID, Month: month}
+			agg[k] = row
+			orders[k] = map[string]struct{}{}
+		}
+		orders[k][r.OrderID] = struct{}{}
+		row.LineCount++
+		row.ItemsSold = row.ItemsSold.Add(decimal.NewFromFloat(r.Quantity))
+		row.Revenue = row.Revenue.Add(decimal.NewFromFloat(r.Amount))
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	keys := sortedMonthKeys(agg)
+	var buf bytes.Buffer
+	for _, k := range keys {
+		row := agg[k]
+		row.OrderCount = len(orders[k])
+		row.ItemsSold, row.Revenue = row.ItemsSold.Round(2), row.Revenue.Round(2)
+		if row.OrderCount > 0 {
+			avg, _ := row.Revenue.Div(decimal.NewFromInt(int64(row.OrderCount))).Float64()
+			row.AvgOrderValue = &avg
+		}
+		b, _ := json.Marshal(row)
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	return len(keys), c.put(ctx, goldKey(GoldEcommerceMonthly), buf.Bytes())
 }

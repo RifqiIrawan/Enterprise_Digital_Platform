@@ -517,3 +517,64 @@ func TestGold_ProductionAgreesWithClickHouse(t *testing.T) {
 		t.Errorf("Sep achievement = %v, want nil (rencana nol)", *got[1].AchievementPct)
 	}
 }
+
+// TestGold_EcommerceAgreesWithClickHouse: order unik (satu order, banyak baris),
+// CANCELLED dibuang, dan baris yang dibatalkan sesudah ditulis pertama kali.
+func TestGold_EcommerceAgreesWithClickHouse(t *testing.T) {
+	ctx := context.Background()
+	lake := testLake(t)
+	companyID := uuid.New()
+	v1, v2 := time.Now().Add(-time.Hour), time.Now()
+	orderA, orderB, orderC := uuid.New(), uuid.New(), uuid.New()
+
+	flipped := ecomRow(companyID, orderC, "PENDING", 1, 5000, "2026-08-04", t)
+	cancelled := flipped
+	cancelled.OrderStatus = "CANCELLED" // dibatalkan sesudah versi 1
+	batches := []struct {
+		rows []ch.EcommerceOrderLineRow
+		at   time.Time
+	}{
+		{[]ch.EcommerceOrderLineRow{flipped}, v1},
+		{[]ch.EcommerceOrderLineRow{
+			cancelled,
+			ecomRow(companyID, orderA, "PAID", 2, 100, "2026-08-03", t),
+			ecomRow(companyID, orderA, "PAID", 1, 50.5, "2026-08-03", t), // order yang sama, baris kedua
+			ecomRow(companyID, orderB, "PENDING", 3, 300, "2026-09-01", t),
+			ecomRow(uuid.New(), uuid.New(), "PAID", 1, 999, "2026-08-03", t),
+		}, v2},
+	}
+	for _, b := range batches {
+		if err := chClient.InsertEcommerceOrderLines(ctx, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+		if err := lake.WriteJSONLines(ctx, ecommerceSourceTable, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, e := range lake.BuildAll(ctx, nil, true).Errors {
+		t.Errorf("BuildAll: %s", e)
+	}
+
+	want, err := chClient.EcommerceMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readGold[datalake.EcommerceMonthlyRow](t, lake, datalake.GoldEcommerceMonthly, companyID)
+	if len(want) != 2 || len(got) != 2 {
+		t.Fatalf("ecommerce months: clickhouse=%d gold=%d, want 2 each", len(want), len(got))
+	}
+	for i := range want {
+		g, w := got[i], want[i]
+		if g.Month != w.Month || uint64(g.OrderCount) != w.OrderCount || uint64(g.LineCount) != w.LineCount ||
+			!g.ItemsSold.Equal(w.ItemsSold) || !g.Revenue.Equal(w.Revenue) {
+			t.Errorf("%s: gold %+v != clickhouse %+v", w.Month, g, w)
+		}
+		if g.AvgOrderValue == nil || w.AvgOrderSize == nil || math.Abs(*g.AvgOrderValue-*w.AvgOrderSize) > 0.0001 {
+			t.Errorf("%s avg order value gold=%v clickhouse=%v", w.Month, g.AvgOrderValue, w.AvgOrderSize)
+		}
+	}
+	// Agustus: satu order (A) dengan dua baris; order C yang dibatalkan tidak ikut.
+	if got[0].OrderCount != 1 || got[0].LineCount != 2 || !got[0].Revenue.Equal(decimal.RequireFromString("150.5")) {
+		t.Errorf("Aug = %d order / %d baris / %s, want 1 / 2 / 150.5", got[0].OrderCount, got[0].LineCount, got[0].Revenue)
+	}
+}
