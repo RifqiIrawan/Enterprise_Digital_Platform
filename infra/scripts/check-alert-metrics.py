@@ -10,7 +10,7 @@ justru karena tidak terlihat.
 Pemeriksaan ini mengambil nama metrik dari infra/prometheus/rules/*.yml lalu
 mencocokkannya dengan:
 
-  * metrik buatan sendiri yang terdaftar di backend/**/internal/metrics/*.go
+  * metrik buatan sendiri yang terdaftar di backend/**/internal/metrics/*.go dan backend/**/internal/*/metrics.go
     (dibaca dari field `Name:` pada CounterOpts/HistogramOpts/GaugeOpts),
   * koleksi bawaan client_golang (awalan go_, process_, promhttp_),
   * metrik milik Prometheus sendiri (`up`, awalan scrape_/prometheus_/ALERTS).
@@ -74,7 +74,11 @@ NUMBER_LITERAL = re.compile(r"\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b")
 def exported_metric_names() -> set[str]:
     """Nama metrik yang benar-benar didaftarkan kode Go."""
     names: set[str] = set()
-    for path in BACKEND_DIR.rglob("internal/metrics/*.go"):
+    # internal/metrics/*.go (paket bersama) dan internal/<paket>/metrics.go
+    # (mis. dw-service streaming): metrik yang hidup di paket pemiliknya juga
+    # didaftarkan ke Prometheus, jadi alert atasnya harus dikenali.
+    paths = [*BACKEND_DIR.rglob("internal/metrics/*.go"), *BACKEND_DIR.rglob("internal/*/metrics.go")]
+    for path in paths:
         for match in re.finditer(r'Name:\s*"([^"]+)"', path.read_text(encoding="utf-8")):
             names.add(match.group(1))
     return names
