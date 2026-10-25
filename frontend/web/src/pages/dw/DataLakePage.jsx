@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import GroupedBarChart from '../aibi/GroupedBarChart.jsx'
-import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES } from '../bi/chartSeries.js'
+import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES, PRODUCTION_DOWNTIME_SERIES } from '../bi/chartSeries.js'
 import { useCompany } from '../../store/CompanyContext.jsx'
 import { usePagePermission } from '../../store/PermissionContext.jsx'
 
@@ -14,6 +14,13 @@ const STATUS_LABEL = {
 
 const number = (v) => new Intl.NumberFormat('id-ID').format(v)
 const rupiah = (v) => `Rp ${number(Math.round(v))}`
+
+// Gold downtime per (bulan, alasan); chart ini hanya total menit per bulan.
+function sumByMonth(rows, key) {
+  const byMonth = new Map()
+  for (const r of rows) byMonth.set(r.month, (byMonth.get(r.month) ?? 0) + Number(r[key]))
+  return [...byMonth].map(([month, v]) => ({ month, [key]: v })).sort((a, b) => a.month.localeCompare(b.month))
+}
 
 // Gold mengirim desimal sebagai string ("5000000"); chart butuh angka.
 function toSeries(rows, keys) {
@@ -44,6 +51,7 @@ function DataLakePage() {
   const [finance, setFinance] = useState(null)
   const [sales, setSales] = useState(null)
   const [inventory, setInventory] = useState(null)
+  const [downtime, setDowntime] = useState(null)
   const [goldError, setGoldError] = useState('')
   const [reconcile, setReconcile] = useState(null)
   const [reconcileError, setReconcileError] = useState('')
@@ -58,16 +66,19 @@ function DataLakePage() {
       apiClient.get('/api/dw/lake/gold/finance-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/sales-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/inventory-monthly', { params }),
+      apiClient.get('/api/dw/lake/gold/downtime-monthly', { params }),
     ])
-      .then(([f, s, i]) => {
+      .then(([f, s, i, d]) => {
         setFinance(toSeries(f.data, ['revenue', 'expense']))
         setSales(toSeries(s.data, ['sales_value']))
         setInventory(toSeries(i.data, ['stock_in', 'stock_out']))
+        setDowntime(sumByMonth(d.data, 'minutes'))
       })
       .catch((err) => {
         setFinance([])
         setSales([])
         setInventory([])
+        setDowntime([])
         setGoldError(
           err.response?.status === 503
             ? 'Data lake (MinIO) tidak tersedia.'
@@ -149,6 +160,13 @@ function DataLakePage() {
         data={inventory}
         series={STOCK_SERIES}
         formatValue={number}
+      />
+      <GoldChart
+        title="Downtime Produksi per Bulan"
+        hint="Dataset downtime_monthly (total menit semua alasan)"
+        data={downtime}
+        series={PRODUCTION_DOWNTIME_SERIES}
+        formatValue={(v) => `${number(v)} menit`}
       />
 
       <div className="card p-3">

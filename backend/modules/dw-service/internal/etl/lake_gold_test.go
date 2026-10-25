@@ -224,3 +224,78 @@ func readGold[T any](t *testing.T, lake *datalake.Client, dataset string, compan
 	}
 	return out
 }
+
+// TestGold_DowntimeAgreesWithClickHouse: Gold per (bulan, alasan) harus sama
+// dengan Pareto ClickHouse untuk rentang bulan itu, termasuk catatan yang
+// dikoreksi sesudah ditulis pertama kali.
+func TestGold_DowntimeAgreesWithClickHouse(t *testing.T) {
+	ctx := context.Background()
+	lake := testLake(t)
+	companyID, other := uuid.New(), uuid.New()
+	v1, v2 := time.Now().Add(-time.Hour), time.Now()
+
+	row := func(c uuid.UUID, id uuid.UUID, date, reason string, minutes int32) ch.ProductionDowntimeRow {
+		r := downtimeRow(c, date, reason, minutes, t)
+		r.DowntimeID = id
+		return r
+	}
+	fixed := uuid.New()
+	batches := []struct {
+		rows []ch.ProductionDowntimeRow
+		at   time.Time
+	}{
+		{[]ch.ProductionDowntimeRow{row(companyID, fixed, "2026-08-03", "BREAKDOWN", 500)}, v1},
+		{[]ch.ProductionDowntimeRow{
+			row(companyID, fixed, "2026-08-03", "BREAKDOWN", 40), // dikoreksi dari 500
+			row(companyID, uuid.New(), "2026-08-20", "BREAKDOWN", 20),
+			row(companyID, uuid.New(), "2026-08-04", "SETUP", 30),
+			row(companyID, uuid.New(), "2026-09-02", "OTHER", 10),
+			row(other, uuid.New(), "2026-08-03", "NO_OPERATOR", 999),
+		}, v2},
+	}
+	for _, b := range batches {
+		if err := chClient.InsertProductionDowntime(ctx, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+		if err := lake.WriteJSONLines(ctx, productionDowntimeSourceTable, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, e := range lake.BuildAll(ctx, nil, true).Errors {
+		t.Errorf("BuildAll: %s", e)
+	}
+
+	got := readGold[datalake.DowntimeMonthlyRow](t, lake, datalake.GoldDowntimeMonthly, companyID)
+	if len(got) != 3 {
+		t.Fatalf("downtime gold rows = %d, want 3 (Aug BREAKDOWN, Aug SETUP, Sep OTHER): %+v", len(got), got)
+	}
+	for _, m := range []struct{ from, to, month string }{
+		{"2026-08-01", "2026-08-31", "2026-08-01"},
+		{"2026-09-01", "2026-09-30", "2026-09-01"},
+	} {
+		from, to := mustDate(t, m.from), mustDate(t, m.to)
+		want, err := chClient.ProductionDowntimePareto(ctx, companyID, &from, &to)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gotBy := map[string]int64{}
+		for _, g := range got {
+			if g.Month == m.month {
+				gotBy[g.ReasonCode] = g.Minutes
+			}
+		}
+		if len(gotBy) != len(want) {
+			t.Errorf("%s: gold %d alasan, clickhouse %d", m.month, len(gotBy), len(want))
+		}
+		for _, w := range want {
+			if gotBy[w.ReasonCode] != w.Minutes {
+				t.Errorf("%s %s: gold %d menit, clickhouse %d", m.month, w.ReasonCode, gotBy[w.ReasonCode], w.Minutes)
+			}
+		}
+	}
+	for _, g := range got {
+		if g.Month == "2026-08-01" && g.ReasonCode == "BREAKDOWN" && g.Minutes != 60 {
+			t.Errorf("Aug BREAKDOWN = %d, want 60 (40 dikoreksi + 20)", g.Minutes)
+		}
+	}
+}

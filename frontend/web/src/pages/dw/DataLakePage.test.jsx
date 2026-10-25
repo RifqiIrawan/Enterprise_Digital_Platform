@@ -33,6 +33,13 @@ function mockApi({ gold = {}, rec = reconcile } = {}) {
       return Promise.resolve({ data: gold.sales ?? [{ company_id: 'company-1', month: '2026-07-01', sales_value: '24000' }] })
     if (url.includes('inventory-monthly'))
       return Promise.resolve({ data: gold.inventory ?? [{ company_id: 'company-1', month: '2026-07-01', stock_in: '120.5', stock_out: '30.25' }] })
+    if (url.includes('downtime-monthly'))
+      return Promise.resolve({
+        data: gold.downtime ?? [
+          { company_id: 'company-1', month: '2026-07-01', reason_code: 'BREAKDOWN', minutes: 40 },
+          { company_id: 'company-1', month: '2026-07-01', reason_code: 'SETUP', minutes: 30 },
+        ],
+      })
     if (url.includes('reconcile')) return Promise.resolve({ data: rec })
     return Promise.resolve({ data: [] })
   })

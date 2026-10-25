@@ -57,6 +57,7 @@ var goldDatasets = map[string]string{
 	"finance-monthly":   datalake.GoldFinanceMonthly,
 	"sales-monthly":     datalake.GoldSalesMonthly,
 	"inventory-monthly": datalake.GoldInventoryMonthly,
+	"downtime-monthly":  datalake.GoldDowntimeMonthly,
 }
 
 // lakeGold mengembalikan satu dataset Gold untuk SATU company. company_id

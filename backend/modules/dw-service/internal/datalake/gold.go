@@ -29,6 +29,7 @@ const (
 	GoldFinanceMonthly   = "finance_monthly"
 	GoldSalesMonthly     = "sales_monthly"
 	GoldInventoryMonthly = "inventory_monthly"
+	GoldDowntimeMonthly  = "downtime_monthly"
 )
 
 type InventoryMonthlyRow struct {
@@ -49,6 +50,15 @@ type SalesMonthlyRow struct {
 	CompanyID  string          `json:"company_id"`
 	Month      string          `json:"month"` // YYYY-MM-01
 	SalesValue decimal.Decimal `json:"sales_value"`
+}
+
+// DowntimeMonthlyRow: satu baris per (company, bulan, alasan), bukan total
+// bulanan, supaya komposisi alasan tidak hilang di Gold.
+type DowntimeMonthlyRow struct {
+	CompanyID  string `json:"company_id"`
+	Month      string `json:"month"` // YYYY-MM-01
+	ReasonCode string `json:"reason_code"`
+	Minutes    int64  `json:"minutes"`
 }
 
 type GoldStats struct {
@@ -83,10 +93,15 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 	if err != nil {
 		return nil, err
 	}
+	down, err := c.buildDowntimeMonthly(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return []GoldStats{
 		{Dataset: GoldFinanceMonthly, Rows: fin},
 		{Dataset: GoldSalesMonthly, Rows: sales},
 		{Dataset: GoldInventoryMonthly, Rows: inv},
+		{Dataset: GoldDowntimeMonthly, Rows: down},
 	}, nil
 }
 
@@ -298,4 +313,57 @@ func (c *Client) BuildAll(ctx context.Context, live map[string]LiveKeys, full bo
 	}
 	res.Gold = g
 	return res
+}
+
+func (c *Client) buildDowntimeMonthly(ctx context.Context) (int, error) {
+	type key struct{ company, month, reason string }
+	agg := map[key]*DowntimeMonthlyRow{}
+	err := c.EachSilver(ctx, "production_downtime", func(l []byte) error {
+		var r struct {
+			CompanyID  string
+			RunDate    string
+			ReasonCode string
+			Minutes    int64
+		}
+		if err := json.Unmarshal(l, &r); err != nil {
+			return fmt.Errorf("gold downtime: baris Silver rusak: %w", err)
+		}
+		month, ok := monthOf(r.RunDate)
+		if !ok {
+			return nil
+		}
+		k := key{r.CompanyID, month, r.ReasonCode}
+		row := agg[k]
+		if row == nil {
+			row = &DowntimeMonthlyRow{CompanyID: r.CompanyID, Month: month, ReasonCode: r.ReasonCode}
+			agg[k] = row
+		}
+		row.Minutes += r.Minutes
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	keys := make([]key, 0, len(agg))
+	for k := range agg {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		if a.company != b.company {
+			return a.company < b.company
+		}
+		if a.month != b.month {
+			return a.month < b.month
+		}
+		return a.reason < b.reason
+	})
+	var buf bytes.Buffer
+	for _, k := range keys {
+		b, _ := json.Marshal(agg[k])
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	return len(keys), c.put(ctx, goldKey(GoldDowntimeMonthly), buf.Bytes())
 }
