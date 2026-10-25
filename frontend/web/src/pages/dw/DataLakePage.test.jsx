@@ -51,6 +51,10 @@ function mockApi({ gold = {}, rec = reconcile } = {}) {
       return Promise.resolve({
         data: gold.qc ?? [{ company_id: 'company-1', month: '2026-07-01', pass_count: 4, partial_count: 1, fail_count: 2, defect_rate_pct: 3.5 }],
       })
+    if (url.includes('production-monthly'))
+      return Promise.resolve({
+        data: gold.production ?? [{ company_id: 'company-1', month: '2026-07-01', quantity_planned: '170', quantity_produced: '80' }],
+      })
     if (url.includes('reconcile')) return Promise.resolve({ data: rec })
     return Promise.resolve({ data: [] })
   })
@@ -104,6 +108,16 @@ describe('DataLakePage', () => {
     expect(await screen.findByText('Inspeksi QC per Bulan')).toBeTruthy()
     await waitFor(() =>
       expect(apiClient.get).toHaveBeenCalledWith('/api/dw/lake/gold/qc-monthly', { params: { company_id: 'company-1' } })
+    )
+    expect(screen.queryAllByText(/Dataset Gold kosong/).length).toBe(0)
+  })
+
+  it('meminta Gold produksi dan menggambar chartnya', async () => {
+    mockApi()
+    render(<DataLakePage />)
+    expect(await screen.findByText('Rencana vs Realisasi Produksi per Bulan')).toBeTruthy()
+    await waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith('/api/dw/lake/gold/production-monthly', { params: { company_id: 'company-1' } })
     )
     expect(screen.queryAllByText(/Dataset Gold kosong/).length).toBe(0)
   })

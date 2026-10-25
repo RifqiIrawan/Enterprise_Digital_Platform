@@ -448,3 +448,72 @@ func TestGold_QCAgreesWithClickHouse(t *testing.T) {
 		t.Errorf("Sep defect rate = %v, want nil (tanpa unit)", *got[1].DefectRatePct)
 	}
 }
+
+// TestGold_ProductionAgreesWithClickHouse: realisasi hanya dari WO COMPLETED,
+// rencana dari semua WO bulan itu, dan WO yang statusnya berubah sesudah
+// ditulis pertama kali memakai versi terbaru.
+func TestGold_ProductionAgreesWithClickHouse(t *testing.T) {
+	ctx := context.Background()
+	lake := testLake(t)
+	companyID := uuid.New()
+	v1, v2 := time.Now().Add(-time.Hour), time.Now()
+	f := func(v float64) *float64 { return &v }
+
+	moved := productionRow(companyID, "2026-08-03", "IN_PROGRESS", 100, f(10), t)
+	done := moved
+	done.Status, done.QuantityProduced = "COMPLETED", f(80) // selesai sesudah versi 1
+	batches := []struct {
+		rows []ch.ProductionWorkOrderRow
+		at   time.Time
+	}{
+		{[]ch.ProductionWorkOrderRow{moved}, v1},
+		{[]ch.ProductionWorkOrderRow{
+			done,
+			productionRow(companyID, "2026-08-10", "IN_PROGRESS", 50, f(30), t), // belum final: tidak masuk realisasi
+			productionRow(companyID, "2026-08-11", "DRAFT", 20, nil, t),
+			productionRow(companyID, "2026-09-02", "COMPLETED", 0, f(0), t), // rencana nol
+			productionRow(uuid.New(), "2026-08-03", "COMPLETED", 999, f(999), t),
+		}, v2},
+	}
+	for _, b := range batches {
+		if err := chClient.InsertProductionWorkOrders(ctx, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+		if err := lake.WriteJSONLines(ctx, productionSourceTable, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, e := range lake.BuildAll(ctx, nil, true).Errors {
+		t.Errorf("BuildAll: %s", e)
+	}
+
+	want, err := chClient.ProductionMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readGold[datalake.ProductionMonthlyRow](t, lake, datalake.GoldProductionMonthly, companyID)
+	if len(want) != 2 || len(got) != 2 {
+		t.Fatalf("production months: clickhouse=%d gold=%d, want 2 each", len(want), len(got))
+	}
+	for i := range want {
+		g, w := got[i], want[i]
+		if g.Month != w.Month || uint64(g.WorkOrderCount) != w.WorkOrderCount || uint64(g.CompletedCount) != w.CompletedCount ||
+			!g.QuantityPlanned.Equal(w.QuantityPlanned) || !g.QuantityDone.Equal(w.QuantityDone) {
+			t.Errorf("%s: gold %+v != clickhouse %+v", w.Month, g, w)
+		}
+		switch {
+		case g.AchievementPct == nil && w.AchievementPct == nil:
+		case g.AchievementPct == nil || w.AchievementPct == nil:
+			t.Errorf("%s achievement gold=%v clickhouse=%v (nil harus sama-sama nil)", w.Month, g.AchievementPct, w.AchievementPct)
+		case math.Abs(*g.AchievementPct-*w.AchievementPct) > 0.0001:
+			t.Errorf("%s achievement gold=%v clickhouse=%v", w.Month, *g.AchievementPct, *w.AchievementPct)
+		}
+	}
+	// Agustus: rencana 100+50+20, realisasi 80 (hanya WO yang selesai).
+	if !got[0].QuantityPlanned.Equal(decimal.NewFromInt(170)) || !got[0].QuantityDone.Equal(decimal.NewFromInt(80)) {
+		t.Errorf("Aug planned/done = %s/%s, want 170/80", got[0].QuantityPlanned, got[0].QuantityDone)
+	}
+	if got[1].AchievementPct != nil {
+		t.Errorf("Sep achievement = %v, want nil (rencana nol)", *got[1].AchievementPct)
+	}
+}

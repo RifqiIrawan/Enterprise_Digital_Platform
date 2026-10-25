@@ -2586,7 +2586,7 @@ Port 8090 diambil proses proyek lain (`sep-backend.exe`, Smart_Enterprise_Platfo
 
 ## Sesi 2026-10-25: Gold inventory & downtime
 
-- Gold sekarang 6 dataset: `finance_monthly`, `sales_monthly`, `inventory_monthly` (`3ceb01e`), `downtime_monthly` (`f249abc`), `oee_monthly` (komponen menit/unit + persen; faktor tak terhitung = null), `qc_monthly` (cacah per hasil + kuantitas; defect rate dari kuantitas, null bila tanpa unit). Endpoint `GET /api/dw/lake/gold/{finance-monthly|sales-monthly|inventory-monthly|downtime-monthly|oee-monthly|qc-monthly}?company_id=`; kebijakan gateway `/api/dw/lake/gold/*` sudah mencakup semuanya.
+- Gold sekarang 7 dataset: `finance_monthly`, `sales_monthly`, `inventory_monthly` (`3ceb01e`), `downtime_monthly` (`f249abc`), `oee_monthly` (komponen menit/unit + persen; faktor tak terhitung = null), `qc_monthly` (cacah per hasil + kuantitas; defect rate dari kuantitas, null bila tanpa unit), `production_monthly` (rencana semua WO vs realisasi hanya WO COMPLETED, bulan dari planned_start_date). Endpoint `GET /api/dw/lake/gold/{finance-monthly|sales-monthly|inventory-monthly|downtime-monthly|oee-monthly|qc-monthly|production-monthly}?company_id=`; kebijakan gateway `/api/dw/lake/gold/*` sudah mencakup semuanya.
 - `downtime_monthly` per (company, bulan, alasan), bukan total bulanan, supaya komposisi alasan tidak hilang; chart di halaman Data Lake menjumlahkannya per bulan.
 - Setiap dataset punya tes rekonsiliasi terhadap query ClickHouse yang sudah ada (`lake_gold_test.go`), termasuk versi baris yang dikoreksi. Lulus terhadap ClickHouse+MinIO sungguhan.
 - **Belum**: dua chart baru belum dilihat di browser; commit belum di-push. Gold untuk fact lain (production OEE, HR, purchasing, dst) belum ada.

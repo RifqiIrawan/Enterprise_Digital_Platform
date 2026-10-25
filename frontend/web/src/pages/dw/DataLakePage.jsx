@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import GroupedBarChart from '../aibi/GroupedBarChart.jsx'
-import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES, PRODUCTION_DOWNTIME_SERIES, PRODUCTION_OEE_SERIES, QC_SERIES, formatPercent } from '../bi/chartSeries.js'
+import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES, PRODUCTION_DOWNTIME_SERIES, PRODUCTION_OEE_SERIES, QC_SERIES, PRODUCTION_SERIES, formatPercent } from '../bi/chartSeries.js'
 import { useCompany } from '../../store/CompanyContext.jsx'
 import { usePagePermission } from '../../store/PermissionContext.jsx'
 
@@ -62,6 +62,7 @@ function DataLakePage() {
   const [downtime, setDowntime] = useState(null)
   const [oee, setOee] = useState(null)
   const [qc, setQc] = useState(null)
+  const [production, setProduction] = useState(null)
   const [goldError, setGoldError] = useState('')
   const [reconcile, setReconcile] = useState(null)
   const [reconcileError, setReconcileError] = useState('')
@@ -79,14 +80,16 @@ function DataLakePage() {
       apiClient.get('/api/dw/lake/gold/downtime-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/oee-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/qc-monthly', { params }),
+      apiClient.get('/api/dw/lake/gold/production-monthly', { params }),
     ])
-      .then(([f, s, i, d, o, q]) => {
+      .then(([f, s, i, d, o, q, pr]) => {
         setFinance(toSeries(f.data, ['revenue', 'expense']))
         setSales(toSeries(s.data, ['sales_value']))
         setInventory(toSeries(i.data, ['stock_in', 'stock_out']))
         setDowntime(sumByMonth(d.data, 'minutes'))
         setOee(oeeSeries(o.data))
         setQc(toSeries(q.data, ['pass_count', 'partial_count', 'fail_count']))
+        setProduction(toSeries(pr.data, ['quantity_planned', 'quantity_produced']))
       })
       .catch((err) => {
         setFinance([])
@@ -95,6 +98,7 @@ function DataLakePage() {
         setDowntime([])
         setOee([])
         setQc([])
+        setProduction([])
         setGoldError(
           err.response?.status === 503
             ? 'Data lake (MinIO) tidak tersedia.'
@@ -196,6 +200,13 @@ function DataLakePage() {
         hint="Dataset qc_monthly (cacah inspeksi per hasil)"
         data={qc}
         series={QC_SERIES}
+        formatValue={number}
+      />
+      <GoldChart
+        title="Rencana vs Realisasi Produksi per Bulan"
+        hint="Dataset production_monthly (realisasi hanya dari work order selesai)"
+        data={production}
+        series={PRODUCTION_SERIES}
         formatValue={number}
       />
 

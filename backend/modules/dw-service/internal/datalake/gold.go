@@ -27,12 +27,13 @@ import (
 const goldPrefix = "gold/"
 
 const (
-	GoldFinanceMonthly   = "finance_monthly"
-	GoldSalesMonthly     = "sales_monthly"
-	GoldInventoryMonthly = "inventory_monthly"
-	GoldDowntimeMonthly  = "downtime_monthly"
-	GoldOEEMonthly       = "oee_monthly"
-	GoldQCMonthly        = "qc_monthly"
+	GoldFinanceMonthly    = "finance_monthly"
+	GoldSalesMonthly      = "sales_monthly"
+	GoldInventoryMonthly  = "inventory_monthly"
+	GoldDowntimeMonthly   = "downtime_monthly"
+	GoldOEEMonthly        = "oee_monthly"
+	GoldQCMonthly         = "qc_monthly"
+	GoldProductionMonthly = "production_monthly"
 )
 
 type InventoryMonthlyRow struct {
@@ -108,6 +109,10 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 	if err != nil {
 		return nil, err
 	}
+	prod, err := c.buildProductionMonthly(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return []GoldStats{
 		{Dataset: GoldFinanceMonthly, Rows: fin},
 		{Dataset: GoldSalesMonthly, Rows: sales},
@@ -115,6 +120,7 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 		{Dataset: GoldDowntimeMonthly, Rows: down},
 		{Dataset: GoldOEEMonthly, Rows: oee},
 		{Dataset: GoldQCMonthly, Rows: qc},
+		{Dataset: GoldProductionMonthly, Rows: prod},
 	}, nil
 }
 
@@ -553,4 +559,71 @@ func (c *Client) buildQCMonthly(ctx context.Context) (int, error) {
 		buf.WriteByte('\n')
 	}
 	return len(keys), c.put(ctx, goldKey(GoldQCMonthly), buf.Bytes())
+}
+
+// ProductionMonthlyRow: rencana vs realisasi per bulan, bulan dari
+// planned_start_date. Rencana dari SEMUA work order bulan itu; realisasi hanya
+// dari yang COMPLETED (quantity_produced WO berjalan belum final). Achievement
+// null bila tidak ada rencana, bukan 0%.
+type ProductionMonthlyRow struct {
+	CompanyID       string          `json:"company_id"`
+	Month           string          `json:"month"` // YYYY-MM-01
+	WorkOrderCount  int             `json:"work_order_count"`
+	CompletedCount  int             `json:"completed_count"`
+	QuantityPlanned decimal.Decimal `json:"quantity_planned"`
+	QuantityDone    decimal.Decimal `json:"quantity_produced"`
+	AchievementPct  *float64        `json:"achievement_pct"`
+}
+
+func (c *Client) buildProductionMonthly(ctx context.Context) (int, error) {
+	agg := map[monthKey]*ProductionMonthlyRow{}
+	err := c.EachSilver(ctx, "production_work_orders", func(l []byte) error {
+		var r struct {
+			CompanyID        string
+			PlannedStartDate string
+			Status           string
+			QuantityPlanned  float64
+			QuantityProduced *float64
+		}
+		if err := json.Unmarshal(l, &r); err != nil {
+			return fmt.Errorf("gold production: baris Silver rusak: %w", err)
+		}
+		month, ok := monthOf(r.PlannedStartDate)
+		if !ok {
+			return nil
+		}
+		k := monthKey{r.CompanyID, month}
+		row := agg[k]
+		if row == nil {
+			row = &ProductionMonthlyRow{CompanyID: r.CompanyID, Month: month}
+			agg[k] = row
+		}
+		row.WorkOrderCount++
+		row.QuantityPlanned = row.QuantityPlanned.Add(decimal.NewFromFloat(r.QuantityPlanned))
+		if r.Status == "COMPLETED" {
+			row.CompletedCount++
+			if r.QuantityProduced != nil {
+				row.QuantityDone = row.QuantityDone.Add(decimal.NewFromFloat(*r.QuantityProduced))
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	keys := sortedMonthKeys(agg)
+	var buf bytes.Buffer
+	for _, k := range keys {
+		row := agg[k]
+		row.QuantityPlanned, row.QuantityDone = row.QuantityPlanned.Round(2), row.QuantityDone.Round(2)
+		if row.QuantityPlanned.IsPositive() {
+			rate, _ := row.QuantityDone.Div(row.QuantityPlanned).Mul(decimal.NewFromInt(100)).Float64()
+			row.AchievementPct = &rate
+		}
+		b, _ := json.Marshal(row)
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	return len(keys), c.put(ctx, goldKey(GoldProductionMonthly), buf.Bytes())
 }

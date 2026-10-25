@@ -181,7 +181,7 @@ GET  /api/dw/analytics/production-downtime-pareto?company_id=&from=&to=  # Paret
 POST /api/dw/lake/build[?full=true]  # Bangun Silver (inkremental) + Gold
 GET  /api/dw/lake/reconcile          # Silver vs ClickHouse per fact (hitungan baris)
 POST /api/dw/lake/backfill           # Tulis seluruh tabel sumber ke Bronze
-GET  /api/dw/lake/gold/{finance-monthly|sales-monthly|inventory-monthly|downtime-monthly|oee-monthly|qc-monthly}?company_id=  # Dataset Gold per company
+GET  /api/dw/lake/gold/{finance-monthly|sales-monthly|inventory-monthly|downtime-monthly|oee-monthly|qc-monthly|production-monthly}?company_id=  # Dataset Gold per company
 POST /api/dw/streaming/replay?topic=&limit=  # Putar ulang event dari dead-letter topic
 ```
 
