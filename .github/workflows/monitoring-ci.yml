@@ -14,6 +14,8 @@ on:
       - "infra/grafana/**"
       - "infra/loki/**"
       - "infra/promtail/**"
+      - "infra/scripts/check-alert-metrics.py"
+      - "backend/**/internal/**/metrics*.go"
       - ".github/workflows/monitoring-ci.yml"
   pull_request:
     paths:
@@ -22,6 +24,8 @@ on:
       - "infra/grafana/**"
       - "infra/loki/**"
       - "infra/promtail/**"
+      - "infra/scripts/check-alert-metrics.py"
+      - "backend/**/internal/**/metrics*.go"
       - ".github/workflows/monitoring-ci.yml"
   workflow_dispatch:
 
