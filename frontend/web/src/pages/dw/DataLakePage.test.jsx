@@ -40,6 +40,13 @@ function mockApi({ gold = {}, rec = reconcile } = {}) {
           { company_id: 'company-1', month: '2026-07-01', reason_code: 'SETUP', minutes: 30 },
         ],
       })
+    if (url.includes('oee-monthly'))
+      return Promise.resolve({
+        data: gold.oee ?? [
+          { company_id: 'company-1', month: '2026-07-01', availability_pct: 85.71, performance_pct: 88.89, quality_pct: 93.75, oee_pct: 71.43 },
+          { company_id: 'company-1', month: '2026-08-01', availability_pct: 90, performance_pct: null, quality_pct: null, oee_pct: null },
+        ],
+      })
     if (url.includes('reconcile')) return Promise.resolve({ data: rec })
     return Promise.resolve({ data: [] })
   })
@@ -75,6 +82,16 @@ describe('DataLakePage', () => {
     mockApi({ gold: { finance: [], sales: [], inventory: [] } })
     render(<DataLakePage />)
     expect((await screen.findAllByText(/Dataset Gold kosong/)).length).toBe(3)
+  })
+
+  it('meminta Gold OEE dan menggambar chartnya (bulan dengan faktor null tidak membuat halaman gagal)', async () => {
+    mockApi()
+    render(<DataLakePage />)
+    expect(await screen.findByText('OEE per Bulan')).toBeTruthy()
+    await waitFor(() =>
+      expect(apiClient.get).toHaveBeenCalledWith('/api/dw/lake/gold/oee-monthly', { params: { company_id: 'company-1' } })
+    )
+    expect(screen.queryAllByText(/Dataset Gold kosong/).length).toBe(0)
   })
 
   it('meminta Gold inventory dan menggambar chart stok', async () => {

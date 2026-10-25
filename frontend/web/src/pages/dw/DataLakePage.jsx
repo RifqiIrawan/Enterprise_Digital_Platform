@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import apiClient from '../../services/apiClient.js'
 import GroupedBarChart from '../aibi/GroupedBarChart.jsx'
-import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES, PRODUCTION_DOWNTIME_SERIES } from '../bi/chartSeries.js'
+import { FINANCE_SERIES, SALES_SERIES, STOCK_SERIES, PRODUCTION_DOWNTIME_SERIES, PRODUCTION_OEE_SERIES, formatPercent } from '../bi/chartSeries.js'
 import { useCompany } from '../../store/CompanyContext.jsx'
 import { usePagePermission } from '../../store/PermissionContext.jsx'
 
@@ -14,6 +14,14 @@ const STATUS_LABEL = {
 
 const number = (v) => new Intl.NumberFormat('id-ID').format(v)
 const rupiah = (v) => `Rp ${number(Math.round(v))}`
+
+// Faktor OEE null = belum bisa dihitung; tetap null (bukan 0) seperti di BI Dashboards.
+function oeeSeries(rows) {
+  const keys = ['availability_pct', 'performance_pct', 'quality_pct', 'oee_pct']
+  return rows
+    .map((r) => ({ month: r.month, ...Object.fromEntries(keys.map((k) => [k, r[k] == null ? null : Number(r[k])])) }))
+    .sort((a, b) => a.month.localeCompare(b.month))
+}
 
 // Gold downtime per (bulan, alasan); chart ini hanya total menit per bulan.
 function sumByMonth(rows, key) {
@@ -52,6 +60,7 @@ function DataLakePage() {
   const [sales, setSales] = useState(null)
   const [inventory, setInventory] = useState(null)
   const [downtime, setDowntime] = useState(null)
+  const [oee, setOee] = useState(null)
   const [goldError, setGoldError] = useState('')
   const [reconcile, setReconcile] = useState(null)
   const [reconcileError, setReconcileError] = useState('')
@@ -67,18 +76,21 @@ function DataLakePage() {
       apiClient.get('/api/dw/lake/gold/sales-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/inventory-monthly', { params }),
       apiClient.get('/api/dw/lake/gold/downtime-monthly', { params }),
+      apiClient.get('/api/dw/lake/gold/oee-monthly', { params }),
     ])
-      .then(([f, s, i, d]) => {
+      .then(([f, s, i, d, o]) => {
         setFinance(toSeries(f.data, ['revenue', 'expense']))
         setSales(toSeries(s.data, ['sales_value']))
         setInventory(toSeries(i.data, ['stock_in', 'stock_out']))
         setDowntime(sumByMonth(d.data, 'minutes'))
+        setOee(oeeSeries(o.data))
       })
       .catch((err) => {
         setFinance([])
         setSales([])
         setInventory([])
         setDowntime([])
+        setOee([])
         setGoldError(
           err.response?.status === 503
             ? 'Data lake (MinIO) tidak tersedia.'
@@ -167,6 +179,13 @@ function DataLakePage() {
         data={downtime}
         series={PRODUCTION_DOWNTIME_SERIES}
         formatValue={(v) => `${number(v)} menit`}
+      />
+      <GoldChart
+        title="OEE per Bulan"
+        hint="Dataset oee_monthly (hanya run yang sudah ditutup)"
+        data={oee}
+        series={PRODUCTION_OEE_SERIES}
+        formatValue={formatPercent}
       />
 
       <div className="card p-3">

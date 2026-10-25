@@ -3,6 +3,7 @@ package etl
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 
@@ -297,5 +298,82 @@ func TestGold_DowntimeAgreesWithClickHouse(t *testing.T) {
 		if g.Month == "2026-08-01" && g.ReasonCode == "BREAKDOWN" && g.Minutes != 60 {
 			t.Errorf("Aug BREAKDOWN = %d, want 60 (40 dikoreksi + 20)", g.Minutes)
 		}
+	}
+}
+
+// TestGold_OEEAgreesWithClickHouse: tiga bulan yang masing-masing menguji satu
+// cabang rumus (normal, Performance dipotong, tanpa unit => null), ditambah run
+// OPEN yang tidak boleh ikut dan run yang dikoreksi sesudah ditulis pertama.
+func TestGold_OEEAgreesWithClickHouse(t *testing.T) {
+	ctx := context.Background()
+	lake := testLake(t)
+	companyID := uuid.New()
+	v1, v2 := time.Now().Add(-time.Hour), time.Now()
+
+	fixed := oeeRow(companyID, "2026-08-03", "CLOSED", 420, 60, 150, 10, 2.0, t)
+	stale := fixed
+	stale.PlannedMinutes, stale.QuantityGood = 9999, 1 // versi lama, harus tertimpa
+	batches := []struct {
+		rows []ch.ProductionOEERow
+		at   time.Time
+	}{
+		{[]ch.ProductionOEERow{stale}, v1},
+		{[]ch.ProductionOEERow{
+			fixed,
+			oeeRow(companyID, "2026-08-04", "OPEN", 480, 0, 0, 0, 2.0, t),
+			oeeRow(companyID, "2026-09-02", "CLOSED", 100, 0, 100, 0, 2.0, t), // ideal 200 > run 100
+			oeeRow(companyID, "2026-10-05", "CLOSED", 300, 30, 0, 0, 2.0, t),  // tanpa unit
+			oeeRow(uuid.New(), "2026-08-03", "CLOSED", 111, 0, 5, 5, 1.0, t),  // company lain
+		}, v2},
+	}
+	for _, b := range batches {
+		if err := chClient.InsertProductionOEE(ctx, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+		if err := lake.WriteJSONLines(ctx, productionOEESourceTable, b.rows, b.at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, e := range lake.BuildAll(ctx, nil, true).Errors {
+		t.Errorf("BuildAll: %s", e)
+	}
+
+	want, err := chClient.ProductionOEEMonthlySummary(ctx, companyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := readGold[datalake.OEEMonthlyRow](t, lake, datalake.GoldOEEMonthly, companyID)
+	if len(want) != 3 || len(got) != 3 {
+		t.Fatalf("oee months: clickhouse=%d gold=%d, want 3 each", len(want), len(got))
+	}
+	same := func(label string, g, w *float64) {
+		t.Helper()
+		switch {
+		case g == nil && w == nil:
+		case g == nil || w == nil:
+			t.Errorf("%s gold=%v clickhouse=%v (nil harus sama-sama nil)", label, g, w)
+		case math.Abs(*g-*w) > 0.011:
+			t.Errorf("%s gold=%.2f clickhouse=%.2f", label, *g, *w)
+		}
+	}
+	for i := range want {
+		g, w := got[i], want[i]
+		if g.Month != w.Month || uint64(g.RunCount) != w.RunCount ||
+			g.PlannedMinutes != w.PlannedMinutes || g.DowntimeMinutes != w.DowntimeMinutes || g.RunTimeMinutes != w.RunTimeMinutes {
+			t.Errorf("%s: gold %+v != clickhouse %+v", w.Month, g, w)
+		}
+		same(w.Month+" availability", g.AvailabilityPct, w.AvailabilityPct)
+		same(w.Month+" performance", g.PerformancePct, w.PerformancePct)
+		same(w.Month+" quality", g.QualityPct, w.QualityPct)
+		same(w.Month+" oee", g.OEEPct, w.OEEPct)
+		if g.PerformanceCapped != w.PerformanceCapped {
+			t.Errorf("%s capped gold=%v clickhouse=%v", w.Month, g.PerformanceCapped, w.PerformanceCapped)
+		}
+	}
+	if got[0].OEEPct == nil || *got[0].OEEPct != 71.43 {
+		t.Errorf("Aug OEE = %v, want 71.43", got[0].OEEPct)
+	}
+	if !got[1].PerformanceCapped || got[2].OEEPct != nil {
+		t.Errorf("Sep capped=%v (want true), Oct OEE=%v (want nil)", got[1].PerformanceCapped, got[2].OEEPct)
 	}
 }

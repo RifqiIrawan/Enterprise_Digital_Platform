@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/shopspring/decimal"
@@ -30,6 +31,7 @@ const (
 	GoldSalesMonthly     = "sales_monthly"
 	GoldInventoryMonthly = "inventory_monthly"
 	GoldDowntimeMonthly  = "downtime_monthly"
+	GoldOEEMonthly       = "oee_monthly"
 )
 
 type InventoryMonthlyRow struct {
@@ -97,11 +99,16 @@ func (c *Client) BuildGold(ctx context.Context) ([]GoldStats, error) {
 	if err != nil {
 		return nil, err
 	}
+	oee, err := c.buildOEEMonthly(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return []GoldStats{
 		{Dataset: GoldFinanceMonthly, Rows: fin},
 		{Dataset: GoldSalesMonthly, Rows: sales},
 		{Dataset: GoldInventoryMonthly, Rows: inv},
 		{Dataset: GoldDowntimeMonthly, Rows: down},
+		{Dataset: GoldOEEMonthly, Rows: oee},
 	}, nil
 }
 
@@ -366,4 +373,107 @@ func (c *Client) buildDowntimeMonthly(ctx context.Context) (int, error) {
 		buf.WriteByte('\n')
 	}
 	return len(keys), c.put(ctx, goldKey(GoldDowntimeMonthly), buf.Bytes())
+}
+
+// OEEMonthlyRow menyimpan komponen yang bisa dijumlahkan (menit, unit) DAN
+// persen turunannya. Persen null = tidak bisa dihitung, bukan nol (lihat
+// ProductionOEEMonthlySummary).
+type OEEMonthlyRow struct {
+	CompanyID         string   `json:"company_id"`
+	Month             string   `json:"month"` // YYYY-MM-01
+	RunCount          int      `json:"run_count"`
+	PlannedMinutes    int64    `json:"planned_minutes"`
+	DowntimeMinutes   int64    `json:"downtime_minutes"`
+	RunTimeMinutes    int64    `json:"run_time_minutes"`
+	IdealMinutes      float64  `json:"ideal_minutes"`
+	GoodUnits         float64  `json:"good_units"`
+	TotalUnits        float64  `json:"total_units"`
+	AvailabilityPct   *float64 `json:"availability_pct"`
+	PerformancePct    *float64 `json:"performance_pct"`
+	QualityPct        *float64 `json:"quality_pct"`
+	OEEPct            *float64 `json:"oee_pct"`
+	PerformanceCapped bool     `json:"performance_capped"`
+}
+
+func pct(fraction float64) *float64 {
+	p := math.Round(fraction*100*100) / 100
+	return &p
+}
+
+func (c *Client) buildOEEMonthly(ctx context.Context) (int, error) {
+	agg := map[monthKey]*OEEMonthlyRow{}
+	err := c.EachSilver(ctx, "production_oee", func(l []byte) error {
+		var r struct {
+			CompanyID             string
+			RunDate               string
+			Status                string
+			PlannedMinutes        int64
+			DowntimeMinutes       int64
+			QuantityGood          float64
+			QuantityReject        float64
+			IdealCycleTimeMinutes float64
+		}
+		if err := json.Unmarshal(l, &r); err != nil {
+			return fmt.Errorf("gold oee: baris Silver rusak: %w", err)
+		}
+		// Hanya run yang sudah ditutup, sama dengan ProductionOEEMonthlySummary.
+		if r.Status != "CLOSED" {
+			return nil
+		}
+		month, ok := monthOf(r.RunDate)
+		if !ok {
+			return nil
+		}
+		k := monthKey{r.CompanyID, month}
+		row := agg[k]
+		if row == nil {
+			row = &OEEMonthlyRow{CompanyID: r.CompanyID, Month: month}
+			agg[k] = row
+		}
+		row.RunCount++
+		row.PlannedMinutes += r.PlannedMinutes
+		row.DowntimeMinutes += r.DowntimeMinutes
+		// Menit ideal dijumlahkan per baris, bukan dari rata-rata kecepatan.
+		row.IdealMinutes += r.IdealCycleTimeMinutes * (r.QuantityGood + r.QuantityReject)
+		row.GoodUnits += r.QuantityGood
+		row.TotalUnits += r.QuantityGood + r.QuantityReject
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	keys := sortedMonthKeys(agg)
+	var buf bytes.Buffer
+	for _, k := range keys {
+		row := agg[k]
+		row.RunTimeMinutes = row.PlannedMinutes - row.DowntimeMinutes
+		if row.RunTimeMinutes < 0 {
+			row.RunTimeMinutes = 0
+		}
+		var a, p, q *float64
+		var af, pf, qf float64
+		if row.PlannedMinutes > 0 {
+			af = float64(row.RunTimeMinutes) / float64(row.PlannedMinutes)
+			a = pct(af)
+		}
+		if row.RunTimeMinutes > 0 && row.IdealMinutes > 0 {
+			pf = math.Min(row.IdealMinutes/float64(row.RunTimeMinutes), 1.0)
+			p = pct(pf)
+		}
+		if row.TotalUnits > 0 {
+			qf = row.GoodUnits / row.TotalUnits
+			q = pct(qf)
+		}
+		// OEE dihitung dari pecahan, bukan dari persen yang sudah dibulatkan.
+		if a != nil && p != nil && q != nil {
+			row.OEEPct = pct(af * pf * qf)
+		}
+		row.AvailabilityPct, row.PerformancePct, row.QualityPct = a, p, q
+		row.PerformanceCapped = row.IdealMinutes > float64(row.RunTimeMinutes)
+		b, _ := json.Marshal(row)
+		buf.Write(b)
+		buf.WriteByte('\n')
+	}
+	return len(keys), c.put(ctx, goldKey(GoldOEEMonthly), buf.Bytes())
 }
